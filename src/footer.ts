@@ -104,6 +104,7 @@ export class CinlodevCuteFooter implements Component {
 
 	render(width: number): string[] {
 		this.refreshDirty();
+		const safeWidth = Math.max(20, width - 1);
 
 		// 1. Brand segment: ✿ Cinlodev CUTE
 		const brandSegment = `${C_PINK_BRIGHT}✿${RESET} ${C_PINK_ACCENT}Cinlodev CUTE${RESET}`;
@@ -160,14 +161,14 @@ export class CinlodevCuteFooter implements Component {
 		let line = joinLine(segments);
 
 		// If it overflows terminal width, progressively compact
-		if (visibleWidth(line) > width) {
+		if (visibleWidth(line) > safeWidth) {
 			// 1. Drop extra statuses first
-			while (segments.length > 5 && visibleWidth(line) > width) {
+			while (segments.length > 5 && visibleWidth(line) > safeWidth) {
 				segments.pop();
 				line = joinLine(segments);
 			}
 		}
-		if (visibleWidth(line) > width) {
+		if (visibleWidth(line) > safeWidth) {
 			// 2. Compact git branch if long
 			const compactBranch =
 				branch.length > 18 ? `${branch.slice(0, 17)}…` : branch;
@@ -175,24 +176,24 @@ export class CinlodevCuteFooter implements Component {
 			segments = [brandSegment, compactGit, modelSegment, contextSegment, costSegment];
 			line = joinLine(segments);
 		}
-		if (visibleWidth(line) > width) {
+		if (visibleWidth(line) > safeWidth) {
 			// 3. Drop cost segment
 			segments = [segments[0], segments[1], modelSegment, contextSegment];
 			line = joinLine(segments);
 		}
-		if (visibleWidth(line) > width) {
+		if (visibleWidth(line) > safeWidth) {
 			// 4. Drop context segment
 			segments = [segments[0], segments[1], modelSegment];
 			line = joinLine(segments);
 		}
-		if (visibleWidth(line) > width) {
+		if (visibleWidth(line) > safeWidth) {
 			// 5. Shorten brand to ✿ Cinlodev
 			const shortBrand = `${C_PINK_BRIGHT}✿${RESET} ${C_PINK_ACCENT}Cinlodev${RESET}`;
 			segments = [shortBrand, segments[1]];
 			line = joinLine(segments);
 		}
 
-		return [truncateToWidth(line, width, "…")];
+		return [truncateToWidth(line, safeWidth, "…")];
 	}
 
 	invalidate(): void {}

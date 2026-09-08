@@ -67,7 +67,8 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		const lines = super.render(Math.max(1, width - 2));
+		const safeWidth = Math.max(10, width - 1);
+		const lines = super.render(Math.max(1, safeWidth - 2));
 		if (this.getText() === "" && lines.length === 3) {
 			lines[1] = this.withPromptHint(lines[1], PROMPT_HINT);
 		}
@@ -76,7 +77,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 				? PROMPT_STATE.QUEUED
 				: this.promptState;
 
-		return this.framePromptLines(lines, width, state, this.tick);
+		return this.framePromptLines(lines, safeWidth, state, this.tick);
 	}
 
 	dispose(): void {
