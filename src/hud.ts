@@ -1,0 +1,432 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import * as os from "node:os";
+
+type HudMode = "full" | "compact";
+
+function formatNumber(value: number): string {
+	if (!Number.isFinite(value)) return "0";
+	if (Math.abs(value) < 1_000) return `${Math.round(value)}`;
+	if (Math.abs(value) < 1_000_000) return `${(value / 1_000).toFixed(1)}k`;
+	return `${(value / 1_000_000).toFixed(1)}m`;
+}
+
+function formatPercent(value: number | undefined): string {
+	if (value === undefined || !Number.isFinite(value)) return "n/a";
+	return `${Math.max(0, Math.min(100, value)).toFixed(1)}%`;
+}
+
+function shortModelName(model: string): string {
+	// Reemplazar prefijos largos para que se vea compacto y limpio
+	return model
+		.replace("gemini-", "g-")
+		.replace("claude-", "c-")
+		.replace("cpamc/", "");
+}
+
+function shortThinkingLevel(level: string): string {
+	switch (level.toLowerCase()) {
+		case "minimal":
+			return "min";
+		case "low":
+			return "low";
+		case "medium":
+			return "med";
+		case "high":
+			return "high";
+		case "default":
+			return "def";
+		default:
+			return level.slice(0, 4);
+	}
+}
+
+function formatCwd(cwd: string): string {
+	try {
+		const homedir = os.homedir();
+		if (cwd === homedir) return "~";
+		if (cwd.startsWith(homedir + "/")) {
+			return "~" + cwd.slice(homedir.length);
+		}
+	} catch {}
+	return cwd;
+}
+
+function borderTop(theme: Theme, title: string, width: number): string {
+	const leftLen = 3 + visibleWidth(title) + 1; // "╔═ " + title + " "
+	const dashCount = Math.max(0, width - leftLen - 1);
+	return (
+		"\x1b[38;2;142;68;173m╔═ \x1b[39m" +
+		title +
+		"\x1b[38;2;142;68;173m " +
+		"═".repeat(dashCount) +
+		"╗\x1b[39m"
+	);
+}
+
+function borderBottom(theme: Theme, width: number): string {
+	const dashCount = Math.max(0, width - 2);
+	return "\x1b[38;2;142;68;173m╚" + "═".repeat(dashCount) + "╝\x1b[39m";
+}
+
+function boxedLine(theme: Theme, content: string, width: number): string {
+	const innerWidth = Math.max(0, width - 2);
+	const text = truncateToWidth(content, innerWidth, "…");
+	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(text)));
+	return "\x1b[38;2;142;68;173m║\x1b[39m" + text + padding + "\x1b[38;2;142;68;173m║\x1b[39m";
+}
+
+let cachedActiveProfile: string | undefined = undefined;
+let lastProfileRead = 0;
+
+function getCachedActiveProfile(): string | undefined {
+	const now = Date.now();
+	if (now - lastProfileRead > 5000) {
+		lastProfileRead = now;
+		try {
+			const activePath = path.join(os.homedir(), ".pi", "agent", "profiles", ".active");
+			if (fs.existsSync(activePath)) {
+				cachedActiveProfile = fs.readFileSync(activePath, "utf-8").trim() || undefined;
+			} else {
+				cachedActiveProfile = undefined;
+			}
+		} catch {
+			cachedActiveProfile = undefined;
+		}
+	}
+	return cachedActiveProfile;
+}
+
+function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
+	let assistantMessages = 0;
+	let userMessages = 0;
+	let toolResults = 0;
+	let inputTokens = 0;
+	let outputTokens = 0;
+	let cost = 0;
+
+	const branch = ctx?.sessionManager?.getBranch?.() ?? [];
+	for (const entry of branch) {
+		if (entry.type !== "message") continue;
+		const message = entry.message;
+		if (message.role === "assistant") {
+			assistantMessages++;
+			const assistant = message as AssistantMessage;
+			const usage = assistant.usage;
+			inputTokens += (usage?.input ?? 0) + (usage?.cacheRead ?? 0);
+			outputTokens += usage?.output ?? 0;
+			if (typeof usage?.cost === "number") {
+				cost += usage.cost;
+			} else if (usage?.cost && typeof usage.cost.total === "number") {
+				cost += usage.cost.total;
+			}
+		} else if (message.role === "user") {
+			userMessages++;
+		} else if (message.role === "toolResult") {
+			toolResults++;
+		}
+	}
+
+	const context = ctx?.getContextUsage?.();
+	const model = ctx?.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
+	const contextWindow = ctx?.model?.contextWindow;
+	const contextPercent = context?.tokens && contextWindow ? (context.tokens / contextWindow) * 100 : undefined;
+	const activeProfile = getCachedActiveProfile();
+
+	return {
+		assistantMessages,
+		userMessages,
+		toolResults,
+		inputTokens,
+		outputTokens,
+		cost,
+		contextTokens: context?.tokens,
+		contextWindow,
+		contextPercent,
+		model,
+		activeProfile,
+		thinkingLevel: ctx?.thinkingLevel ?? "default",
+		cwd: ctx?.cwd ?? process.cwd(),
+		sessionFile: ctx?.sessionManager?.getSessionFile?.() ?? "ephemeral",
+	};
+}
+
+class GentlemanHudWidget implements Component {
+	constructor(
+		private readonly getContext: () => ExtensionContext | ExtensionCommandContext,
+		private readonly theme: Theme,
+		private readonly getMode: () => HudMode,
+	) {}
+
+	render(width: number): string[] {
+		const theme = this.theme;
+		const stats = collectStats(this.getContext());
+		const mode = this.getMode();
+		const safeWidth = Math.max(30, width);
+		const innerWidth = safeWidth - 2;
+
+		const title = theme.fg("accent", "◆ Cinlodev CUTE");
+		const sep = theme.fg("borderMuted", " │ ");
+
+		const pctColor = stats.contextPercent && stats.contextPercent > 75 ? "warning" : "success";
+		const pctStr = formatPercent(stats.contextPercent);
+		const ctxTokensStr = stats.contextTokens ? formatNumber(stats.contextTokens) : "0";
+		const ctxWinStr = stats.contextWindow ? formatNumber(stats.contextWindow) : "n/a";
+		const cwdShort = formatCwd(stats.cwd);
+
+		// Model variants
+		const profileLabelFull = stats.activeProfile
+			? theme.fg("muted", "Profile: ") + theme.fg("success", stats.activeProfile)
+			: "";
+		const profileLabelCompact = stats.activeProfile
+			? theme.fg("success", `[${stats.activeProfile}]`)
+			: "";
+
+		const modelLabelFull =
+			theme.fg("muted", "Model: ") +
+			theme.fg("text", stats.model) +
+			" " +
+			theme.fg("accent", `(${stats.thinkingLevel})`);
+		const modelLabelCompact =
+			theme.fg("muted", "Model: ") +
+			theme.fg("text", shortModelName(stats.model)) +
+			" " +
+			theme.fg("accent", `(${stats.thinkingLevel})`);
+		const modelLabelMini =
+			theme.fg("text", shortModelName(stats.model)) +
+			" " +
+			theme.fg("accent", `(${shortThinkingLevel(stats.thinkingLevel)})`);
+
+		// Context variants
+		const ctxLabelFull =
+			theme.fg("muted", "Ctx: ") +
+			theme.fg("text", ctxTokensStr) +
+			theme.fg("dim", `/${ctxWinStr}`) +
+			" " +
+			theme.fg(pctColor, `(${pctStr})`);
+		const ctxLabelCompact =
+			theme.fg("muted", "Ctx: ") +
+			theme.fg("text", ctxTokensStr) +
+			" " +
+			theme.fg(pctColor, `(${pctStr})`);
+		const ctxLabelMini =
+			theme.fg("muted", "Ctx: ") +
+			theme.fg(pctColor, pctStr);
+
+		// Session variants
+		const sessionLabelFull =
+			theme.fg("muted", "Session: ") +
+			theme.fg("text", String(stats.userMessages)) +
+			theme.fg("dim", " usr · ") +
+			theme.fg("text", String(stats.assistantMessages)) +
+			theme.fg("dim", " ast · ") +
+			theme.fg("text", String(stats.toolResults)) +
+			theme.fg("dim", " tools");
+		const sessionLabelCompact =
+			theme.fg("text", String(stats.userMessages)) +
+			theme.fg("dim", "u · ") +
+			theme.fg("text", String(stats.assistantMessages)) +
+			theme.fg("dim", "a · ") +
+			theme.fg("text", String(stats.toolResults)) +
+			theme.fg("dim", "t");
+
+		// Token variants
+		const tokenLabelFull =
+			theme.fg("muted", "Tokens: ") +
+			theme.fg("text", formatNumber(stats.inputTokens)) +
+			theme.fg("dim", " in · ") +
+			theme.fg("text", formatNumber(stats.outputTokens)) +
+			theme.fg("dim", " out");
+		const tokenLabelCompact =
+			theme.fg("text", formatNumber(stats.inputTokens)) +
+			theme.fg("dim", "↑ ") +
+			theme.fg("text", formatNumber(stats.outputTokens)) +
+			theme.fg("dim", "↓");
+
+		// Cost & Cwd variants
+		const costLabelFull = theme.fg("muted", "Cost: ") + theme.fg("success", `$${stats.cost.toFixed(4)}`);
+		const costLabelCompact = theme.fg("success", `$${stats.cost.toFixed(4)}`);
+		const cwdLabelFull = theme.fg("muted", "Dir: ") + theme.fg("dim", cwdShort);
+
+		const lines: string[] = [borderTop(theme, title, safeWidth)];
+
+		if (mode === "compact") {
+			let candidate = `  ${modelLabelCompact}${profileLabelCompact ? sep + profileLabelCompact : ""}${sep}${ctxLabelCompact}${sep}${theme.fg("muted", "Msg: ")}${theme.fg("text", `${stats.userMessages}/${stats.assistantMessages}`)}${sep}${costLabelFull}`;
+			if (visibleWidth(candidate) > innerWidth) {
+				candidate = `  ${modelLabelMini}${profileLabelCompact ? sep + profileLabelCompact : ""}${sep}${ctxLabelMini}${sep}${theme.fg("text", `${stats.userMessages}/${stats.assistantMessages}`)}${sep}${costLabelCompact}`;
+			}
+			lines.push(boxedLine(theme, candidate, safeWidth));
+		} else {
+			// Tier 1: Wide terminal (>= ~120 cols) -> 2 lines
+			const row1Wide = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}${sep}${ctxLabelFull}${sep}${sessionLabelFull}`;
+			const row2Wide = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
+
+			if (visibleWidth(row1Wide) <= innerWidth && visibleWidth(row2Wide) <= innerWidth) {
+				lines.push(boxedLine(theme, row1Wide, safeWidth));
+				lines.push(boxedLine(theme, row2Wide, safeWidth));
+			} else {
+				// Tier 2: Medium terminal (80-119 cols) -> 3 lines clean (no truncation)
+				const row1Med = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}`;
+				const row2Med = `  ${ctxLabelFull}${sep}${sessionLabelFull}`;
+				const row3Med = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
+
+				if (visibleWidth(row1Med) <= innerWidth && visibleWidth(row2Med) <= innerWidth && visibleWidth(row3Med) <= innerWidth) {
+					lines.push(boxedLine(theme, row1Med, safeWidth));
+					lines.push(boxedLine(theme, row2Med, safeWidth));
+					lines.push(boxedLine(theme, row3Med, safeWidth));
+				} else {
+					// Tier 3: Narrow terminal (< 80 cols) -> adaptive compact badges
+					let row1 = `  ${modelLabelFull}`;
+					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelCompact}`;
+					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelMini}`;
+
+					let row2 = `  ${ctxLabelFull}${sep}${sessionLabelCompact}`;
+					if (visibleWidth(row2) > innerWidth) row2 = `  ${ctxLabelCompact}${sep}${sessionLabelCompact}`;
+					if (visibleWidth(row2) > innerWidth) row2 = `  ${ctxLabelMini}${sep}${sessionLabelCompact}`;
+
+					let row3 = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
+					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
+					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelCompact}${sep}${cwdLabelFull}`;
+					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelCompact}`;
+
+					lines.push(boxedLine(theme, row1, safeWidth));
+					lines.push(boxedLine(theme, row2, safeWidth));
+					lines.push(boxedLine(theme, row3, safeWidth));
+				}
+			}
+		}
+
+		lines.push(borderBottom(theme, safeWidth));
+		return lines;
+	}
+
+	invalidate(): void {}
+}
+
+export default function (pi: ExtensionAPI) {
+	let hudEnabled = true;
+	let hudMode: HudMode = "full";
+	let statusEnabled = false;
+	let latestCtx: ExtensionContext | ExtensionCommandContext | null = null;
+	let activeTui: TUI | null = null;
+
+	function renderStatus(ctx: any): string {
+		const theme = ctx.ui.theme;
+		const stats = collectStats(ctx);
+		const context = formatPercent(stats.contextPercent);
+		const model = ctx.model?.id ?? "no-model";
+		return [
+			theme.fg("accent", "◆ cinlodev"),
+			theme.fg("dim", `model ${model}`),
+			theme.fg("dim", `ctx ${context}`),
+			theme.fg("dim", `tools ${stats.toolResults}`),
+		].join(theme.fg("borderMuted", " │ "));
+	}
+
+	function updateStatus(ctx: any): void {
+		if (!ctx?.hasUI) return;
+		if (statusEnabled) {
+			ctx.ui.setStatus("gentleman-hud", renderStatus(ctx));
+		} else {
+			ctx.ui.setStatus("gentleman-hud", undefined);
+		}
+	}
+
+	function applyHudWidget(ctx: ExtensionContext | ExtensionCommandContext): void {
+		latestCtx = ctx;
+		if (!ctx.hasUI) return;
+
+		if (hudEnabled) {
+			ctx.ui.setWidget(
+				"gentleman-hud",
+				(tui: TUI, theme: Theme) => {
+					activeTui = tui;
+					return new GentlemanHudWidget(() => latestCtx ?? ctx, theme, () => hudMode);
+				},
+				{ placement: "aboveEditor" },
+			);
+		} else {
+			ctx.ui.setWidget("gentleman-hud", undefined);
+		}
+
+		updateStatus(ctx);
+		activeTui?.requestRender();
+	}
+
+	pi.registerCommand("hud", {
+		description: "Toggle or configure persistent Cinlodev CUTE HUD widget above input (/hud, /hud compact, /hud full, /hud off)",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			latestCtx = ctx;
+
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("Cinlodev CUTE HUD widget is available in TUI mode.", "warning");
+				return;
+			}
+
+			const commandArg = args.trim().toLowerCase();
+
+			if (commandArg === "off" || commandArg === "close" || commandArg === "hide") {
+				hudEnabled = false;
+				applyHudWidget(ctx);
+				ctx.ui.notify("Cinlodev CUTE HUD desactivado", "info");
+				return;
+			}
+
+			if (commandArg === "on" || commandArg === "open" || commandArg === "show") {
+				hudEnabled = true;
+				applyHudWidget(ctx);
+				ctx.ui.notify("Cinlodev CUTE HUD activado encima del input", "info");
+				return;
+			}
+
+			if (commandArg === "compact" || commandArg === "mini") {
+				hudEnabled = true;
+				hudMode = "compact";
+				applyHudWidget(ctx);
+				ctx.ui.notify("Cinlodev CUTE HUD modo compacto activado", "info");
+				return;
+			}
+
+			if (commandArg === "full") {
+				hudEnabled = true;
+				hudMode = "full";
+				applyHudWidget(ctx);
+				ctx.ui.notify("Cinlodev CUTE HUD modo completo activado", "info");
+				return;
+			}
+
+			// Default toggle
+			hudEnabled = !hudEnabled;
+			applyHudWidget(ctx);
+			ctx.ui.notify(
+				hudEnabled ? `Cinlodev CUTE HUD activado encima del input (${hudMode})` : "Cinlodev CUTE HUD desactivado",
+				"info",
+			);
+		},
+	});
+
+	pi.registerCommand("hud-status", {
+		description: "Toggle the Cinlodev CUTE HUD footer status line",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			statusEnabled = !statusEnabled;
+			updateStatus(ctx);
+			ctx.ui.notify(
+				statusEnabled ? "Cinlodev CUTE HUD footer status activado" : "Cinlodev CUTE HUD footer status desactivado",
+				"info",
+			);
+		},
+	});
+
+	pi.on("session_start", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("session_end", async (_event, ctx) => {
+		if (ctx.hasUI) ctx.ui.setWidget("gentleman-hud", undefined);
+	});
+	pi.on("model_select", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("thinking_level_select", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("turn_start", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("turn_end", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("tool_execution_start", async (_event, ctx) => applyHudWidget(ctx));
+	pi.on("tool_execution_end", async (_event, ctx) => applyHudWidget(ctx));
+}

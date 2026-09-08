@@ -1,0 +1,40 @@
+{
+  "name": "pi-cinlodev-cute",
+  "version": "1.0.0",
+  "description": "Exclusive Cinlodev CUTE visual theme pack, Gentlewoman dashboard, persistent HUD, and double-line violet editor for Pi Coding Agent",
+  "type": "module",
+  "main": "./index.ts",
+  "files": [
+    "index.ts",
+    "src",
+    "themes",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-tui": "^0.85.1",
+    "@types/node": "^22.13.0",
+    "typescript": "^5.7.3"
+  }
+}
