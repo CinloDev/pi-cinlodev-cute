@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
-import { installCinlodevPrompt } from "./src/editor.js";
+import { installCinlodevPrompt, setCinlodevPromptWorking } from "./src/editor.js";
+import { installCinlodevFooter } from "./src/footer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -20,6 +21,9 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		// Install custom prompt editor with double violet frame & pink cursor
 		installCinlodevPrompt(ctx);
 
+		// Install custom CUTE statusline footer
+		installCinlodevFooter(ctx, pi);
+
 		// Ensure dev-binary override warning doesn't spam
 		try {
 			const devBinaryPath = path.join(os.homedir(), ".pi", "gentle-ai", "dev-binary.json");
@@ -29,13 +33,23 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		} catch {}
 	});
 
-	// 4. Command to inspect / reapply
+	// 4. Hook into agent lifecycle to animate working petal & label in input
+	pi.on("agent_start", () => {
+		setCinlodevPromptWorking(true);
+	});
+
+	pi.on("agent_end", () => {
+		setCinlodevPromptWorking(false);
+	});
+
+	// 5. Command to inspect / reapply
 	pi.registerCommand("cinlodev", {
 		description: "Check or reapply Cinlodev CUTE aesthetics and widgets (/cinlodev)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			if (!ctx.hasUI) return;
 			installCinlodevPrompt(ctx);
-			ctx.ui.notify("🌸 Cinlodev CUTE: Header, HUD y Editor con doble línea violeta aplicados.", "info");
+			installCinlodevFooter(ctx, pi);
+			ctx.ui.notify("🌸 Cinlodev CUTE: Header, HUD, Editor y Footer CUTE aplicados.", "info");
 		},
 	});
 }

@@ -160,15 +160,22 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 }
 
+let activeCinlodevPrompt: CinlodevPromptEditor | null = null;
+
+export function setCinlodevPromptWorking(working: boolean): void {
+	activeCinlodevPrompt?.setWorking(working);
+}
+
 export function installCinlodevPrompt(ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
 	ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
-		return new CinlodevPromptEditor(
+		activeCinlodevPrompt = new CinlodevPromptEditor(
 			tui,
 			editorTheme,
 			keybindings,
 			ctx.ui.theme,
 			() => ctx.hasPendingMessages(),
 		);
+		return activeCinlodevPrompt;
 	});
 }
