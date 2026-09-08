@@ -24,23 +24,32 @@ function rule(length: number): string {
 	return "═".repeat(Math.max(0, length));
 }
 
+function safeFg(theme: Theme | undefined, color: string, text: string, fallback: string = text): string {
+	try {
+		return theme?.fg ? theme.fg(color as any, text) : fallback;
+	} catch {
+		return fallback;
+	}
+}
+
 export class CinlodevPromptEditor extends CustomEditor {
 	private promptState: PromptState = PROMPT_STATE.IDLE;
 	private tick = 0;
 	private pulse: NodeJS.Timeout | undefined;
 	private readonly tui: TUI;
-	private readonly theme: Theme;
+	private readonly uiTheme: Theme;
 	private readonly hasPending: () => boolean;
 
 	constructor(
 		tui: TUI,
-		theme: Theme,
+		editorTheme: any,
 		keybindings: KeybindingsManager,
+		uiTheme: Theme,
 		hasPending: () => boolean = () => false,
 	) {
-		super(tui, theme, keybindings);
+		super(tui, editorTheme, keybindings);
 		this.tui = tui;
-		this.theme = theme;
+		this.uiTheme = uiTheme;
 		this.hasPending = hasPending;
 	}
 
@@ -86,7 +95,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 		const afterCursor = cursorAt + FAKE_CURSOR.length;
 		const trailing = line.slice(afterCursor);
 		if (trailing.trim() !== "" || trailing.length < hint.length + 1) return line;
-		const styledHint = this.theme.fg("dim", hint);
+		const styledHint = safeFg(this.uiTheme, "dim", hint);
 		return `${line.slice(0, afterCursor)} ${styledHint}${" ".repeat(trailing.length - hint.length - 1)}`;
 	}
 
@@ -122,9 +131,9 @@ export class CinlodevPromptEditor extends CustomEditor {
 		if (state === PROMPT_STATE.QUEUED) petalColor = "warning";
 		else if (state === PROMPT_STATE.WORKING) petalColor = "accent";
 
-		const petal = this.theme.fg(petalColor as any, glyph);
+		const petal = safeFg(this.uiTheme, petalColor, glyph);
 		const label = indicator ?? (state === PROMPT_STATE.WORKING ? "working" : state === PROMPT_STATE.QUEUED ? "queued" : "");
-		const labelText = label ? ` ${this.theme.fg("muted", label)}` : "";
+		const labelText = label ? ` ${safeFg(this.uiTheme, "muted", label)}` : "";
 		const labelWidth = label ? label.length + 1 : 0;
 		const fill = Math.max(0, width - 3 - visibleWidth(glyph) - labelWidth - 1 - 1);
 
@@ -136,7 +145,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 		const violet = (text: string) => `\x1b[38;2;142;68;173m${text}\x1b[39m`;
 		if (!indicator) return violet(`╚${rule(width - 2)}╝`);
 		const fill = Math.max(0, width - 3 - indicator.length - 1 - 1);
-		return violet("╚═ ") + this.theme.fg("muted", indicator) + violet(` ${rule(fill)}╝`);
+		return violet("╚═ ") + safeFg(this.uiTheme, "muted", indicator) + violet(` ${rule(fill)}╝`);
 	}
 
 	private sideRules(line: string, innerWidth: number): string {
@@ -153,11 +162,12 @@ export class CinlodevPromptEditor extends CustomEditor {
 
 export function installCinlodevPrompt(ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
-	ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+	ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
 		return new CinlodevPromptEditor(
 			tui,
-			theme,
+			editorTheme,
 			keybindings,
+			ctx.ui.theme,
 			() => ctx.hasPendingMessages(),
 		);
 	});
