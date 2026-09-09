@@ -297,7 +297,7 @@ class GentlemanWelcomeWidget implements Component {
 	render(width: number): string[] {
 		const theme = this.theme;
 		const stats = this.getStats();
-		const safeWidth = Math.max(48, width - 1);
+		const safeWidth = Math.max(48, width);
 
 		// Colors
 		const cAccent = (s: string) => safeThemeFg(theme, "accent", s, "text");
