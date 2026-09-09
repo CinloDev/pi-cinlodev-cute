@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="./public/theme_sup.png" alt="la Gentlewoman Welcome Dashboard & Persistent HUD" width="95%" />
+  <img src="./public/theme_sup.png" alt="la Gentlewoman Welcome Dashboard & Persistent HUD" width="760" />
 </p>
 
 ---
@@ -20,7 +20,7 @@
 ## 🎨 Design Highlights
 
 <p align="center">
-  <img src="./public/theme_inf.png" alt="Double-Line Prompt Editor & CUTE Statusline Footer" width="95%" />
+  <img src="./public/theme_inf.png" alt="Double-Line Prompt Editor & CUTE Statusline Footer" width="760" />
 </p>
 
 ### 1. 🌸 Cinlodev CUTE Theme (`CinlodevCute.json`)
@@ -39,11 +39,11 @@
 * Displays real-time model name, thinking level, context window token gauge, input/output token counts, session cost, and active workspace path.
 * **Modes:** Full (`/hud full`), Compact (`/hud compact`), or Hidden (`/hud off`).
 
-### 4. ✿ Double-Line Violet Prompt Editor (`src/editor.ts`)
-* Double violet frame (`╔═`, `║`, `╚═`) that wraps your command input seamlessly.
+### 4. ✿ Double-Line Effort-Aware Prompt Editor (`src/editor.ts`)
+* Double frame (`╔═`, `║`, `╚═`) that wraps your command input seamlessly and renders at full width, aligned with native Pi cards.
+* **Effort-Aware Frame:** The frame follows the thinking level — mint `#B4E7C7` for minimal/low, gold `#E0C27A` for medium, violet `#8e44ad` for high and up — repainting live when you cycle with `Shift+Tab`.
 * **Animated Petal Indicator:** The flower icon spins through animated frames (`✿` → `❀` → `❁` → `✾`) with a muted `working` status whenever the agent executes a turn, resting peacefully in `✿` when idle.
 * **Pastel Pink Cursor:** Inverted block cursor styled in `#FFB1DD` pastel pink (`\x1b[48;2;255;177;221m`).
-* **Terminal Margin Protection:** Uses a 1-column safety margin (`width - 1`) so that exiting with `Ctrl+D` dumps clean, undeformed rectangular boxes into your shell scrollback.
 
 ### 5. 🎀 CUTE Minimalist Statusline Footer (`src/footer.ts`)
 * Replaces the default status bar with a responsive, single-line dock:
