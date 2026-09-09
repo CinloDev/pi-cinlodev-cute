@@ -164,7 +164,7 @@ class GentlemanHudWidget implements Component {
 		const theme = this.theme;
 		const stats = collectStats(this.getContext());
 		const mode = this.getMode();
-		const safeWidth = Math.max(30, width - 1);
+		const safeWidth = Math.max(30, width);
 		const innerWidth = safeWidth - 2;
 
 		const title = theme.fg("accent", "◆ Cinlodev CUTE");

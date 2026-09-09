@@ -8,6 +8,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { installSidebar, sidebarPart } from "./sidebar.ts";
 
 const execAsync = promisify(exec);
 
@@ -62,17 +63,27 @@ function renderGauge(percent: number | null): string {
 }
 
 export class CinlodevCuteFooter implements Component {
+	private readonly pi: ExtensionAPI;
+	private readonly ctx: ExtensionContext;
+	private readonly tui: TUI;
+	private readonly theme: Theme;
+	private readonly footerData: ReadonlyFooterDataProvider;
 	private dirtyCount: number | undefined;
 	private lastDirtyCheck = 0;
 	private unsubscribeBranch: (() => void) | undefined;
 
 	constructor(
-		private readonly pi: ExtensionAPI,
-		private readonly ctx: ExtensionContext,
-		private readonly tui: TUI,
-		private readonly theme: Theme,
-		private readonly footerData: ReadonlyFooterDataProvider,
+		pi: ExtensionAPI,
+		ctx: ExtensionContext,
+		tui: TUI,
+		theme: Theme,
+		footerData: ReadonlyFooterDataProvider,
 	) {
+		this.pi = pi;
+		this.ctx = ctx;
+		this.tui = tui;
+		this.theme = theme;
+		this.footerData = footerData;
 		if (footerData.onBranchChange) {
 			this.unsubscribeBranch = footerData.onBranchChange(() => {
 				this.refreshDirty();
@@ -104,7 +115,7 @@ export class CinlodevCuteFooter implements Component {
 
 	render(width: number): string[] {
 		this.refreshDirty();
-		const safeWidth = Math.max(20, width - 1);
+		const safeWidth = Math.max(20, width);
 
 		// 1. Brand segment: ✿ Cinlodev CUTE
 		const brandSegment = `${C_PINK_BRIGHT}✿${RESET} ${C_PINK_ACCENT}Cinlodev CUTE${RESET}`;
@@ -196,6 +207,81 @@ export class CinlodevCuteFooter implements Component {
 		return [truncateToWidth(line, safeWidth, "…")];
 	}
 
+	renderSidebarCard(width: number): string[] {
+		this.refreshDirty();
+		const safeWidth = Math.max(30, width);
+		const innerWidth = safeWidth - 4;
+
+		const border = C_VIOLET;
+		const cTitle = C_PINK_BRIGHT;
+		const cLabel = C_GOLD;
+		const cText = C_TEXT;
+		const cAccent = C_PINK_ACCENT;
+		const cWarning = C_YELLOW;
+		const cMuted = C_MUTED;
+
+		const boxLine = (left: string, right = ""): string => {
+			const spaceNeeded = innerWidth - visibleWidth(left) - visibleWidth(right);
+			const pad = " ".repeat(Math.max(1, spaceNeeded));
+			const content = truncateToWidth(left + pad + right, innerWidth);
+			const fill = " ".repeat(Math.max(0, innerWidth - visibleWidth(content)));
+			return `${border}║${RESET} ${content}${fill} ${border}║${RESET}`;
+		};
+
+		const titleStr = `${cTitle}✿ Status${RESET}`;
+		const rawTitle = "✿ Status";
+		const fillTop = Math.max(0, safeWidth - 4 - visibleWidth(rawTitle) - 1);
+		const top = `${border}╔═ ${titleStr} ${border}${"═".repeat(fillTop)}╗${RESET}`;
+		const bottom = `${border}╚${"═".repeat(safeWidth - 2)}╝${RESET}`;
+
+		const rawCwd = this.ctx.cwd ?? process.cwd();
+		const home = process.env.HOME ?? "";
+		const shortCwd = home && rawCwd.startsWith(home) ? `~${rawCwd.slice(home.length)}` : rawCwd;
+
+		const branch = this.footerData.getGitBranch() || "no-git";
+		const dirtyBadge = this.dirtyCount && this.dirtyCount > 0 ? ` ${cWarning}±${this.dirtyCount}${RESET}` : "";
+
+		const rawModel = this.ctx.model?.id ?? "no-model";
+		const displayModel = shortModelName(rawModel);
+		const thinking = this.pi.getThinkingLevel();
+		const thinkingStr = thinking && thinking !== "off" ? ` ${cLabel}(${thinking})${RESET}` : "";
+
+		const usage = this.ctx.getContextUsage?.();
+		const percent = usage?.percent ?? null;
+		const percentStr = percent !== null ? `${Math.round(percent)}%` : "?%";
+		const gauge = renderGauge(percent);
+		const cost = formatCost(sessionCost(this.ctx));
+
+		const extraStatuses: string[] = [];
+		try {
+			const statusesMap = this.footerData.getExtensionStatuses?.();
+			if (statusesMap) {
+				for (const [, text] of statusesMap) {
+					if (text && text.trim().length > 0) extraStatuses.push(text.trim());
+				}
+			}
+		} catch {}
+
+		const lines: string[] = [
+			top,
+			boxLine(`${cLabel}Project${RESET}`, `${cText}${shortCwd}${RESET}`),
+			boxLine(`${cLabel}Branch${RESET}`, `${cText} ${branch}${RESET}${dirtyBadge}`),
+			boxLine(`${cLabel}Model${RESET}`, `${cAccent}${displayModel}${RESET}${thinkingStr}`),
+			boxLine(`${cLabel}Context${RESET}`, `${gauge} ${cText}${percentStr}${RESET}`),
+			boxLine(`${cLabel}Cost${RESET}`, `${cText}${cost}${RESET}`),
+		];
+
+		if (extraStatuses.length > 0) {
+			lines.push(`${border}╠${"═".repeat(safeWidth - 2)}╣${RESET}`);
+			for (const status of extraStatuses.slice(0, 3)) {
+				lines.push(boxLine(`${cMuted}${status}${RESET}`));
+			}
+		}
+
+		lines.push(bottom);
+		return lines;
+	}
+
 	invalidate(): void {}
 
 	dispose(): void {
@@ -209,7 +295,20 @@ export class CinlodevCuteFooter implements Component {
 export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	if (!ctx.hasUI) return;
 	ctx.ui.setFooter((tui, theme, footerData) => {
-		return new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
+		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
+		const rail = {
+			render: (width: number) => bottom.renderSidebarCard(width),
+			invalidate: () => bottom.invalidate(),
+		};
+		const part = sidebarPart(tui, "footer", bottom, rail);
+		const uninstall = installSidebar(tui);
+		return {
+			...part,
+			dispose() {
+				uninstall();
+				part.dispose?.();
+			},
+		};
 	});
 }
 

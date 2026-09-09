@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
-import { installCinlodevPrompt, setCinlodevPromptWorking } from "./src/editor.js";
+import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
 import { installCinlodevFooter } from "./src/footer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -40,6 +40,13 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 	pi.on("agent_end", () => {
 		setCinlodevPromptWorking(false);
+	});
+
+	// 4b. Repintar el marco del input cuando cambia el esfuerzo (thinking level)
+	pi.on("thinking_level_select", () => {
+		try {
+			setCinlodevPromptThinkingLevel(pi.getThinkingLevel());
+		} catch {}
 	});
 
 	// 5. Command to inspect / reapply

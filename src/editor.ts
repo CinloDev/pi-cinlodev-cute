@@ -32,10 +32,24 @@ function safeFg(theme: Theme | undefined, color: string, text: string, fallback:
 	}
 }
 
+// Marco del input según esfuerzo (thinking level): bajo = verde menta,
+// intermedio = dorado, high para arriba = violeta actual.
+const FRAME_VIOLET = "142;68;173";
+const FRAME_MINT = "180;231;199";
+const FRAME_GOLD = "224;194;122";
+
+function frameRgbForThinking(level: string | undefined): string {
+	const normalized = (level ?? "default").toLowerCase();
+	if (normalized === "minimal" || normalized === "low" || normalized === "off") return FRAME_MINT;
+	if (normalized === "medium") return FRAME_GOLD;
+	return FRAME_VIOLET;
+}
+
 export class CinlodevPromptEditor extends CustomEditor {
 	private promptState: PromptState = PROMPT_STATE.IDLE;
 	private tick = 0;
 	private pulse: NodeJS.Timeout | undefined;
+	private thinkingLevel: string = "default";
 	private readonly tui: TUI;
 	private readonly uiTheme: Theme;
 	private readonly hasPending: () => boolean;
@@ -53,6 +67,11 @@ export class CinlodevPromptEditor extends CustomEditor {
 		this.hasPending = hasPending;
 	}
 
+	setThinkingLevel(level: string): void {
+		this.thinkingLevel = level;
+		this.tui.requestRender();
+	}
+
 	setWorking(working: boolean): void {
 		this.promptState = working ? PROMPT_STATE.WORKING : PROMPT_STATE.IDLE;
 		this.stopPulse();
@@ -67,7 +86,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		const safeWidth = Math.max(10, width - 1);
+		const safeWidth = Math.max(10, width);
 		const lines = super.render(Math.max(1, safeWidth - 2));
 		if (this.getText() === "" && lines.length === 3) {
 			lines[1] = this.withPromptHint(lines[1], PROMPT_HINT);
@@ -138,15 +157,20 @@ export class CinlodevPromptEditor extends CustomEditor {
 		const labelWidth = label ? label.length + 1 : 0;
 		const fill = Math.max(0, width - 3 - visibleWidth(glyph) - labelWidth - 1 - 1);
 
-		const violet = (text: string) => `\x1b[38;2;142;68;173m${text}\x1b[39m`;
-		return violet("╔═ ") + petal + labelText + violet(` ${rule(fill)}╗`);
+		const frame = this.frameColor();
+		return frame("╔═ ") + petal + labelText + frame(` ${rule(fill)}╗`);
+	}
+
+	private frameColor(): (text: string) => string {
+		const rgb = frameRgbForThinking(this.thinkingLevel);
+		return (text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
 	}
 
 	private bottomRule(width: number, indicator?: string): string {
-		const violet = (text: string) => `\x1b[38;2;142;68;173m${text}\x1b[39m`;
-		if (!indicator) return violet(`╚${rule(width - 2)}╝`);
+		const frame = this.frameColor();
+		if (!indicator) return frame(`╚${rule(width - 2)}╝`);
 		const fill = Math.max(0, width - 3 - indicator.length - 1 - 1);
-		return violet("╚═ ") + safeFg(this.uiTheme, "muted", indicator) + violet(` ${rule(fill)}╝`);
+		return frame("╚═ ") + safeFg(this.uiTheme, "muted", indicator) + frame(` ${rule(fill)}╝`);
 	}
 
 	private sideRules(line: string, innerWidth: number): string {
@@ -156,8 +180,8 @@ export class CinlodevPromptEditor extends CustomEditor {
 			"\x1b[48;2;255;177;221m\x1b[38;2;26;18;24m$1\x1b[0m",
 		);
 		const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(styledLine)));
-		const violet = (text: string) => `\x1b[38;2;142;68;173m${text}\x1b[39m`;
-		return violet("║") + styledLine + padding + violet("║");
+		const frame = this.frameColor();
+		return frame("║") + styledLine + padding + frame("║");
 	}
 }
 
@@ -167,8 +191,13 @@ export function setCinlodevPromptWorking(working: boolean): void {
 	activeCinlodevPrompt?.setWorking(working);
 }
 
+export function setCinlodevPromptThinkingLevel(level: string): void {
+	activeCinlodevPrompt?.setThinkingLevel(level);
+}
+
 export function installCinlodevPrompt(ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
+	const initialLevel = (ctx as unknown as { thinkingLevel?: string }).thinkingLevel ?? "default";
 	ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
 		activeCinlodevPrompt = new CinlodevPromptEditor(
 			tui,
@@ -177,6 +206,7 @@ export function installCinlodevPrompt(ctx: ExtensionContext): void {
 			ctx.ui.theme,
 			() => ctx.hasPendingMessages(),
 		);
+		activeCinlodevPrompt.setThinkingLevel(initialLevel);
 		return activeCinlodevPrompt;
 	});
 }

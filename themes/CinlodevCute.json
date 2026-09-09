@@ -50,6 +50,8 @@
     "text": "text",
     "thinkingText": "muted",
     "selectedBg": "selection",
+    "scrollbarTrack": "borderSubtle",
+    "scrollbarThumb": "pink",
     "userMessageBg": "userMessageBg",
     "userMessageText": "userMessageText",
     "customMessageBg": "bgSubtle",
