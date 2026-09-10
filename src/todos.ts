@@ -1,7 +1,7 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
+import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 // Cinlodev CUTE colors come from themes/CinlodevCute.json via cutePalette().
@@ -131,6 +131,7 @@ export class CinlodevTodoMirror implements Component {
 		const safeWidth = Math.max(30, width);
 		const innerWidth = safeWidth - 4;
 		const c = this.palette();
+		const g = cuteGlyphs(this.theme);
 		const frame = (s: string): string =>
 			this.theme ? frameFg(this.theme, s) : s;
 
@@ -139,7 +140,7 @@ export class CinlodevTodoMirror implements Component {
 			const pad = " ".repeat(Math.max(1, spaceNeeded));
 			const content = truncateToWidth(left + pad + right, innerWidth);
 			const fill = " ".repeat(Math.max(0, innerWidth - visibleWidth(content)));
-			return `${frame("║")} ${content}${fill} ${frame("║")}`;
+			return `${frame(g.v)} ${content}${fill} ${frame(g.v)}`;
 		};
 
 		const done = tasks.filter((task) => task.status === "done").length;
@@ -150,8 +151,8 @@ export class CinlodevTodoMirror implements Component {
 		const rawTitle = `${strings.glyph} ${titleText}`;
 		const titleStr = `${c.pinkBright(strings.glyph)} ${c.text(titleText)}`;
 		const fillTop = Math.max(0, safeWidth - 4 - visibleWidth(rawTitle) - 1);
-		const top = `${frame("╔═ ")}${titleStr}${frame(` ${"═".repeat(fillTop)}╗`)}`;
-		const bottom = frame(`╚${"═".repeat(safeWidth - 2)}╝`);
+		const top = `${frame(`${g.tl}${g.h} `)}${titleStr}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;
+		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
 		const lines: string[] = [top];
 		for (const task of tasks.slice(0, maxRows)) {

@@ -1,6 +1,6 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { frameFg, safeFg } from "./cute-theme.ts";
+import { cuteGlyphs, frameFg, safeFg } from "./cute-theme.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 export const SIDEBAR_BREAKPOINT = 140;
@@ -15,14 +15,8 @@ export const GAP = 0;
 // pinkBright #FFB1DD via "pinkBright", violet frame #8e44ad via "border",
 // text #F6EFF3 via "text". No hardcoded ANSI here.
 
-const SINGLE_TO_DOUBLE: Record<string, string> = {
-	"╭": "╔",
-	"╮": "╗",
-	"╰": "╚",
-	"╯": "╝",
-	"│": "║",
-	"─": "═",
-};
+// Single/rounded frame tokens map to the configured double (or ascii) preset
+// via cuteGlyphs at render time, so frameStyle switches stay consistent.
 
 // Las cards de gentle-pi (Changes/Agents/Todo) llegan en línea simple redondeada
 // bicolor (riel en tono + resto en border). Las pasamos a doble línea toda en
@@ -34,10 +28,19 @@ function unifyCardFrame(raw: string, theme?: Theme): string {
 		/\x1b\[[0-9;]+m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)/g,
 		(token) => {
 			if (!theme) return token;
+			const g = cuteGlyphs(theme);
+			const toConfigured: Record<string, string> = {
+				"╭": g.tl,
+				"╮": g.tr,
+				"╰": g.bl,
+				"╯": g.br,
+				"│": g.v,
+				"─": g.h,
+			};
 			const open = token.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
 			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
 			const glyphs = token.slice(open.length, token.length - close.length);
-			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => SINGLE_TO_DOUBLE[c] ?? c);
+			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
 			return frameFg(theme, doubled);
 		},
 	);
@@ -130,6 +133,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
 	const pink = (s: string): string => (theme ? safeFg(theme, "accent", s) : s);
 	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
+	const railV = cuteGlyphs(theme).v;
 	const state = sidebarState(tui);
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
@@ -151,8 +155,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const rows = Math.max(1, tui.terminal?.rows ?? 50);
 			const line =
 				width >= 2
-					? `${subtle("║")}${" ".repeat(width - 1)}`
-					: subtle("║");
+					? `${subtle(railV)}${" ".repeat(width - 1)}`
+					: subtle(railV);
 			return Array(rows).fill(line);
 		},
 		invalidate() {},
@@ -163,8 +167,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		primary: false,
 		overscroll: "contain",
 		scrollbar: "always",
-		scrollbarTrackStyle: () => subtle("║"),
-		scrollbarThumbStyle: (text) => (text === "█" ? pinkBright("║") : pink("║")),
+		scrollbarTrackStyle: () => subtle(railV),
+		scrollbarThumbStyle: (text) => (text === "█" ? pinkBright(railV) : pink(railV)),
 	});
 
 	const nativeMouse = scroll.handleMouse.bind(scroll);
@@ -240,9 +244,9 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 			const applyCuteScrollbars = () => {
 				if (!transcript) return;
-				(transcript as any).scrollbarTrackStyle = () => subtle("║");
+				(transcript as any).scrollbarTrackStyle = () => subtle(railV);
 				(transcript as any).scrollbarThumbStyle = (text: string) =>
-					text === "█" ? pinkBright("║") : pink("║");
+					text === "█" ? pinkBright(railV) : pink(railV);
 				if (transcript.scrollbar !== "always") transcript.setScrollbar("always");
 			};
 
@@ -258,8 +262,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					const rows = Math.max(1, tui.terminal?.rows ?? 50);
 					const line =
 						width >= 2
-							? `${" ".repeat(width - 1)}${subtle("║")}`
-							: subtle("║");
+							? `${" ".repeat(width - 1)}${subtle(railV)}`
+							: subtle(railV);
 					return Array(rows).fill(line);
 				},
 				invalidate() {},

@@ -13,7 +13,7 @@ import * as os from "node:os";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-import { frameFg, safeFg as safeThemeFg } from "./cute-theme";
+import { cuteGlyphs, frameFg, safeFg as safeThemeFg } from "./cute-theme";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 const execAsync = promisify(exec);
@@ -38,34 +38,38 @@ function shortModelName(model: string): string {
 }
 
 function borderTop(theme: Theme, title: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
 	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
-	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╔═ " + title + " "
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // tl + h + space + title + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${frameFg(theme, "╔═ ")}${styledTitle}${frameFg(theme, ` ${"═".repeat(dashCount)}╗`)}`;
+	return `${frameFg(theme, `${g.tl}${g.h} `)}${styledTitle}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.tr}`)}`;
 }
 
 function borderBottom(theme: Theme, bottomText: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTextLen = Math.max(0, width - 6);
 	const styledText = visibleWidth(bottomText) > maxTextLen ? truncateToWidth(bottomText, maxTextLen) : bottomText;
-	const leftLen = 3 + visibleWidth(styledText) + 1; // "╚═ " + bottomText + " "
+	const leftLen = 3 + visibleWidth(styledText) + 1; // bl + h + space + text + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${frameFg(theme, "╚═ ")}${styledText}${frameFg(theme, ` ${"═".repeat(dashCount)}╝`)}`;
+	return `${frameFg(theme, `${g.bl}${g.h} `)}${styledText}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.br}`)}`;
 }
 
 function borderDivider(theme: Theme, title: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
 	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
-	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╠═ " + title + " "
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // dividerL + h + space + title + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${frameFg(theme, "╠═ ")}${styledTitle}${frameFg(theme, ` ${"═".repeat(dashCount)}╣`)}`;
+	return `${frameFg(theme, `${g.dividerL}${g.h} `)}${styledTitle}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.dividerR}`)}`;
 }
 
 function boxedLine(theme: Theme, content: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const innerWidth = Math.max(0, width - 2);
 	const truncated = truncateToWidth(content, innerWidth, "…");
 	const pad = " ".repeat(Math.max(0, innerWidth - visibleWidth(truncated)));
-	return `${frameFg(theme, "║")}${truncated}${pad}${frameFg(theme, "║")}`;
+	return `${frameFg(theme, g.v)}${truncated}${pad}${frameFg(theme, g.v)}`;
 }
 
 function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: ExtensionAPI): WelcomeStats {
@@ -295,6 +299,7 @@ class GentlemanWelcomeWidget implements Component {
 		const stats = this.getStats();
 		const safeWidth = Math.max(48, width);
 		const hk = loadCuteStrings().welcomeHotkeys;
+		const g = cuteGlyphs(theme);
 
 		// Colors
 		const cAccent = (s: string) => safeThemeFg(theme, "accent", s, "text");
@@ -309,21 +314,21 @@ class GentlemanWelcomeWidget implements Component {
 		const lines: string[] = [];
 
 		// Header row
-		const topTitle = `${cAccent("◆ " + themeName)} ${cDim("·")} ${cHeading(loadCuteStrings().welcomeTitles.persona)}`;
+		const topTitle = `${cAccent(`${g.brand} ` + themeName)} ${cDim(g.dot)} ${cHeading(loadCuteStrings().welcomeTitles.persona)}`;
 		lines.push(borderTop(theme, topTitle, safeWidth));
 
 		// Meta line
-		const branchLabel = stats.gitBranch !== "no git" ? cSuccess(` ${stats.gitBranch}`) : cDim("no git");
+		const branchLabel = stats.gitBranch !== "no git" ? cSuccess(`${g.branch} ${stats.gitBranch}`) : cDim("no git");
 		const displayModel = safeWidth < 90 ? shortModelName(stats.model) : stats.model;
 		const modelLabel = `${cMuted("Model: ")}${cHeading(displayModel)}`;
-		const profileBadge = stats.activeProfile ? ` ${cDim("│")} ${cMuted("Profile: ")}${cAccent(stats.activeProfile)}` : "";
+		const profileBadge = stats.activeProfile ? ` ${cDim(g.separator)} ${cMuted("Profile: ")}${cAccent(stats.activeProfile)}` : "";
 		const contextLabel = stats.contextFiles.length > 0
 			? `${cMuted("Context: ")}${cText(stats.contextFiles.join(", "))}`
 			: `${cDim("Context: none")}`;
 
-		let metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim("│")} ${branchLabel} ${cDim("│")} ${modelLabel}${profileBadge} ${cDim("│")} ${contextLabel}`;
+		let metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge} ${cDim(g.separator)} ${contextLabel}`;
 		if (visibleWidth(metaRow) > safeWidth - 2 && safeWidth < 70) {
-			metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim("│")} ${branchLabel} ${cDim("│")} ${modelLabel}${profileBadge}`;
+			metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge}`;
 		}
 		lines.push(boxedLine(theme, metaRow, safeWidth));
 
@@ -334,15 +339,15 @@ class GentlemanWelcomeWidget implements Component {
 			const promptCount = stats.prompts.length > 0 ? `${cHeading(stats.prompts[0])}` : `${cDim("0 prompts")}`;
 			const toolsBadge = stats.customToolsCount > 0 ? `${cSuccess(stats.customToolsCount + " tools")}` : "";
 
-			const summaryBadges = [skillsCount, extCount, promptCount, toolsBadge].filter(Boolean).join(cDim(" · "));
+			const summaryBadges = [skillsCount, extCount, promptCount, toolsBadge].filter(Boolean).join(cDim(` ${g.dot} `));
 			lines.push(boxedLine(theme, `  ${summaryBadges}`, safeWidth));
 
-			let hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim("·")} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim("·")} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim("·")} ${cAccent("[^O]")} ${cAccent(hk.expandDashboard)}`;
+			let hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim(g.dot)} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expandDashboard)}`;
 			if (safeWidth < 80) {
-				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim("·")} ${cDim("[/]")} ${cMuted(hk.commandsShort)} ${cDim("·")} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
+				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commandsShort)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
 			if (safeWidth < 60) {
-				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim("·")} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
+				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
 			lines.push(borderBottom(theme, hotkeys, safeWidth));
 			return lines;
@@ -357,8 +362,8 @@ class GentlemanWelcomeWidget implements Component {
 		} else {
 			let currentLine = "  ";
 			for (const skill of stats.skills) {
-				const pill = `${cAccent("◆")} ${cText(skill)}`;
-				const candidate = currentLine === "  " ? currentLine + pill : currentLine + cDim("  ·  ") + pill;
+				const pill = `${cAccent(g.brand)} ${cText(skill)}`;
+				const candidate = currentLine === "  " ? currentLine + pill : currentLine + cDim(`  ${g.dot}  `) + pill;
 				if (visibleWidth(candidate) > safeWidth - 6) {
 					lines.push(boxedLine(theme, currentLine, safeWidth));
 					currentLine = "  " + pill;
@@ -379,7 +384,7 @@ class GentlemanWelcomeWidget implements Component {
 		let extLine = `  ${cMuted("Extensions: ")}`;
 		for (const ext of shortExt) {
 			const pill = cText(ext);
-			const candidate = extLine === `  ${cMuted("Extensions: ")}` ? extLine + pill : extLine + cDim(" · ") + pill;
+			const candidate = extLine === `  ${cMuted("Extensions: ")}` ? extLine + pill : extLine + cDim(` ${g.dot} `) + pill;
 			if (visibleWidth(candidate) > safeWidth - 6) {
 				lines.push(boxedLine(theme, extLine, safeWidth));
 				extLine = `    ${pill}`;
@@ -397,13 +402,13 @@ class GentlemanWelcomeWidget implements Component {
 		lines.push(
 			boxedLine(
 				theme,
-				`  ${cMuted("Prompts: ")}${cHeading(promptsText)} ${cDim("│")} ${cMuted("Tools: ")}${cSuccess(toolsText)}`,
+				`  ${cMuted("Prompts: ")}${cHeading(promptsText)} ${cDim(g.separator)} ${cMuted("Tools: ")}${cSuccess(toolsText)}`,
 				safeWidth,
 			),
 		);
 
 		// Bottom border
-		const hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim("·")} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim("·")} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim("·")} ${cAccent("[^O]")} ${cAccent(hk.collapse)}`;
+		const hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim(g.dot)} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.collapse)}`;
 		lines.push(borderBottom(theme, hotkeys, safeWidth));
 
 		return lines;
