@@ -139,7 +139,15 @@ function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: Extensio
 		const rawSettings = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");
 		const parsed = JSON.parse(rawSettings);
 		if (Array.isArray(parsed.packages)) {
-			settingsPackages = parsed.packages;
+			settingsPackages = parsed.packages
+				.map((pkg: unknown) => {
+					if (typeof pkg === "string") return pkg;
+					if (typeof pkg === "object" && pkg !== null && "source" in pkg && typeof (pkg as any).source === "string") {
+						return (pkg as any).source as string;
+					}
+					return undefined;
+				})
+				.filter((pkg): pkg is string => typeof pkg === "string");
 		}
 	} catch {}
 

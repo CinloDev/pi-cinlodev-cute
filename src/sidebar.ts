@@ -3,6 +3,7 @@ import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-wo
 export const SIDEBAR_BREAKPOINT = 140;
 export const RAIL_WIDTH = 50;
 export const RAIL_PADDING = 2;
+export const LEFT_BORDER_WIDTH = 2;
 export const GAP = 0;
 
 const C_BORDER_SUBTLE = "\x1b[38;2;92;44;116m";
@@ -133,6 +134,18 @@ export function installSidebar(tui: TUI): () => void {
 		},
 	};
 
+	const leftBorder: Component = {
+		render(width: number) {
+			const rows = Math.max(1, tui.terminal?.rows ?? 50);
+			const line =
+				width >= 2
+					? `${C_BORDER_SUBTLE}║${RESET}${" ".repeat(width - 1)}`
+					: `${C_BORDER_SUBTLE}║${RESET}`;
+			return Array(rows).fill(line);
+		},
+		invalidate() {},
+	};
+
 	const scroll = new ScrollView(rail, {
 		follow: "none",
 		primary: false,
@@ -228,29 +241,82 @@ export function installSidebar(tui: TUI): () => void {
 				if (transcript.scrollbar !== originalScrollbar) transcript.setScrollbar(originalScrollbar);
 			};
 
+			const middleDivider: Component = {
+				render(width: number) {
+					const rows = Math.max(1, tui.terminal?.rows ?? 50);
+					const line =
+						width >= 2
+							? `${" ".repeat(width - 1)}${C_BORDER_SUBTLE}║${RESET}`
+							: `${C_BORDER_SUBTLE}║${RESET}`;
+					return Array(rows).fill(line);
+				},
+				invalidate() {},
+			};
+
 			const left = {
 				render: (width: number) => root.render(width),
-				invalidate() {},
+				invalidate: () => root.invalidate?.(),
 				[NODE]: () => original.call(root),
 			};
 			const replacement = () => {
-				const active = prepare(tui.terminal.columns);
+				const columns = tui.terminal.columns;
+				const active = prepare(columns);
+				const hasLeftBorder = columns >= 40;
+
+				if (!hasLeftBorder && !active) {
+					restoreTranscript();
+					return original.call(root);
+				}
+
 				if (active) {
-					applyCuteScrollbars();
+					// Con el middleDivider visible de arriba a abajo, ocultamos el scrollbar del transcript
+					if (transcript && transcript.scrollbar !== "hidden") {
+						transcript.setScrollbar("hidden");
+					}
 				} else {
 					restoreTranscript();
 				}
-				return active
-					? {
-							type: "hstack",
-							gap: GAP,
-							align: "stretch",
-							entries: [
-								{ component: left, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-								{ component: scroll, basis: RAIL_WIDTH, grow: 0, shrink: 0, minSize: RAIL_WIDTH },
-							],
-						}
-					: original.call(root);
+
+				const entries: any[] = [];
+				if (hasLeftBorder) {
+					entries.push({
+						component: leftBorder,
+						basis: LEFT_BORDER_WIDTH,
+						grow: 0,
+						shrink: 0,
+						minSize: LEFT_BORDER_WIDTH,
+					});
+				}
+				entries.push({
+					component: left,
+					basis: 0,
+					grow: 1,
+					shrink: 1,
+					minSize: 1,
+				});
+				if (active) {
+					entries.push({
+						component: middleDivider,
+						basis: 2,
+						grow: 0,
+						shrink: 0,
+						minSize: 2,
+					});
+					entries.push({
+						component: scroll,
+						basis: RAIL_WIDTH,
+						grow: 0,
+						shrink: 0,
+						minSize: RAIL_WIDTH,
+					});
+				}
+
+				return {
+					type: "hstack",
+					gap: GAP,
+					align: "stretch",
+					entries,
+				};
 			};
 
 			root[NODE] = replacement;
