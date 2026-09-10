@@ -194,13 +194,19 @@ function mergeLayout(raw: unknown): CuteLayout {
 	return base;
 }
 
+// Tunables live in config/, NOT in themes/: Pi treats every *.json under
+// themes/ as a theme file and rejects ours ("expected an object with a
+// colors map"). The themes/ location stays as a legacy fallback so existing
+// local installs keep working until they update the package.
 function candidatePaths(): string[] {
 	const candidates: string[] = [];
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
+		candidates.push(path.join(here, "..", "config", CUTE_LAYOUT_FILENAME));
 		candidates.push(path.join(here, "..", "themes", CUTE_LAYOUT_FILENAME));
 	} catch {}
 	try {
+		candidates.push(path.join(process.cwd(), "config", CUTE_LAYOUT_FILENAME));
 		candidates.push(path.join(process.cwd(), "themes", CUTE_LAYOUT_FILENAME));
 	} catch {}
 	return candidates;

@@ -7,7 +7,7 @@ import { loadCuteStrings } from "./cute-strings.ts";
 
 // Cinlodev CUTE colors come from themes/CinlodevCute.json via cutePalette().
 // No hardcoded ANSI here: footer.ts shares the same single source of truth.
-// Row limits and card width come from themes/CinlodevCute.layout.json via loadCuteLayout().
+// Row limits and card width come from config/CinlodevCute.layout.json via loadCuteLayout().
 const identityPalette: CutePalette = {
 	border: (s) => s,
 	pinkBright: (s) => s,

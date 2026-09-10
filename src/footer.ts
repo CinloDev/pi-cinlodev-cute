@@ -27,7 +27,7 @@ function separator(theme: Theme): string {
 	return frameFg(theme, cuteGlyphs(theme).separator);
 }
 // Layout numbers (gauge cells, widths, intervals) come from
-// themes/CinlodevCute.layout.json via loadCuteLayout(). No hardcodes.
+// config/CinlodevCute.layout.json via loadCuteLayout(). No hardcodes.
 
 function gaugeGlyphs(theme: Theme): { filled: string; empty: string } {
 	const g = cuteGlyphs(theme);
@@ -135,7 +135,7 @@ export class CinlodevCuteFooter implements Component {
 		const safeWidth = Math.max(loadCuteLayout().footer.minWidth, width);
 		const c = cutePalette(this.theme);
 
-		// 1. Brand segment (texts from themes/CinlodevCute.strings.json via loadCuteStrings())
+		// 1. Brand segment (texts from config/CinlodevCute.strings.json via loadCuteStrings())
 		const strings = loadCuteStrings();
 		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerBrand)}`;
 
@@ -219,7 +219,7 @@ export class CinlodevCuteFooter implements Component {
 			line = joinLine(segments);
 		}
 		if (visibleWidth(line) > safeWidth) {
-			// 5. Shorten brand (texts from themes/CinlodevCute.strings.json via loadCuteStrings())
+			// 5. Shorten brand (texts from config/CinlodevCute.strings.json via loadCuteStrings())
 			const shortBrand = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerShort)}`;
 			segments = [shortBrand, segments[1]];
 			line = joinLine(segments);

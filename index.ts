@@ -26,7 +26,7 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 		// Optional hygiene for the foreign gentle-ai dev-binary override file.
 		// Disabled by default (devBinaryHygiene: false in
-		// themes/CinlodevCute.paths.json): this theme never deletes files it
+		// config/CinlodevCute.paths.json): this theme never deletes files it
 		// does not own unless explicitly opted in.
 		if (loadCutePaths().devBinaryHygiene) {
 			try {

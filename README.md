@@ -65,13 +65,13 @@
 ### 7. ✎ Working-Tree Changes Cap (`lib/shell-changes.ts`)
 * Intelligently caps the listed modified files at a maximum of 5, appending `+N más` for remaining files to prevent screen clutter on wide terminals.
 
-### 8. 🎛️ Tunable Personalization Without Code Changes (`src/cute-*.ts` + `themes/CinlodevCute.*.json`)
+### 8. 🎛️ Tunable Personalization Without Code Changes (`src/cute-*.ts` + `config/CinlodevCute.*.json`)
 * **Non-destructive adapter:** the package transforms gentle-pi visuals without touching its files (e.g. it never deletes foreign state unless you opt in via `devBinaryHygiene`).
 * **Zero hardcoded visuals:** every color, text, glyph, layout number and path resolves through `src/cute-theme.ts`, `src/cute-strings.ts`, `src/cute-layout.ts` and `src/cute-paths.ts`, with compiled defaults as fallback — delete a JSON key and the classic CUTE look stays.
 * **`themes/CinlodevCute.json`** — palette (`vars`/`colors`) plus `glyphs`: `frameStyle` (`double`/`single`/`rounded`/`ascii`, with ASCII fallback for fonts without Nerd Font), frame corners, `branch`/`gauge`/`petalFrames`/`spinnerFrames` icons, and `profileIcon`.
-* **`themes/CinlodevCute.strings.json`** — every user-facing text: brand titles, persona placeholders (`{name}`/`{user}`/`{lang}`), `profileFormat` (`{icon} {name}`), editor hint, hotkeys, sidebar banner, todo titles, `/cinlodev` messages and all notifys.
-* **`themes/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
-* **`themes/CinlodevCute.paths.json`** — filesystem touchpoints: `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
+* **`config/CinlodevCute.strings.json`** — every user-facing text: brand titles, persona placeholders (`{name}`/`{user}`/`{lang}`), `profileFormat` (`{icon} {name}`), editor hint, hotkeys, sidebar banner, todo titles, `/cinlodev` messages and all notifys.
+* **`config/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
+* **`config/CinlodevCute.paths.json`** — filesystem touchpoints (kept outside `themes/` on purpose: Pi rejects any non-theme JSON found there). `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
 
 ---
 
