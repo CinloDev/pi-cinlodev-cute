@@ -260,7 +260,9 @@ class GentlemanHudWidget implements Component {
 			theme.fg("accent", cwdShort) +
 			branchSuffix;
 
-		const lines: string[] = [borderTop(theme, title, safeWidth)];
+		// Un cuadradito de aire arriba: baja la card del HUD (y con ella el input)
+		// una fila para que no quede pegada al contenido de arriba.
+		const lines: string[] = ["", borderTop(theme, title, safeWidth)];
 
 		if (mode === "compact") {
 			let candidate = `  ${modelLabelCompact}${profileLabelCompact ? sep + profileLabelCompact : ""}${sep}${ctxLabelCompact}${sep}${theme.fg("muted", "Msg: ")}${theme.fg("text", `${stats.userMessages}/${stats.assistantMessages}`)}${sep}${costLabelFull}`;

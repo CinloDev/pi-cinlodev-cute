@@ -110,8 +110,8 @@ export const CUTE_LAYOUT_FILENAME = "CinlodevCute.layout.json";
 const DEFAULTS: CuteLayout = {
 	sidebar: {
 		breakpoint: 140,
-		railWidth: 50,
-		railPadding: 2,
+		railWidth: 52,
+		railPadding: 1,
 		gap: 0,
 		leftBorderWidth: 2,
 		middleDividerWidth: 2,

@@ -2,8 +2,8 @@
 	"_note": "Cinlodev CUTE tunable layout numbers. Defaults are identical to the literals previously hardcoded in src/sidebar.ts, src/footer.ts, src/hud.ts, src/todos.ts, src/welcome.ts and src/editor.ts, so the default visual stays unchanged. Missing file or keys fall back to the defaults in src/cute-layout.ts.",
 	"sidebar": {
 		"breakpoint": 140,
-		"railWidth": 50,
-		"railPadding": 2,
+		"railWidth": 52,
+		"railPadding": 1,
 		"gap": 0,
 		"leftBorderWidth": 2,
 		"middleDividerWidth": 2,
