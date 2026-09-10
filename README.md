@@ -35,15 +35,17 @@
 * Symmetric double-line border with custom Unicode glyphs (`╔═ ◆ Cinlodev CUTE · la Gentlewoman ═╗`).
 
 ### 3. 🎛️ Persistent HUD Widget (`src/hud.ts`)
-* Sits cleanly above the prompt editor to provide continuous ambient feedback without polluting conversation history.
-* Displays real-time model name, thinking level, context window token gauge, input/output token counts, session cost, and active workspace path.
+* Sits one row below the transcript with a breathing line above it, providing continuous ambient feedback without polluting conversation history.
+* Displays real-time model name, thinking level, context window token gauge, input/output token counts, session cost, active workspace path, and the active Git branch badge next to `Dir:` in secondary pink (`│  branch`).
+* **Profile as icon + name:** shows the active model profile as `👤 name` (no brackets), fully tunable via `profileIcon` + `profileFormat`.
 * **Modes:** Full (`/hud full`), Compact (`/hud compact`), or Hidden (`/hud off`).
 
 ### 4. ✿ Double-Line Effort-Aware Prompt Editor (`src/editor.ts`)
 * Double frame (`╔═`, `║`, `╚═`) that wraps your command input seamlessly and renders at full width, aligned with native Pi cards.
 * **Effort-Aware Frame:** The frame follows the thinking level — mint `#B4E7C7` for minimal/low, gold `#E0C27A` for medium, violet `#8e44ad` for high and up — repainting live when you cycle with `Shift+Tab`.
 * **Animated Petal Indicator:** The flower icon spins through animated frames (`✿` → `❀` → `❁` → `✾`) with a muted `working` status whenever the agent executes a turn, resting peacefully in `✿` when idle.
-* **Pastel Pink Cursor:** Inverted block cursor styled in `#FFB1DD` pastel pink (`\x1b[48;2;255;177;221m`).
+* **Pastel Pink Cursor:** Inverted block cursor styled in `#FFB1DD` pastel pink (`\x1b[48;2;255;177;221m`), with one column of breathing room from the left rail (`║ █`).
+* **Clipping-Safe Frame:** renders with a 1-column safety margin so the terminal never cuts the closing corner (`╗`).
 
 ### 5. 🎀 CUTE Minimalist Statusline Footer (`src/footer.ts`)
 * Replaces the default status bar with a responsive, single-line dock:
@@ -53,13 +55,23 @@
 * **Intelligent Responsive Compaction:** Never wraps or breaks into multiple lines. On narrower splits (e.g. Herdr/tmux panes), it gracefully shortens branch names, drops secondary metrics, and compacts branding to keep your workspace clean.
 * **Host Todos Mirror:** the sidebar rail mirrors the host Todos checklist (read-only) when the session provides todo state.
 
-### 6. 🌸 Symmetrical Left Structural Rail & Breathing Space (`src/sidebar.ts`)
+### 6. 🌸 Symmetrical Rails & Full-Height Divider (`src/sidebar.ts`)
 * **Symmetrical Left Rail:** Mirrors the right-hand double violet vertical rail (`║`) along the entire left terminal edge.
+* **Full-Height Middle Divider:** an explicit `║` column between body and sidebar spanning every terminal row, so the division never breaks above the input.
+* **Equalized Sidebar Spacing:** rail geometry (`railWidth 52`, `railPadding 1`) tuned so sidebar cards breathe exactly like body cards.
 * **Breathing Space (`║ `):** Insets the body, cards, prompt editor, and statusline by 1 column so content never looks abruptly cut off against the terminal bezel.
 * **Dual-Mode Harmony:** Seamlessly active in both single-pane and wide multi-pane sidebar layouts.
 
 ### 7. ✎ Working-Tree Changes Cap (`lib/shell-changes.ts`)
 * Intelligently caps the listed modified files at a maximum of 5, appending `+N más` for remaining files to prevent screen clutter on wide terminals.
+
+### 8. 🎛️ Tunable Personalization Without Code Changes (`src/cute-*.ts` + `themes/CinlodevCute.*.json`)
+* **Non-destructive adapter:** the package transforms gentle-pi visuals without touching its files (e.g. it never deletes foreign state unless you opt in via `devBinaryHygiene`).
+* **Zero hardcoded visuals:** every color, text, glyph, layout number and path resolves through `src/cute-theme.ts`, `src/cute-strings.ts`, `src/cute-layout.ts` and `src/cute-paths.ts`, with compiled defaults as fallback — delete a JSON key and the classic CUTE look stays.
+* **`themes/CinlodevCute.json`** — palette (`vars`/`colors`) plus `glyphs`: `frameStyle` (`double`/`single`/`rounded`/`ascii`, with ASCII fallback for fonts without Nerd Font), frame corners, `branch`/`gauge`/`petalFrames`/`spinnerFrames` icons, and `profileIcon`.
+* **`themes/CinlodevCute.strings.json`** — every user-facing text: brand titles, persona placeholders (`{name}`/`{user}`/`{lang}`), `profileFormat` (`{icon} {name}`), editor hint, hotkeys, sidebar banner, todo titles, `/cinlodev` messages and all notifys.
+* **`themes/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
+* **`themes/CinlodevCute.paths.json`** — filesystem touchpoints: `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
 
 ---
 
