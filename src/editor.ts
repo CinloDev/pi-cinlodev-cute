@@ -61,7 +61,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 		uiTheme: Theme,
 		hasPending: () => boolean = () => false,
 	) {
-		super(tui, editorTheme, keybindings);
+		super(tui, editorTheme, keybindings, { paddingX: 1 });
 		this.tui = tui;
 		this.uiTheme = uiTheme;
 		this.hasPending = hasPending;
@@ -86,7 +86,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		const safeWidth = Math.max(10, width);
+		const safeWidth = Math.max(10, width - 1);
 		const lines = super.render(Math.max(1, safeWidth - 2));
 		if (this.getText() === "" && lines.length === 3) {
 			lines[1] = this.withPromptHint(lines[1], PROMPT_HINT);
@@ -179,9 +179,11 @@ export class CinlodevPromptEditor extends CustomEditor {
 			/\x1b\[7m(.*?)\x1b\[0m/g,
 			"\x1b[48;2;255;177;221m\x1b[38;2;26;18;24m$1\x1b[0m",
 		);
-		const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(styledLine)));
+		// Respiro interno de 1 columna a la izquierda (padding visual antes del contenido)
+		const contentWithLeftPad = " " + styledLine;
+		const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(contentWithLeftPad)));
 		const frame = this.frameColor();
-		return frame("║") + styledLine + padding + frame("║");
+		return frame("║") + contentWithLeftPad + padding + frame("║");
 	}
 }
 

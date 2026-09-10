@@ -52,6 +52,7 @@
     "selectedBg": "selection",
     "scrollbarTrack": "borderSubtle",
     "scrollbarThumb": "pink",
+    "secondary": "secondary",
     "userMessageBg": "userMessageBg",
     "userMessageText": "userMessageText",
     "customMessageBg": "bgSubtle",

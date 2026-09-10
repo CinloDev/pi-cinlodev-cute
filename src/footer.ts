@@ -9,6 +9,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { installSidebar, sidebarPart } from "./sidebar.ts";
+import { CinlodevTodoMirror } from "./todos.ts";
 
 const execAsync = promisify(exec);
 
@@ -22,6 +23,9 @@ const C_TEXT = "\x1b[38;2;246;239;243m";      // #F6EFF3 - Primary text
 const C_MUTED = "\x1b[38;2;167;142;155m";     // #A78E9B - Secondary labels
 const C_DIM = "\x1b[38;2;118;97;107m";        // #76616B - Dim / empty gauge
 const RESET = "\x1b[39m";
+
+let todoHooksInstalled = false;
+let latestTodoTui: TUI | undefined;
 
 const SEPARATOR = `${C_VIOLET}│${RESET}`;
 const GAUGE_CELLS = 6;
@@ -294,19 +298,42 @@ export class CinlodevCuteFooter implements Component {
 
 export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	if (!ctx.hasUI) return;
+	if (!todoHooksInstalled) {
+		todoHooksInstalled = true;
+		const refreshTodos = () => {
+			try {
+				latestTodoTui?.requestRender();
+			} catch {}
+		};
+		pi.on("session_start", refreshTodos);
+		pi.on("turn_end", refreshTodos);
+		pi.on("tool_execution_end", refreshTodos);
+	}
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
+		const todos = new CinlodevTodoMirror(ctx, tui);
+		latestTodoTui = tui;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
 		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
+		const todoBottom: Component & { dispose?(): void } = {
+			render: (width: number) => todos.renderBottom(width),
+			invalidate: () => todos.invalidate(),
+		};
+		const todoRail: Component & { dispose?(): void } = {
+			render: (width: number) => todos.renderRail(width),
+			invalidate: () => todos.invalidate(),
+		};
+		const todoPart = sidebarPart(tui, "todo", todoBottom, todoRail);
 		const uninstall = installSidebar(tui);
 		return {
 			...part,
 			dispose() {
 				uninstall();
 				part.dispose?.();
+				todoPart.dispose?.();
 			},
 		};
 	});

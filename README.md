@@ -51,8 +51,14 @@
   ✿ Cinlodev CUTE │  branch ±N │ model (high) │ ctx ▰▰▱▱▱▱ 15% │ $0.000 │ MCP: ready
   ```
 * **Intelligent Responsive Compaction:** Never wraps or breaks into multiple lines. On narrower splits (e.g. Herdr/tmux panes), it gracefully shortens branch names, drops secondary metrics, and compacts branding to keep your workspace clean.
+* **Host Todos Mirror:** the sidebar rail mirrors the host Todos checklist (read-only) when the session provides todo state.
 
-### 6. ✎ Working-Tree Changes Cap (`lib/shell-changes.ts`)
+### 6. 🌸 Symmetrical Left Structural Rail & Breathing Space (`src/sidebar.ts`)
+* **Symmetrical Left Rail:** Mirrors the right-hand double violet vertical rail (`║`) along the entire left terminal edge.
+* **Breathing Space (`║ `):** Insets the body, cards, prompt editor, and statusline by 1 column so content never looks abruptly cut off against the terminal bezel.
+* **Dual-Mode Harmony:** Seamlessly active in both single-pane and wide multi-pane sidebar layouts.
+
+### 7. ✎ Working-Tree Changes Cap (`lib/shell-changes.ts`)
 * Intelligently caps the listed modified files at a maximum of 5, appending `+N más` for remaining files to prevent screen clutter on wide terminals.
 
 ---

@@ -55,11 +55,13 @@ function formatCwd(cwd: string): string {
 }
 
 function borderTop(theme: Theme, title: string, width: number): string {
-	const leftLen = 3 + visibleWidth(title) + 1; // "╔═ " + title + " "
+	const maxTitleLen = Math.max(0, width - 6);
+	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╔═ " + title + " "
 	const dashCount = Math.max(0, width - leftLen - 1);
 	return (
 		"\x1b[38;2;142;68;173m╔═ \x1b[39m" +
-		title +
+		styledTitle +
 		"\x1b[38;2;142;68;173m " +
 		"═".repeat(dashCount) +
 		"╗\x1b[39m"
@@ -76,6 +78,32 @@ function boxedLine(theme: Theme, content: string, width: number): string {
 	const text = truncateToWidth(content, innerWidth, "…");
 	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(text)));
 	return "\x1b[38;2;142;68;173m║\x1b[39m" + text + padding + "\x1b[38;2;142;68;173m║\x1b[39m";
+}
+
+let cachedGitBranch: string = "no git";
+let lastGitBranchRead = 0;
+
+function getCachedGitBranch(cwd: string): string {
+	const now = Date.now();
+	if (now - lastGitBranchRead > 3000) {
+		lastGitBranchRead = now;
+		try {
+			const gitHeadPath = path.join(cwd, ".git", "HEAD");
+			if (fs.existsSync(gitHeadPath)) {
+				const headContent = fs.readFileSync(gitHeadPath, "utf8").trim();
+				if (headContent.startsWith("ref: refs/heads/")) {
+					cachedGitBranch = headContent.replace("ref: refs/heads/", "");
+				} else {
+					cachedGitBranch = headContent.slice(0, 7);
+				}
+			} else {
+				cachedGitBranch = "no git";
+			}
+		} catch {
+			cachedGitBranch = "no git";
+		}
+	}
+	return cachedGitBranch;
 }
 
 let cachedActiveProfile: string | undefined = undefined;
@@ -147,6 +175,7 @@ function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 		contextPercent,
 		model,
 		activeProfile,
+		gitBranch: getCachedGitBranch(ctx?.cwd ?? process.cwd()),
 		thinkingLevel: ctx?.thinkingLevel ?? "default",
 		cwd: ctx?.cwd ?? process.cwd(),
 		sessionFile: ctx?.sessionManager?.getSessionFile?.() ?? "ephemeral",
@@ -248,7 +277,18 @@ class GentlemanHudWidget implements Component {
 		// Cost & Cwd variants
 		const costLabelFull = theme.fg("muted", "Cost: ") + theme.fg("success", `$${stats.cost.toFixed(4)}`);
 		const costLabelCompact = theme.fg("success", `$${stats.cost.toFixed(4)}`);
-		const cwdLabelFull = theme.fg("muted", "Dir: ") + theme.fg("dim", cwdShort);
+		const branchSuffix =
+			stats.gitBranch && stats.gitBranch !== "no git"
+				? `${sep}${theme.fg("secondary", ` ${stats.gitBranch}`)}`
+				: "";
+		const cwdLabelFull =
+			theme.fg("accent", "Dir: ") +
+			`\x1b[1m${theme.fg("accent", cwdShort)}\x1b[22m` +
+			branchSuffix;
+		const cwdLabelCompact =
+			theme.fg("accent", "Dir: ") +
+			theme.fg("accent", cwdShort) +
+			branchSuffix;
 
 		const lines: string[] = [borderTop(theme, title, safeWidth)];
 
@@ -289,6 +329,7 @@ class GentlemanHudWidget implements Component {
 					let row3 = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
 					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
 					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelCompact}${sep}${cwdLabelFull}`;
+					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelCompact}${sep}${cwdLabelCompact}`;
 					if (visibleWidth(row3) > innerWidth) row3 = `  ${tokenLabelCompact}${sep}${costLabelCompact}`;
 
 					lines.push(boxedLine(theme, row1, safeWidth));
