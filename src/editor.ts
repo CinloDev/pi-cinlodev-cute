@@ -3,6 +3,7 @@ import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { cursorStyle, cuteGlyphs, safeFg } from "./cute-theme.ts";
+import { loadCuteLayout } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 export const PROMPT_STATE = {
@@ -53,7 +54,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 		uiTheme: Theme,
 		hasPending: () => boolean = () => false,
 	) {
-		super(tui, editorTheme, keybindings, { paddingX: 1 });
+		super(tui, editorTheme, keybindings, { paddingX: loadCuteLayout().editor.paddingX });
 		this.tui = tui;
 		this.uiTheme = uiTheme;
 		this.hasPending = hasPending;
@@ -71,7 +72,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 			this.pulse = setInterval(() => {
 				this.tick += 1;
 				this.tui.requestRender();
-			}, 160);
+			}, loadCuteLayout().editor.pulseMs);
 			this.pulse.unref();
 		}
 		this.tui.requestRender();
@@ -81,8 +82,9 @@ export class CinlodevPromptEditor extends CustomEditor {
 		// Igual que la card de arriba (HUD): ancho completo, sin recorte de 1.
 		// Se deja 1 col libre adentro para el respiro manual del cursor:
 		// base = safeWidth-3, +1 manual = safeWidth-2 = innerWidth, total = safeWidth.
-		const safeWidth = Math.max(10, width);
-		const lines = super.render(Math.max(1, safeWidth - 3));
+		const layout = loadCuteLayout().editor;
+		const safeWidth = Math.max(layout.minWidth, width);
+		const lines = super.render(Math.max(1, safeWidth - layout.innerReserve));
 		if (this.getText() === "" && lines.length === 3) {
 			lines[1] = this.withPromptHint(lines[1], loadCuteStrings().editorHint);
 		}

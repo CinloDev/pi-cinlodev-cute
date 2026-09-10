@@ -9,12 +9,19 @@ import type { Component } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
 import { cuteGlyphs, frameFg, safeFg as safeThemeFg } from "./cute-theme";
+import { loadCuteLayout } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
+import {
+	loadCutePaths,
+	quoteGitCwd,
+	readActiveProfile,
+	readGitBranch,
+	resolveAgentDir,
+} from "./cute-paths.ts";
 
 const execAsync = promisify(exec);
 
@@ -74,39 +81,21 @@ function boxedLine(theme: Theme, content: string, width: number): string {
 
 function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: ExtensionAPI): WelcomeStats {
 	const cwd = ctx.cwd ?? process.cwd();
-	const agentDir = path.join(os.homedir(), ".pi", "agent");
+	const paths = loadCutePaths();
+	const agentDir = resolveAgentDir(paths);
 
-	// 1. Git branch
-	let gitBranch = "no git";
-	try {
-		const gitHeadPath = path.join(cwd, ".git", "HEAD");
-		if (fs.existsSync(gitHeadPath)) {
-			const headContent = fs.readFileSync(gitHeadPath, "utf8").trim();
-			if (headContent.startsWith("ref: refs/heads/")) {
-				gitBranch = headContent.replace("ref: refs/heads/", "");
-			} else {
-				gitBranch = headContent.slice(0, 7);
-			}
-		}
-	} catch {
-		gitBranch = "no git";
-	}
+	// 1. Git branch (path shape from themes/CinlodevCute.paths.json via readGitBranch())
+	const gitBranch = readGitBranch(cwd, paths);
 
 	// 2. Model
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
 	const thinkingLevel = ctx.thinkingLevel ?? "default";
 
-	let activeProfile: string | undefined;
-	try {
-		const activePath = path.join(agentDir, "profiles", ".active");
-		if (fs.existsSync(activePath)) {
-			activeProfile = fs.readFileSync(activePath, "utf-8").trim() || undefined;
-		}
-	} catch {}
+	const activeProfile = readActiveProfile(paths);
 
 	// 3. Context files
 	const contextFiles: string[] = [];
-	const possibleContextFiles = ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "SPEC.md"];
+	const possibleContextFiles = paths.contextFiles;
 	for (const cf of possibleContextFiles) {
 		if (fs.existsSync(path.join(cwd, cf))) {
 			contextFiles.push(cf);
@@ -277,13 +266,13 @@ class GentlemanWelcomeWidget implements Component {
 
 	private getStats(): WelcomeStats {
 		const now = Date.now();
-		if (!this.cachedStats || now - this.lastStatsFetch > 10_000) {
+		if (!this.cachedStats || now - this.lastStatsFetch > loadCuteLayout().welcome.statsTtlMs) {
 			this.cachedStats = loadStats(this.getContext(), this.pi);
 			this.lastStatsFetch = now;
 			// Refresh git branch asynchronously if detached or empty
 			const ctx = this.getContext();
 			if (ctx.cwd) {
-				execAsync(`git -C "${ctx.cwd}" branch --show-current`)
+				execAsync(`git -C ${quoteGitCwd(ctx.cwd)} branch --show-current`)
 					.then(({ stdout }) => {
 						const b = stdout.trim();
 						if (b && this.cachedStats) this.cachedStats.gitBranch = b;
@@ -297,7 +286,8 @@ class GentlemanWelcomeWidget implements Component {
 	render(width: number): string[] {
 		const theme = this.theme;
 		const stats = this.getStats();
-		const safeWidth = Math.max(48, width);
+		const layout = loadCuteLayout().welcome;
+		const safeWidth = Math.max(layout.minWidth, width);
 		const hk = loadCuteStrings().welcomeHotkeys;
 		const g = cuteGlyphs(theme);
 
@@ -319,7 +309,7 @@ class GentlemanWelcomeWidget implements Component {
 
 		// Meta line
 		const branchLabel = stats.gitBranch !== "no git" ? cSuccess(`${g.branch} ${stats.gitBranch}`) : cDim("no git");
-		const displayModel = safeWidth < 90 ? shortModelName(stats.model) : stats.model;
+		const displayModel = safeWidth < layout.modelBreakpoint ? shortModelName(stats.model) : stats.model;
 		const modelLabel = `${cMuted("Model: ")}${cHeading(displayModel)}`;
 		const profileBadge = stats.activeProfile ? ` ${cDim(g.separator)} ${cMuted("Profile: ")}${cAccent(stats.activeProfile)}` : "";
 		const contextLabel = stats.contextFiles.length > 0
@@ -327,7 +317,7 @@ class GentlemanWelcomeWidget implements Component {
 			: `${cDim("Context: none")}`;
 
 		let metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge} ${cDim(g.separator)} ${contextLabel}`;
-		if (visibleWidth(metaRow) > safeWidth - 2 && safeWidth < 70) {
+		if (visibleWidth(metaRow) > safeWidth - 2 && safeWidth < layout.metaCollapseBreakpoint) {
 			metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge}`;
 		}
 		lines.push(boxedLine(theme, metaRow, safeWidth));
@@ -343,10 +333,10 @@ class GentlemanWelcomeWidget implements Component {
 			lines.push(boxedLine(theme, `  ${summaryBadges}`, safeWidth));
 
 			let hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim(g.dot)} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expandDashboard)}`;
-			if (safeWidth < 80) {
+			if (safeWidth < layout.hotkeysCompactBreakpoint) {
 				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commandsShort)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
-			if (safeWidth < 60) {
+			if (safeWidth < layout.hotkeysMinimalBreakpoint) {
 				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
 			lines.push(borderBottom(theme, hotkeys, safeWidth));

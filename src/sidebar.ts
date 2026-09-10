@@ -2,12 +2,7 @@ import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-wo
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg } from "./cute-theme.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
-
-export const SIDEBAR_BREAKPOINT = 140;
-export const RAIL_WIDTH = 50;
-export const RAIL_PADDING = 2;
-export const LEFT_BORDER_WIDTH = 2;
-export const GAP = 0;
+import { loadCuteLayout } from "./cute-layout.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -152,7 +147,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 	const leftBorder: Component = {
 		render(width: number) {
-			const rows = Math.max(1, tui.terminal?.rows ?? 50);
+			const rows = Math.max(1, tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows);
 			const line =
 				width >= 2
 					? `${subtle(railV)}${" ".repeat(width - 1)}`
@@ -190,26 +185,27 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 	const prepare = (width: number): boolean => {
 		state.active = false;
-		if (stopped || failed || host.mode !== "fullscreen" || width < SIDEBAR_BREAKPOINT) return false;
+		const layout = loadCuteLayout().sidebar;
+		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
-			const contentWidth = scroll.getContentWidth(RAIL_WIDTH);
+			const contentWidth = scroll.getContentWidth(layout.railWidth);
 			const sections = ["footer", "changes", "agents", "todo"]
 				.map((key) => {
-					const lines = [...(state.parts.get(key)?.render(contentWidth - RAIL_PADDING * 2) ?? [])];
+					const lines = [...(state.parts.get(key)?.render(contentWidth - layout.railPadding * 2) ?? [])];
 					while (lines.length && lines[lines.length - 1]?.trim() === "") lines.pop();
 					if (key !== "footer") return lines.map((line) => unifyCardFrame(line, theme));
 					return lines;
 				})
 				.filter((lines) => lines.length > 0);
 
-			const branding = renderCUTESidebarBanner(contentWidth - RAIL_PADDING * 2, theme);
+			const branding = renderCUTESidebarBanner(contentWidth - layout.railPadding * 2, theme);
 			if (sections.length && branding.length) sections.unshift(branding);
 
 			railLines = [
 				"",
 				...sections.flatMap((lines, index) => [
 					...(index === 0 ? [] : [""]),
-					...lines.map((line) => " ".repeat(RAIL_PADDING) + line + " ".repeat(RAIL_PADDING)),
+					...lines.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)),
 				]),
 			];
 
@@ -259,7 +255,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 			const middleDivider: Component = {
 				render(width: number) {
-					const rows = Math.max(1, tui.terminal?.rows ?? 50);
+					const rows = Math.max(1, tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows);
 					const line =
 						width >= 2
 							? `${" ".repeat(width - 1)}${subtle(railV)}`
@@ -275,9 +271,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				[NODE]: () => original.call(root),
 			};
 			const replacement = () => {
+				const layout = loadCuteLayout().sidebar;
 				const columns = tui.terminal.columns;
 				const active = prepare(columns);
-				const hasLeftBorder = columns >= 40;
+				const hasLeftBorder = columns >= layout.minColumnsWithBorder;
 
 				if (!hasLeftBorder && !active) {
 					restoreTranscript();
@@ -297,10 +294,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				if (hasLeftBorder) {
 					entries.push({
 						component: leftBorder,
-						basis: LEFT_BORDER_WIDTH,
+						basis: layout.leftBorderWidth,
 						grow: 0,
 						shrink: 0,
-						minSize: LEFT_BORDER_WIDTH,
+						minSize: layout.leftBorderWidth,
 					});
 				}
 				entries.push({
@@ -313,23 +310,23 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				if (active) {
 					entries.push({
 						component: middleDivider,
-						basis: 2,
+						basis: layout.middleDividerWidth,
 						grow: 0,
 						shrink: 0,
-						minSize: 2,
+						minSize: layout.middleDividerWidth,
 					});
 					entries.push({
 						component: scroll,
-						basis: RAIL_WIDTH,
+						basis: layout.railWidth,
 						grow: 0,
 						shrink: 0,
-						minSize: RAIL_WIDTH,
+						minSize: layout.railWidth,
 					});
 				}
 
 				return {
 					type: "hstack",
-					gap: GAP,
+					gap: layout.gap,
 					align: "stretch",
 					entries,
 				};
@@ -351,7 +348,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	};
 
 	attach();
-	const timer = setInterval(attach, 100);
+	const timer = setInterval(attach, loadCuteLayout().sidebar.attachMs);
 	timer.unref();
 
 	return () => {

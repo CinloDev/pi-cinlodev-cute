@@ -2,9 +2,10 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import * as os from "node:os";
 import { cuteGlyphs, frameFg } from "./cute-theme";
+import { loadCuteLayout } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
+import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
 
 type HudMode = "full" | "compact";
 
@@ -45,17 +46,6 @@ function shortThinkingLevel(level: string): string {
 	}
 }
 
-function formatCwd(cwd: string): string {
-	try {
-		const homedir = os.homedir();
-		if (cwd === homedir) return "~";
-		if (cwd.startsWith(homedir + "/")) {
-			return "~" + cwd.slice(homedir.length);
-		}
-	} catch {}
-	return cwd;
-}
-
 function borderTop(theme: Theme, title: string, width: number): string {
 	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
@@ -84,23 +74,9 @@ let lastGitBranchRead = 0;
 
 function getCachedGitBranch(cwd: string): string {
 	const now = Date.now();
-	if (now - lastGitBranchRead > 3000) {
+	if (now - lastGitBranchRead > loadCuteLayout().hud.gitBranchTtlMs) {
 		lastGitBranchRead = now;
-		try {
-			const gitHeadPath = path.join(cwd, ".git", "HEAD");
-			if (fs.existsSync(gitHeadPath)) {
-				const headContent = fs.readFileSync(gitHeadPath, "utf8").trim();
-				if (headContent.startsWith("ref: refs/heads/")) {
-					cachedGitBranch = headContent.replace("ref: refs/heads/", "");
-				} else {
-					cachedGitBranch = headContent.slice(0, 7);
-				}
-			} else {
-				cachedGitBranch = "no git";
-			}
-		} catch {
-			cachedGitBranch = "no git";
-		}
+		cachedGitBranch = readGitBranch(cwd);
 	}
 	return cachedGitBranch;
 }
@@ -110,18 +86,9 @@ let lastProfileRead = 0;
 
 function getCachedActiveProfile(): string | undefined {
 	const now = Date.now();
-	if (now - lastProfileRead > 5000) {
+	if (now - lastProfileRead > loadCuteLayout().hud.activeProfileTtlMs) {
 		lastProfileRead = now;
-		try {
-			const activePath = path.join(os.homedir(), ".pi", "agent", "profiles", ".active");
-			if (fs.existsSync(activePath)) {
-				cachedActiveProfile = fs.readFileSync(activePath, "utf-8").trim() || undefined;
-			} else {
-				cachedActiveProfile = undefined;
-			}
-		} catch {
-			cachedActiveProfile = undefined;
-		}
+		cachedActiveProfile = readActiveProfile();
 	}
 	return cachedActiveProfile;
 }
@@ -192,7 +159,7 @@ class GentlemanHudWidget implements Component {
 		const theme = this.theme;
 		const stats = collectStats(this.getContext());
 		const mode = this.getMode();
-		const safeWidth = Math.max(30, width);
+		const safeWidth = Math.max(loadCuteLayout().hud.minWidth, width);
 		const innerWidth = safeWidth - 2;
 
 		const title = theme.fg("accent", loadCuteStrings().hudTitle);
@@ -299,7 +266,7 @@ class GentlemanHudWidget implements Component {
 			}
 			lines.push(boxedLine(theme, candidate, safeWidth));
 		} else {
-			// Tier 1: Wide terminal (>= ~120 cols) -> 2 lines
+			// Tier 1: Wide terminal (>= hud.tierWideMin cols) -> 2 lines
 			const row1Wide = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}${sep}${ctxLabelFull}${sep}${sessionLabelFull}`;
 			const row2Wide = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
 
@@ -307,7 +274,7 @@ class GentlemanHudWidget implements Component {
 				lines.push(boxedLine(theme, row1Wide, safeWidth));
 				lines.push(boxedLine(theme, row2Wide, safeWidth));
 			} else {
-				// Tier 2: Medium terminal (80-119 cols) -> 3 lines clean (no truncation)
+				// Tier 2: Medium terminal (hud.tierMediumMin cols and up) -> 3 lines clean (no truncation)
 				const row1Med = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}`;
 				const row2Med = `  ${ctxLabelFull}${sep}${sessionLabelFull}`;
 				const row3Med = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
@@ -317,7 +284,7 @@ class GentlemanHudWidget implements Component {
 					lines.push(boxedLine(theme, row2Med, safeWidth));
 					lines.push(boxedLine(theme, row3Med, safeWidth));
 				} else {
-					// Tier 3: Narrow terminal (< 80 cols) -> adaptive compact badges
+					// Tier 3: Narrow terminal (< hud.tierMediumMin cols) -> adaptive compact badges
 					let row1 = `  ${modelLabelFull}`;
 					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelCompact}`;
 					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelMini}`;

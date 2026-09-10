@@ -12,6 +12,8 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
+import { loadCuteLayout } from "./cute-layout.ts";
+import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 
 const execAsync = promisify(exec);
 
@@ -24,7 +26,8 @@ let latestTodoTui: TUI | undefined;
 function separator(theme: Theme): string {
 	return frameFg(theme, cuteGlyphs(theme).separator);
 }
-const GAUGE_CELLS = 6;
+// Layout numbers (gauge cells, widths, intervals) come from
+// themes/CinlodevCute.layout.json via loadCuteLayout(). No hardcodes.
 
 function gaugeGlyphs(theme: Theme): { filled: string; empty: string } {
 	const g = cuteGlyphs(theme);
@@ -49,18 +52,20 @@ function sessionCost(ctx: ExtensionContext): number {
 }
 
 function formatCost(total: number): string {
-	return `$${total >= 1 ? total.toFixed(2) : total.toFixed(3)}`;
+	const layout = loadCuteLayout().footer;
+	return `$${total >= 1 ? total.toFixed(layout.costDecimalsAboveOne) : total.toFixed(layout.costDecimalsBelowOne)}`;
 }
 
 function renderGauge(theme: Theme, percent: number | null): string {
 	const c = cutePalette(theme);
 	const gauge = gaugeGlyphs(theme);
+	const cells = loadCuteLayout().footer.gaugeCells;
 	if (percent === null) {
-		return c.dim(gauge.empty.repeat(GAUGE_CELLS));
+		return c.dim(gauge.empty.repeat(cells));
 	}
 	const clamped = Math.max(0, Math.min(100, percent));
-	const filledCount = Math.round((clamped / 100) * GAUGE_CELLS);
-	const emptyCount = GAUGE_CELLS - filledCount;
+	const filledCount = Math.round((clamped / 100) * cells);
+	const emptyCount = cells - filledCount;
 
 	const filledStr = c.pinkBright(gauge.filled.repeat(filledCount));
 	const emptyStr = c.dim(gauge.empty.repeat(emptyCount));
@@ -100,11 +105,11 @@ export class CinlodevCuteFooter implements Component {
 
 	private refreshDirty(): void {
 		const now = Date.now();
-		if (now - this.lastDirtyCheck < 4000) return;
+		if (now - this.lastDirtyCheck < loadCuteLayout().footer.dirtyMs) return;
 		this.lastDirtyCheck = now;
 
 		const cwd = this.ctx.cwd ?? process.cwd();
-		execAsync(`git -C "${cwd}" status --porcelain`)
+		execAsync(`git -C ${quoteGitCwd(cwd)} status --porcelain`)
 			.then(({ stdout }) => {
 				const trimmed = stdout.trim();
 				const count = trimmed.length === 0 ? 0 : trimmed.split("\n").length;
@@ -120,7 +125,7 @@ export class CinlodevCuteFooter implements Component {
 
 	render(width: number): string[] {
 		this.refreshDirty();
-		const safeWidth = Math.max(20, width);
+		const safeWidth = Math.max(loadCuteLayout().footer.minWidth, width);
 		const c = cutePalette(this.theme);
 
 		// 1. Brand segment (texts from themes/CinlodevCute.strings.json via loadCuteStrings())
@@ -189,8 +194,9 @@ export class CinlodevCuteFooter implements Component {
 		}
 		if (visibleWidth(line) > safeWidth) {
 			// 2. Compact git branch if long
+			const branchMax = loadCuteLayout().footer.branchMax;
 			const compactBranch =
-				branch.length > 18 ? `${branch.slice(0, 17)}…` : branch;
+				branch.length > branchMax ? `${branch.slice(0, branchMax - 1)}…` : branch;
 			const compactGit = `${c.text(`${branchGlyph} ${compactBranch}`)}${dirtyBadge}`;
 			segments = [brandSegment, compactGit, modelSegment, contextSegment, costSegment];
 			line = joinLine(segments);
@@ -217,7 +223,7 @@ export class CinlodevCuteFooter implements Component {
 
 	renderSidebarCard(width: number): string[] {
 		this.refreshDirty();
-		const safeWidth = Math.max(30, width);
+		const safeWidth = Math.max(loadCuteLayout().footer.cardMinWidth, width);
 		const innerWidth = safeWidth - 4;
 		const c = cutePalette(this.theme);
 		const theme = this.theme;
@@ -246,8 +252,7 @@ export class CinlodevCuteFooter implements Component {
 		const bottom = frameFg(theme, `${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
 		const rawCwd = this.ctx.cwd ?? process.cwd();
-		const home = process.env.HOME ?? "";
-		const shortCwd = home && rawCwd.startsWith(home) ? `~${rawCwd.slice(home.length)}` : rawCwd;
+		const shortCwd = formatCwd(rawCwd);
 
 		const branch = this.footerData.getGitBranch() || "no-git";
 		const cardBranchGlyph = cuteGlyphs(theme).branch;
@@ -285,7 +290,7 @@ export class CinlodevCuteFooter implements Component {
 
 		if (extraStatuses.length > 0) {
 			lines.push(frameFg(theme, `${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
-			for (const status of extraStatuses.slice(0, 3)) {
+			for (const status of extraStatuses.slice(0, loadCuteLayout().footer.extraMax)) {
 				lines.push(boxLine(cMuted(status)));
 			}
 		}

@@ -2,10 +2,12 @@ import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
+import { loadCuteLayout } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 // Cinlodev CUTE colors come from themes/CinlodevCute.json via cutePalette().
 // No hardcoded ANSI here: footer.ts shares the same single source of truth.
+// Row limits and card width come from themes/CinlodevCute.layout.json via loadCuteLayout().
 const identityPalette: CutePalette = {
 	border: (s) => s,
 	pinkBright: (s) => s,
@@ -17,9 +19,6 @@ const identityPalette: CutePalette = {
 	dim: (s) => s,
 	mint: (s) => s,
 };
-
-const RAIL_MAX_ROWS = 8;
-const BOTTOM_MAX_ROWS = 4;
 
 export interface TodoTask {
 	id: number;
@@ -128,7 +127,7 @@ export class CinlodevTodoMirror implements Component {
 		const tasks = this.current();
 		this.touch(tasks);
 		if (tasks.length === 0) return [];
-		const safeWidth = Math.max(30, width);
+		const safeWidth = Math.max(loadCuteLayout().todos.minWidth, width);
 		const innerWidth = safeWidth - 4;
 		const c = this.palette();
 		const g = cuteGlyphs(this.theme);
@@ -169,7 +168,7 @@ export class CinlodevTodoMirror implements Component {
 
 	renderRail(width: number): string[] {
 		try {
-			return this.renderCard(width, RAIL_MAX_ROWS);
+			return this.renderCard(width, loadCuteLayout().todos.railMaxRows);
 		} catch {
 			return [];
 		}
@@ -177,7 +176,7 @@ export class CinlodevTodoMirror implements Component {
 
 	renderBottom(width: number): string[] {
 		try {
-			return this.renderCard(width, BOTTOM_MAX_ROWS);
+			return this.renderCard(width, loadCuteLayout().todos.bottomMaxRows);
 		} catch {
 			return [];
 		}
