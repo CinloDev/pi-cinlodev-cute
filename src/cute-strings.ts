@@ -305,13 +305,17 @@ function mergeStrings(raw: unknown): CuteStrings {
 	return base;
 }
 
+// Tunables live in config/, NOT in themes/: Pi treats every *.json under
+// themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
 function candidatePaths(): string[] {
 	const candidates: string[] = [];
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
+		candidates.push(path.join(here, "..", "config", CUTE_STRINGS_FILENAME));
 		candidates.push(path.join(here, "..", "themes", CUTE_STRINGS_FILENAME));
 	} catch {}
 	try {
+		candidates.push(path.join(process.cwd(), "config", CUTE_STRINGS_FILENAME));
 		candidates.push(path.join(process.cwd(), "themes", CUTE_STRINGS_FILENAME));
 	} catch {}
 	return candidates;
@@ -345,7 +349,7 @@ export function resetCuteStringsCache(): void {
 
 /**
  * Render the active profile as icon plus name without brackets, e.g. "👤 cinlodev".
- * "{icon}" and "{name}" placeholders come from themes/CinlodevCute.strings.json
+ * "{icon}" and "{name}" placeholders come from config/CinlodevCute.strings.json
  * profileFormat; empty inputs fall back to the compiled defaults.
  */
 export function formatProfileDisplay(icon: string, format: string, name: string): string {

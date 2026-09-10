@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * src/footer.ts, src/hud.ts and index.ts, so the default visual stays
  * unchanged — except devBinaryHygiene, which defaults to false so this
  * theme never deletes the foreign gentle-ai dev-binary file unless
- * explicitly opted in via themes/CinlodevCute.paths.json.
+ * explicitly opted in via config/CinlodevCute.paths.json.
  */
 export interface CutePaths {
 	/**
@@ -82,13 +82,17 @@ function mergePaths(raw: unknown): CutePaths {
 	return base;
 }
 
+// Tunables live in config/, NOT in themes/: Pi treats every *.json under
+// themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
 function candidatePaths(): string[] {
 	const candidates: string[] = [];
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
+		candidates.push(path.join(here, "..", "config", CUTE_PATHS_FILENAME));
 		candidates.push(path.join(here, "..", "themes", CUTE_PATHS_FILENAME));
 	} catch {}
 	try {
+		candidates.push(path.join(process.cwd(), "config", CUTE_PATHS_FILENAME));
 		candidates.push(path.join(process.cwd(), "themes", CUTE_PATHS_FILENAME));
 	} catch {}
 	return candidates;

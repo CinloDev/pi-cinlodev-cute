@@ -84,7 +84,7 @@ function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: Extensio
 	const paths = loadCutePaths();
 	const agentDir = resolveAgentDir(paths);
 
-	// 1. Git branch (path shape from themes/CinlodevCute.paths.json via readGitBranch())
+	// 1. Git branch (path shape from config/CinlodevCute.paths.json via readGitBranch())
 	const gitBranch = readGitBranch(cwd, paths);
 
 	// 2. Model
