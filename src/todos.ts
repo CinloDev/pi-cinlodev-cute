@@ -1,18 +1,22 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
+import { loadCuteStrings } from "./cute-strings.ts";
 
-// Cinlodev CUTE Palette ANSI TrueColor codes (identical to src/footer.ts)
-const C_VIOLET = "\x1b[38;2;142;68;173m";   // #8e44ad - Dividers & subtle borders
-const C_PINK_BRIGHT = "\x1b[38;2;255;177;221m"; // #FFB1DD - Petal / Glyph accent
-const C_PINK_ACCENT = "\x1b[38;2;240;149;200m"; // #F095C8 - Brand text
-const C_GOLD = "\x1b[38;2;224;194;122m";      // #E0C27A - Thinking / Highlights
-const C_YELLOW = "\x1b[38;2;242;184;109m";    // #F2B86D - Git dirty warning
-const C_TEXT = "\x1b[38;2;246;239;243m";      // #F6EFF3 - Primary text
-const C_MUTED = "\x1b[38;2;167;142;155m";     // #A78E9B - Secondary labels
-const C_DIM = "\x1b[38;2;118;97;107m";        // #76616B - Dim / empty gauge
-const C_MINT = "\x1b[38;2;180;231;199m";      // #B4E7C7 - Done checks
-const RESET = "\x1b[39m";
+// Cinlodev CUTE colors come from themes/CinlodevCute.json via cutePalette().
+// No hardcoded ANSI here: footer.ts shares the same single source of truth.
+const identityPalette: CutePalette = {
+	border: (s) => s,
+	pinkBright: (s) => s,
+	pinkAccent: (s) => s,
+	gold: (s) => s,
+	yellow: (s) => s,
+	text: (s) => s,
+	muted: (s) => s,
+	dim: (s) => s,
+	mint: (s) => s,
+};
 
 const RAIL_MAX_ROWS = 8;
 const BOTTOM_MAX_ROWS = 4;
@@ -79,21 +83,27 @@ export function readTodoTasks(ctx: ExtensionContext): TodoTask[] | undefined {
 	}
 }
 
-function glyphFor(status: TodoTask["status"]): string {
-	if (status === "done") return `${C_MINT}✓${RESET}`;
-	if (status === "in_progress") return `${C_GOLD}◉${RESET}`;
-	return `${C_DIM}○${RESET}`;
+function glyphFor(c: CutePalette, status: TodoTask["status"]): string {
+	if (status === "done") return c.mint("✓");
+	if (status === "in_progress") return c.gold("◉");
+	return c.dim("○");
 }
 
 /** Read-only mirror of the host harness todo checklist for the sidebar rail. */
 export class CinlodevTodoMirror implements Component {
 	private readonly ctx: ExtensionContext;
 	private readonly tui: TUI;
+	private readonly theme?: Theme;
 	private lastSignature = "";
 
-	constructor(ctx: ExtensionContext, tui: TUI) {
+	constructor(ctx: ExtensionContext, tui: TUI, theme?: Theme) {
 		this.ctx = ctx;
 		this.tui = tui;
+		this.theme = theme;
+	}
+
+	private palette(): CutePalette {
+		return this.theme ? cutePalette(this.theme) : identityPalette;
 	}
 
 	private current(): TodoTask[] {
@@ -120,28 +130,37 @@ export class CinlodevTodoMirror implements Component {
 		if (tasks.length === 0) return [];
 		const safeWidth = Math.max(30, width);
 		const innerWidth = safeWidth - 4;
+		const c = this.palette();
+		const frame = (s: string): string =>
+			this.theme ? frameFg(this.theme, s) : s;
 
 		const boxLine = (left: string, right = ""): string => {
 			const spaceNeeded = innerWidth - visibleWidth(left) - visibleWidth(right);
 			const pad = " ".repeat(Math.max(1, spaceNeeded));
 			const content = truncateToWidth(left + pad + right, innerWidth);
 			const fill = " ".repeat(Math.max(0, innerWidth - visibleWidth(content)));
-			return `${C_VIOLET}║${RESET} ${content}${fill} ${C_VIOLET}║${RESET}`;
+			return `${frame("║")} ${content}${fill} ${frame("║")}`;
 		};
 
 		const done = tasks.filter((task) => task.status === "done").length;
-		const rawTitle = `✿ Todos · ${done} of ${tasks.length}`;
-		const titleStr = `${C_PINK_BRIGHT}✿${RESET} ${C_TEXT}Todos · ${done} of ${tasks.length}${RESET}`;
+		const strings = loadCuteStrings().todos;
+		const titleText = strings.textFmt
+			.replace("{done}", String(done))
+			.replace("{total}", String(tasks.length));
+		const rawTitle = `${strings.glyph} ${titleText}`;
+		const titleStr = `${c.pinkBright(strings.glyph)} ${c.text(titleText)}`;
 		const fillTop = Math.max(0, safeWidth - 4 - visibleWidth(rawTitle) - 1);
-		const top = `${C_VIOLET}╔═ ${titleStr} ${C_VIOLET}${"═".repeat(fillTop)}╗${RESET}`;
-		const bottom = `${C_VIOLET}╚${"═".repeat(safeWidth - 2)}╝${RESET}`;
+		const top = `${frame("╔═ ")}${titleStr}${frame(` ${"═".repeat(fillTop)}╗`)}`;
+		const bottom = frame(`╚${"═".repeat(safeWidth - 2)}╝`);
 
 		const lines: string[] = [top];
 		for (const task of tasks.slice(0, maxRows)) {
-			lines.push(boxLine(`${glyphFor(task.status)} ${C_TEXT}${task.title}${RESET}`));
+			lines.push(boxLine(`${glyphFor(c, task.status)} ${c.text(task.title)}`));
 		}
 		if (tasks.length > maxRows) {
-			lines.push(boxLine(`${C_DIM}+${tasks.length - maxRows} más${RESET}`));
+			lines.push(
+				boxLine(c.dim(strings.moreFmt.replace("{remaining}", String(tasks.length - maxRows)))),
+			);
 		}
 		lines.push(bottom);
 		return lines;

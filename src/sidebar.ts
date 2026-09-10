@@ -1,4 +1,7 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { frameFg, safeFg } from "./cute-theme.ts";
+import { loadCuteStrings } from "./cute-strings.ts";
 
 export const SIDEBAR_BREAKPOINT = 140;
 export const RAIL_WIDTH = 50;
@@ -6,11 +9,11 @@ export const RAIL_PADDING = 2;
 export const LEFT_BORDER_WIDTH = 2;
 export const GAP = 0;
 
-const C_BORDER_SUBTLE = "\x1b[38;2;92;44;116m";
-const C_PINK = "\x1b[38;2;240;149;200m";
-const C_PINK_BRIGHT = "\x1b[38;2;255;177;221m";
-const RESET = "\x1b[39m";
-const C_VIOLET_FRAME = "\x1b[38;2;142;68;173m";
+// Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
+// (keys resolved by themes/CinlodevCute.json to the same hex as before):
+// borderSubtle #5c2c74 via "borderMuted", pink #F095C8 via "accent",
+// pinkBright #FFB1DD via "pinkBright", violet frame #8e44ad via "border",
+// text #F6EFF3 via "text". No hardcoded ANSI here.
 
 const SINGLE_TO_DOUBLE: Record<string, string> = {
 	"╭": "╔",
@@ -25,15 +28,17 @@ const SINGLE_TO_DOUBLE: Record<string, string> = {
 // bicolor (riel en tono + resto en border). Las pasamos a doble línea toda en
 // violeta oscuro, igual que nuestra card de Status. Solo toca tokens ANSI que
 // sean puro marco, así el contenido (título, +366, −10, etc.) queda intacto.
-function unifyCardFrame(raw: string): string {
+// Sin theme se devuelve el token intacto (sin re-colorear a mano).
+function unifyCardFrame(raw: string, theme?: Theme): string {
 	return raw.replace(
 		/\x1b\[[0-9;]+m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)/g,
 		(token) => {
+			if (!theme) return token;
 			const open = token.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
 			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
 			const glyphs = token.slice(open.length, token.length - close.length);
 			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => SINGLE_TO_DOUBLE[c] ?? c);
-			return `${C_VIOLET_FRAME}${doubled}${RESET}`;
+			return frameFg(theme, doubled);
 		},
 	);
 }
@@ -93,13 +98,17 @@ export function sidebarPart<T extends Component & { dispose?(): void }>(
 	};
 }
 
-export function renderCUTESidebarBanner(width: number): string[] {
-	const C_PINK = "\x1b[38;2;255;177;221m";
-	const C_TEXT = "\x1b[38;2;246;239;243m";
-	const RESET = "\x1b[39m";
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-	const label = "✿ Cinlodev CUTE · Gentle-Pi ✿";
-	const shortLabel = "✿ Cinlodev CUTE ✿";
+export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] {
+	const pink = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
+	const text = (s: string): string => (theme ? safeFg(theme, "text", s) : s);
+	const banner = loadCuteStrings().sidebarBanner;
+
+	const label = banner.full;
+	const shortLabel = banner.short;
 	const raw = width >= visibleWidth(label) ? label : shortLabel;
 	const space = width - visibleWidth(raw);
 	if (space < 0) return [];
@@ -108,16 +117,19 @@ export function renderCUTESidebarBanner(width: number): string[] {
 	const rightPad = Math.ceil(space / 2);
 
 	const formatted = raw
-		.replace(/✿/g, `${C_PINK}✿${RESET}`)
-		.replace(/Cinlodev CUTE/g, `${C_PINK}Cinlodev CUTE${RESET}`)
-		.replace(/Gentle-Pi/g, `${C_TEXT}Gentle-Pi${RESET}`);
+		.replace(new RegExp(escapeRegExp(banner.glyph), "g"), pink(banner.glyph))
+		.replace(new RegExp(escapeRegExp(banner.brand), "g"), pink(banner.brand))
+		.replace(new RegExp(escapeRegExp(banner.partner), "g"), text(banner.partner));
 
 	return [" ".repeat(leftPad) + formatted + " ".repeat(rightPad)];
 }
 
-export function installSidebar(tui: TUI): () => void {
+export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	if (!tui.terminal) return () => {};
 	const host = tui as Host;
+	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
+	const pink = (s: string): string => (theme ? safeFg(theme, "accent", s) : s);
+	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const state = sidebarState(tui);
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
@@ -139,8 +151,8 @@ export function installSidebar(tui: TUI): () => void {
 			const rows = Math.max(1, tui.terminal?.rows ?? 50);
 			const line =
 				width >= 2
-					? `${C_BORDER_SUBTLE}║${RESET}${" ".repeat(width - 1)}`
-					: `${C_BORDER_SUBTLE}║${RESET}`;
+					? `${subtle("║")}${" ".repeat(width - 1)}`
+					: subtle("║");
 			return Array(rows).fill(line);
 		},
 		invalidate() {},
@@ -151,8 +163,8 @@ export function installSidebar(tui: TUI): () => void {
 		primary: false,
 		overscroll: "contain",
 		scrollbar: "always",
-		scrollbarTrackStyle: () => `${C_BORDER_SUBTLE}║${RESET}`,
-		scrollbarThumbStyle: (text) => (text === "█" ? `${C_PINK_BRIGHT}║${RESET}` : `${C_PINK}║${RESET}`),
+		scrollbarTrackStyle: () => subtle("║"),
+		scrollbarThumbStyle: (text) => (text === "█" ? pinkBright("║") : pink("║")),
 	});
 
 	const nativeMouse = scroll.handleMouse.bind(scroll);
@@ -181,12 +193,12 @@ export function installSidebar(tui: TUI): () => void {
 				.map((key) => {
 					const lines = [...(state.parts.get(key)?.render(contentWidth - RAIL_PADDING * 2) ?? [])];
 					while (lines.length && lines[lines.length - 1]?.trim() === "") lines.pop();
-					if (key !== "footer") return lines.map(unifyCardFrame);
+					if (key !== "footer") return lines.map((line) => unifyCardFrame(line, theme));
 					return lines;
 				})
 				.filter((lines) => lines.length > 0);
 
-			const branding = renderCUTESidebarBanner(contentWidth - RAIL_PADDING * 2);
+			const branding = renderCUTESidebarBanner(contentWidth - RAIL_PADDING * 2, theme);
 			if (sections.length && branding.length) sections.unshift(branding);
 
 			railLines = [
@@ -228,9 +240,9 @@ export function installSidebar(tui: TUI): () => void {
 
 			const applyCuteScrollbars = () => {
 				if (!transcript) return;
-				(transcript as any).scrollbarTrackStyle = () => `${C_BORDER_SUBTLE}║${RESET}`;
+				(transcript as any).scrollbarTrackStyle = () => subtle("║");
 				(transcript as any).scrollbarThumbStyle = (text: string) =>
-					text === "█" ? `${C_PINK_BRIGHT}║${RESET}` : `${C_PINK}║${RESET}`;
+					text === "█" ? pinkBright("║") : pink("║");
 				if (transcript.scrollbar !== "always") transcript.setScrollbar("always");
 			};
 
@@ -246,8 +258,8 @@ export function installSidebar(tui: TUI): () => void {
 					const rows = Math.max(1, tui.terminal?.rows ?? 50);
 					const line =
 						width >= 2
-							? `${" ".repeat(width - 1)}${C_BORDER_SUBTLE}║${RESET}`
-							: `${C_BORDER_SUBTLE}║${RESET}`;
+							? `${" ".repeat(width - 1)}${subtle("║")}`
+							: subtle("║");
 					return Array(rows).fill(line);
 				},
 				invalidate() {},

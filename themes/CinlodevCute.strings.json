@@ -1,0 +1,81 @@
+{
+	"_note": "Cinlodev CUTE customizable texts. Colors stay in CinlodevCute.json via theme.fg(); this file only holds human-readable strings. Missing file or keys fall back to the defaults in src/cute-strings.ts, so the default visual stays identical.",
+	"brandTitle": "◆ Cinlodev CUTE",
+	"brandShort": "✿ Cinlodev CUTE",
+	"brandFallback": "✿ Cinlodev",
+	"hudTitle": "◆ Cinlodev CUTE",
+	"footerBrand": "Cinlodev CUTE",
+	"footerShort": "Cinlodev",
+	"footerSymbol": "✿",
+	"hudDescriptions": {
+		"hud": "Toggle or configure persistent Cinlodev CUTE HUD widget above input (/hud, /hud compact, /hud full, /hud off)",
+		"hudStatus": "Toggle the Cinlodev CUTE HUD footer status line"
+	},
+	"notifys": {
+		"notInTui": "Cinlodev CUTE HUD widget is available in TUI mode.",
+		"deactivated": "Cinlodev CUTE HUD desactivado",
+		"activated": "Cinlodev CUTE HUD activado encima del input",
+		"compact": "Cinlodev CUTE HUD modo compacto activado",
+		"full": "Cinlodev CUTE HUD modo completo activado",
+		"activatedWithMode": "Cinlodev CUTE HUD activado encima del input ({mode})",
+		"statusActivated": "Cinlodev CUTE HUD footer status activado",
+		"statusDeactivated": "Cinlodev CUTE HUD footer status desactivado",
+		"welcomeHidden": "Gentlewoman Welcome Dashboard ocultado",
+		"welcomeShown": "Gentlewoman Welcome Dashboard activado",
+		"welcomeExpanded": "Gentlewoman Welcome Dashboard: modo expandido",
+		"welcomeCompact": "Gentlewoman Welcome Dashboard: modo compacto",
+		"welcomeRefreshed": "Gentlewoman Welcome Dashboard actualizado",
+		"welcomeToggleFmt": "Gentlewoman Welcome Dashboard: {mode}",
+		"welcomeDisabled": "Gentlewoman Welcome Dashboard desactivado",
+		"welcomeModeExpanded": "modo expandido",
+		"welcomeModeCompact": "modo compacto"
+	},
+	"hudStatusLine": {
+		"brand": "◆ cinlodev",
+		"modelFmt": "model {model}",
+		"ctxFmt": "ctx {context}",
+		"toolsFmt": "tools {tools}"
+	},
+	"sidebarBanner": {
+		"full": "✿ Cinlodev CUTE · Gentle-Pi ✿",
+		"short": "✿ Cinlodev CUTE ✿",
+		"glyph": "✿",
+		"brand": "Cinlodev CUTE",
+		"partner": "Gentle-Pi"
+	},
+	"todos": {
+		"glyph": "✿",
+		"textFmt": "Todos · {done} of {total}",
+		"moreFmt": "+{remaining} más"
+	},
+	"statusTitle": "✿ Status",
+	"welcomePersona": {
+		"name": "la Gentlewoman",
+		"user": "Cinlo",
+		"lang": "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
+		"contractTemplate": "\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user} (cinlodev).\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es mujer y desarrolladora (cinlodev). Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		"replacements": [
+			{ "from": "el Gentleman", "to": "la Gentlewoman" },
+			{ "from": "El Gentleman", "to": "La Gentlewoman" }
+		]
+	},
+	"editorHint": "type, or / for commands",
+	"welcomeTitles": {
+		"persona": "la Gentlewoman",
+		"dashboard": "Gentlewoman Welcome Dashboard",
+		"themeFallback": "Cinlodev CUTE",
+		"commandDescription": "Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)"
+	},
+	"welcomeHotkeys": {
+		"interrupt": "interrupt",
+		"commands": "commands",
+		"commandsShort": "cmd",
+		"bash": "bash",
+		"expandDashboard": "expand dashboard",
+		"expand": "expand",
+		"collapse": "collapse"
+	},
+	"commandName": "cinlodev",
+	"commandDescription": "Check or reapply Cinlodev CUTE aesthetics and widgets (/cinlodev)",
+	"commandNotify": "🌸 Cinlodev CUTE: Header, HUD, Editor y Footer CUTE aplicados."
+}

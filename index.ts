@@ -3,6 +3,7 @@ import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
 import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
 import { installCinlodevFooter } from "./src/footer.js";
+import { loadCuteStrings } from "./src/cute-strings.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -50,13 +51,13 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 	});
 
 	// 5. Command to inspect / reapply
-	pi.registerCommand("cinlodev", {
-		description: "Check or reapply Cinlodev CUTE aesthetics and widgets (/cinlodev)",
+	pi.registerCommand(loadCuteStrings().commandName, {
+		description: loadCuteStrings().commandDescription,
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			if (!ctx.hasUI) return;
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);
-			ctx.ui.notify("🌸 Cinlodev CUTE: Header, HUD, Editor y Footer CUTE aplicados.", "info");
+			ctx.ui.notify(loadCuteStrings().commandNotify, "info");
 		},
 	});
 }
