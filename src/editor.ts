@@ -2,6 +2,9 @@ import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { cursorStyle, cuteGlyphs, safeFg } from "./cute-theme.ts";
+import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteStrings } from "./cute-strings.ts";
 
 export const PROMPT_STATE = {
 	IDLE: "idle",
@@ -11,8 +14,6 @@ export const PROMPT_STATE = {
 
 export type PromptState = (typeof PROMPT_STATE)[keyof typeof PROMPT_STATE];
 
-const PETAL_FRAMES = ["✿", "❀", "❁", "✾"] as const;
-const PROMPT_HINT = "type, or / for commands";
 const FAKE_CURSOR = "\x1b[7m \x1b[0m";
 const SCROLL_INDICATOR = /[↑↓] \d+ more/;
 
@@ -24,25 +25,17 @@ function rule(length: number): string {
 	return "═".repeat(Math.max(0, length));
 }
 
-function safeFg(theme: Theme | undefined, color: string, text: string, fallback: string = text): string {
-	try {
-		return theme?.fg ? theme.fg(color as any, text) : fallback;
-	} catch {
-		return fallback;
-	}
-}
-
 // Marco del input según esfuerzo (thinking level): bajo = verde menta,
 // intermedio = dorado, high para arriba = violeta actual.
-const FRAME_VIOLET = "142;68;173";
-const FRAME_MINT = "180;231;199";
-const FRAME_GOLD = "224;194;122";
-
-function frameRgbForThinking(level: string | undefined): string {
+// Keys resueltas por themes/CinlodevCute.json al mismo hex de antes:
+// thinkingLow -> green (#B4E7C7 MINT), thinkingMedium -> heading (#E0C27A GOLD),
+// thinkingHigh/thinkingXhigh -> border (#8e44ad VIOLET).
+function frameKeyForThinking(level: string | undefined): string {
 	const normalized = (level ?? "default").toLowerCase();
-	if (normalized === "minimal" || normalized === "low" || normalized === "off") return FRAME_MINT;
-	if (normalized === "medium") return FRAME_GOLD;
-	return FRAME_VIOLET;
+	if (normalized === "minimal" || normalized === "low" || normalized === "off") return "thinkingLow";
+	if (normalized === "medium") return "thinkingMedium";
+	if (normalized === "high") return "thinkingHigh";
+	return "thinkingXhigh";
 }
 
 export class CinlodevPromptEditor extends CustomEditor {
@@ -61,7 +54,7 @@ export class CinlodevPromptEditor extends CustomEditor {
 		uiTheme: Theme,
 		hasPending: () => boolean = () => false,
 	) {
-		super(tui, editorTheme, keybindings, { paddingX: 1 });
+		super(tui, editorTheme, keybindings, { paddingX: loadCuteLayout().editor.paddingX });
 		this.tui = tui;
 		this.uiTheme = uiTheme;
 		this.hasPending = hasPending;
@@ -79,17 +72,21 @@ export class CinlodevPromptEditor extends CustomEditor {
 			this.pulse = setInterval(() => {
 				this.tick += 1;
 				this.tui.requestRender();
-			}, 160);
+			}, loadCuteLayout().editor.pulseMs);
 			this.pulse.unref();
 		}
 		this.tui.requestRender();
 	}
 
 	render(width: number): string[] {
-		const safeWidth = Math.max(10, width - 1);
-		const lines = super.render(Math.max(1, safeWidth - 2));
+		// Igual que la card de arriba (HUD): ancho completo, sin recorte de 1.
+		// Se deja 1 col libre adentro para el respiro manual del cursor:
+		// base = safeWidth-3, +1 manual = safeWidth-2 = innerWidth, total = safeWidth.
+		const layout = loadCuteLayout().editor;
+		const safeWidth = Math.max(layout.minWidth, width);
+		const lines = super.render(Math.max(1, safeWidth - layout.innerReserve));
 		if (this.getText() === "" && lines.length === 3) {
-			lines[1] = this.withPromptHint(lines[1], PROMPT_HINT);
+			lines[1] = this.withPromptHint(lines[1], loadCuteStrings().editorHint);
 		}
 		const state =
 			this.promptState === PROMPT_STATE.WORKING && this.hasPending()
@@ -146,7 +143,9 @@ export class CinlodevPromptEditor extends CustomEditor {
 		tick: number,
 		indicator?: string,
 	): string {
-		const glyph = state === PROMPT_STATE.IDLE ? "✿" : PETAL_FRAMES[tick % PETAL_FRAMES.length];
+		const petals = cuteGlyphs(this.uiTheme).petalFrames;
+		const frames = petals.length > 0 ? petals : ["*"];
+		const glyph = state === PROMPT_STATE.IDLE ? frames[0] : frames[tick % frames.length];
 		let petalColor = "pinkBright";
 		if (state === PROMPT_STATE.QUEUED) petalColor = "warning";
 		else if (state === PROMPT_STATE.WORKING) petalColor = "accent";
@@ -162,8 +161,8 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 
 	private frameColor(): (text: string) => string {
-		const rgb = frameRgbForThinking(this.thinkingLevel);
-		return (text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
+		const key = frameKeyForThinking(this.thinkingLevel);
+		return (text: string) => safeFg(this.uiTheme, key, text, "border");
 	}
 
 	private bottomRule(width: number, indicator?: string): string {
@@ -174,12 +173,21 @@ export class CinlodevPromptEditor extends CustomEditor {
 	}
 
 	private sideRules(line: string, innerWidth: number): string {
-		// Reemplazar cursor inverso blanco por rosa pastel (#FFB1DD)
+		// Reemplazar cursor inverso blanco por rosa pastel (#FFB1DD sobre #1A1218)
+		// vía keys de theme (pinkBright + cursorText); sin theme válido se deja intacto.
 		const styledLine = line.replace(
 			/\x1b\[7m(.*?)\x1b\[0m/g,
-			"\x1b[48;2;255;177;221m\x1b[38;2;26;18;24m$1\x1b[0m",
+			(match, inner) => {
+				try {
+					return cursorStyle(this.uiTheme, inner as string);
+				} catch {
+					return match;
+				}
+			},
 		);
-		// Respiro interno de 1 columna a la izquierda (padding visual antes del contenido)
+		// Respiro de 1 col a la izquierda para que el puntero no quede pegado a la ║.
+		// La base ya se renderiza 1 col más angosta (safeWidth-3), así este espacio
+		// extra no empuja la raya lateral ni excede el ancho total.
 		const contentWithLeftPad = " " + styledLine;
 		const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(contentWithLeftPad)));
 		const frame = this.frameColor();

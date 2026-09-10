@@ -9,28 +9,37 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { installSidebar, sidebarPart } from "./sidebar.ts";
+import { cuteGlyphs, cutePalette, frameFg } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
+import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
+import { loadCuteLayout } from "./cute-layout.ts";
+import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 
 const execAsync = promisify(exec);
 
-// Cinlodev CUTE Palette ANSI TrueColor codes
-const C_VIOLET = "\x1b[38;2;142;68;173m";   // #8e44ad - Dividers & subtle borders
-const C_PINK_BRIGHT = "\x1b[38;2;255;177;221m"; // #FFB1DD - Petal / Glyph accent
-const C_PINK_ACCENT = "\x1b[38;2;240;149;200m"; // #F095C8 - Brand text
-const C_GOLD = "\x1b[38;2;224;194;122m";      // #E0C27A - Thinking / Highlights
-const C_YELLOW = "\x1b[38;2;242;184;109m";    // #F2B86D - Git dirty warning
-const C_TEXT = "\x1b[38;2;246;239;243m";      // #F6EFF3 - Primary text
-const C_MUTED = "\x1b[38;2;167;142;155m";     // #A78E9B - Secondary labels
-const C_DIM = "\x1b[38;2;118;97;107m";        // #76616B - Dim / empty gauge
-const RESET = "\x1b[39m";
+// Cinlodev CUTE colors come from themes/CinlodevCute.json via cutePalette()
+// (border, pinkBright, accent, heading, warning, text, muted, dim). No hardcodes.
 
 let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
 
-const SEPARATOR = `${C_VIOLET}│${RESET}`;
-const GAUGE_CELLS = 6;
-const GAUGE_FILLED = "▰";
-const GAUGE_EMPTY = "▱";
+function separator(theme: Theme): string {
+	return frameFg(theme, cuteGlyphs(theme).separator);
+}
+// Layout numbers (gauge cells, widths, intervals) come from
+// themes/CinlodevCute.layout.json via loadCuteLayout(). No hardcodes.
+
+function gaugeGlyphs(theme: Theme): { filled: string; empty: string } {
+	const g = cuteGlyphs(theme);
+	return { filled: g.gaugeFilled, empty: g.gaugeEmpty };
+}
+
+/** Render a host "[name]" status as icon plus name; other statuses pass through. */
+function prettifyExtraStatus(raw: string, theme: Theme): string {
+	const name = matchBracketProfile(raw);
+	if (name === null) return raw.trim();
+	return formatProfileDisplay(cuteGlyphs(theme).profileIcon, loadCuteStrings().profileFormat, name);
+}
 
 function shortModelName(modelId: string): string {
 	const parts = modelId.split("/");
@@ -50,19 +59,23 @@ function sessionCost(ctx: ExtensionContext): number {
 }
 
 function formatCost(total: number): string {
-	return `$${total >= 1 ? total.toFixed(2) : total.toFixed(3)}`;
+	const layout = loadCuteLayout().footer;
+	return `$${total >= 1 ? total.toFixed(layout.costDecimalsAboveOne) : total.toFixed(layout.costDecimalsBelowOne)}`;
 }
 
-function renderGauge(percent: number | null): string {
+function renderGauge(theme: Theme, percent: number | null): string {
+	const c = cutePalette(theme);
+	const gauge = gaugeGlyphs(theme);
+	const cells = loadCuteLayout().footer.gaugeCells;
 	if (percent === null) {
-		return `${C_DIM}${GAUGE_EMPTY.repeat(GAUGE_CELLS)}${RESET}`;
+		return c.dim(gauge.empty.repeat(cells));
 	}
 	const clamped = Math.max(0, Math.min(100, percent));
-	const filledCount = Math.round((clamped / 100) * GAUGE_CELLS);
-	const emptyCount = GAUGE_CELLS - filledCount;
+	const filledCount = Math.round((clamped / 100) * cells);
+	const emptyCount = cells - filledCount;
 
-	const filledStr = `${C_PINK_BRIGHT}${GAUGE_FILLED.repeat(filledCount)}${RESET}`;
-	const emptyStr = `${C_DIM}${GAUGE_EMPTY.repeat(emptyCount)}${RESET}`;
+	const filledStr = c.pinkBright(gauge.filled.repeat(filledCount));
+	const emptyStr = c.dim(gauge.empty.repeat(emptyCount));
 	return filledStr + emptyStr;
 }
 
@@ -99,11 +112,11 @@ export class CinlodevCuteFooter implements Component {
 
 	private refreshDirty(): void {
 		const now = Date.now();
-		if (now - this.lastDirtyCheck < 4000) return;
+		if (now - this.lastDirtyCheck < loadCuteLayout().footer.dirtyMs) return;
 		this.lastDirtyCheck = now;
 
 		const cwd = this.ctx.cwd ?? process.cwd();
-		execAsync(`git -C "${cwd}" status --porcelain`)
+		execAsync(`git -C ${quoteGitCwd(cwd)} status --porcelain`)
 			.then(({ stdout }) => {
 				const trimmed = stdout.trim();
 				const count = trimmed.length === 0 ? 0 : trimmed.split("\n").length;
@@ -119,35 +132,38 @@ export class CinlodevCuteFooter implements Component {
 
 	render(width: number): string[] {
 		this.refreshDirty();
-		const safeWidth = Math.max(20, width);
+		const safeWidth = Math.max(loadCuteLayout().footer.minWidth, width);
+		const c = cutePalette(this.theme);
 
-		// 1. Brand segment: ✿ Cinlodev CUTE
-		const brandSegment = `${C_PINK_BRIGHT}✿${RESET} ${C_PINK_ACCENT}Cinlodev CUTE${RESET}`;
+		// 1. Brand segment (texts from themes/CinlodevCute.strings.json via loadCuteStrings())
+		const strings = loadCuteStrings();
+		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerBrand)}`;
 
-		// 2. Git branch & dirty badge:  branch ±N
+		// 2. Git branch & dirty badge (branch glyph via cuteGlyphs)
 		const branch = this.footerData.getGitBranch() || "no-git";
+		const branchGlyph = cuteGlyphs(this.theme).branch;
 		const dirtyBadge =
-			this.dirtyCount && this.dirtyCount > 0 ? ` ${C_YELLOW}±${this.dirtyCount}${RESET}` : "";
-		const gitSegment = `${C_TEXT} ${branch}${RESET}${dirtyBadge}`;
+			this.dirtyCount && this.dirtyCount > 0 ? ` ${c.yellow(`±${this.dirtyCount}`)}` : "";
+		const gitSegment = `${c.text(`${branchGlyph} ${branch}`)}${dirtyBadge}`;
 
 		// 3. Model & thinking level: model (thinking)
 		const rawModel = this.ctx.model?.id ?? "no-model";
 		const displayModel = shortModelName(rawModel);
 		const thinking = this.pi.getThinkingLevel();
 		const thinkingLabel =
-			thinking && thinking !== "off" ? ` ${C_GOLD}(${thinking})${RESET}` : "";
-		const modelSegment = `${C_TEXT}${displayModel}${RESET}${thinkingLabel}`;
+			thinking && thinking !== "off" ? ` ${c.gold(`(${thinking})`)}` : "";
+		const modelSegment = `${c.text(displayModel)}${thinkingLabel}`;
 
-		// 4. Context gauge: ctx ▰▰▱▱▱▱ 10%
+		// 4. Context gauge (cells via cuteGlyphs gaugeFilled/gaugeEmpty)
 		const usage = this.ctx.getContextUsage?.();
 		const percent = usage?.percent ?? null;
 		const percentStr = percent !== null ? `${Math.round(percent)}%` : "?%";
-		const gaugeStr = renderGauge(percent);
-		const contextSegment = `${C_MUTED}ctx${RESET} ${gaugeStr} ${C_TEXT}${percentStr}${RESET}`;
+		const gaugeStr = renderGauge(this.theme, percent);
+		const contextSegment = `${c.muted("ctx")} ${gaugeStr} ${c.text(percentStr)}`;
 
 		// 5. Session Cost: $0.000
 		const costStr = formatCost(sessionCost(this.ctx));
-		const costSegment = `${C_TEXT}${costStr}${RESET}`;
+		const costSegment = `${c.text(costStr)}`;
 
 		// 6. Optional extension statuses (e.g. MCP servers, background jobs)
 		const extraStatuses: string[] = [];
@@ -156,7 +172,7 @@ export class CinlodevCuteFooter implements Component {
 			if (statusesMap) {
 				for (const [, text] of statusesMap) {
 					if (text && text.trim().length > 0) {
-						extraStatuses.push(`${C_MUTED}${text.trim()}${RESET}`);
+						extraStatuses.push(c.muted(prettifyExtraStatus(text, this.theme)));
 					}
 				}
 			}
@@ -172,7 +188,7 @@ export class CinlodevCuteFooter implements Component {
 			...extraStatuses,
 		];
 
-		const joinLine = (segs: string[]) => segs.join(` ${SEPARATOR} `);
+		const joinLine = (segs: string[]) => segs.join(` ${separator(this.theme)} `);
 		let line = joinLine(segments);
 
 		// If it overflows terminal width, progressively compact
@@ -185,9 +201,10 @@ export class CinlodevCuteFooter implements Component {
 		}
 		if (visibleWidth(line) > safeWidth) {
 			// 2. Compact git branch if long
+			const branchMax = loadCuteLayout().footer.branchMax;
 			const compactBranch =
-				branch.length > 18 ? `${branch.slice(0, 17)}…` : branch;
-			const compactGit = `${C_TEXT} ${compactBranch}${RESET}${dirtyBadge}`;
+				branch.length > branchMax ? `${branch.slice(0, branchMax - 1)}…` : branch;
+			const compactGit = `${c.text(`${branchGlyph} ${compactBranch}`)}${dirtyBadge}`;
 			segments = [brandSegment, compactGit, modelSegment, contextSegment, costSegment];
 			line = joinLine(segments);
 		}
@@ -202,8 +219,8 @@ export class CinlodevCuteFooter implements Component {
 			line = joinLine(segments);
 		}
 		if (visibleWidth(line) > safeWidth) {
-			// 5. Shorten brand to ✿ Cinlodev
-			const shortBrand = `${C_PINK_BRIGHT}✿${RESET} ${C_PINK_ACCENT}Cinlodev${RESET}`;
+			// 5. Shorten brand (texts from themes/CinlodevCute.strings.json via loadCuteStrings())
+			const shortBrand = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerShort)}`;
 			segments = [shortBrand, segments[1]];
 			line = joinLine(segments);
 		}
@@ -213,47 +230,50 @@ export class CinlodevCuteFooter implements Component {
 
 	renderSidebarCard(width: number): string[] {
 		this.refreshDirty();
-		const safeWidth = Math.max(30, width);
+		const safeWidth = Math.max(loadCuteLayout().footer.cardMinWidth, width);
 		const innerWidth = safeWidth - 4;
+		const c = cutePalette(this.theme);
+		const theme = this.theme;
 
-		const border = C_VIOLET;
-		const cTitle = C_PINK_BRIGHT;
-		const cLabel = C_GOLD;
-		const cText = C_TEXT;
-		const cAccent = C_PINK_ACCENT;
-		const cWarning = C_YELLOW;
-		const cMuted = C_MUTED;
+		const cTitle = (s: string) => c.pinkBright(s);
+		const cLabel = (s: string) => c.gold(s);
+		const cText = (s: string) => c.text(s);
+		const cAccent = (s: string) => c.pinkAccent(s);
+		const cWarning = (s: string) => c.yellow(s);
+		const cMuted = (s: string) => c.muted(s);
 
+		const g = cuteGlyphs(theme);
 		const boxLine = (left: string, right = ""): string => {
 			const spaceNeeded = innerWidth - visibleWidth(left) - visibleWidth(right);
 			const pad = " ".repeat(Math.max(1, spaceNeeded));
 			const content = truncateToWidth(left + pad + right, innerWidth);
 			const fill = " ".repeat(Math.max(0, innerWidth - visibleWidth(content)));
-			return `${border}║${RESET} ${content}${fill} ${border}║${RESET}`;
+			return `${frameFg(theme, g.v)} ${content}${fill} ${frameFg(theme, g.v)}`;
 		};
 
-		const titleStr = `${cTitle}✿ Status${RESET}`;
-		const rawTitle = "✿ Status";
+		const statusTitle = loadCuteStrings().statusTitle;
+		const titleStr = cTitle(statusTitle);
+		const rawTitle = statusTitle;
 		const fillTop = Math.max(0, safeWidth - 4 - visibleWidth(rawTitle) - 1);
-		const top = `${border}╔═ ${titleStr} ${border}${"═".repeat(fillTop)}╗${RESET}`;
-		const bottom = `${border}╚${"═".repeat(safeWidth - 2)}╝${RESET}`;
+		const top = `${frameFg(theme, `${g.tl}${g.h} `)}${titleStr}${frameFg(theme, ` ${g.h.repeat(fillTop)}${g.tr}`)}`;
+		const bottom = frameFg(theme, `${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
 		const rawCwd = this.ctx.cwd ?? process.cwd();
-		const home = process.env.HOME ?? "";
-		const shortCwd = home && rawCwd.startsWith(home) ? `~${rawCwd.slice(home.length)}` : rawCwd;
+		const shortCwd = formatCwd(rawCwd);
 
 		const branch = this.footerData.getGitBranch() || "no-git";
-		const dirtyBadge = this.dirtyCount && this.dirtyCount > 0 ? ` ${cWarning}±${this.dirtyCount}${RESET}` : "";
+		const cardBranchGlyph = cuteGlyphs(theme).branch;
+		const dirtyBadge = this.dirtyCount && this.dirtyCount > 0 ? ` ${cWarning(`±${this.dirtyCount}`)}` : "";
 
 		const rawModel = this.ctx.model?.id ?? "no-model";
 		const displayModel = shortModelName(rawModel);
 		const thinking = this.pi.getThinkingLevel();
-		const thinkingStr = thinking && thinking !== "off" ? ` ${cLabel}(${thinking})${RESET}` : "";
+		const thinkingStr = thinking && thinking !== "off" ? ` ${cLabel(`(${thinking})`)}` : "";
 
 		const usage = this.ctx.getContextUsage?.();
 		const percent = usage?.percent ?? null;
 		const percentStr = percent !== null ? `${Math.round(percent)}%` : "?%";
-		const gauge = renderGauge(percent);
+		const gauge = renderGauge(theme, percent);
 		const cost = formatCost(sessionCost(this.ctx));
 
 		const extraStatuses: string[] = [];
@@ -261,24 +281,24 @@ export class CinlodevCuteFooter implements Component {
 			const statusesMap = this.footerData.getExtensionStatuses?.();
 			if (statusesMap) {
 				for (const [, text] of statusesMap) {
-					if (text && text.trim().length > 0) extraStatuses.push(text.trim());
+					if (text && text.trim().length > 0) extraStatuses.push(prettifyExtraStatus(text, this.theme));
 				}
 			}
 		} catch {}
 
 		const lines: string[] = [
 			top,
-			boxLine(`${cLabel}Project${RESET}`, `${cText}${shortCwd}${RESET}`),
-			boxLine(`${cLabel}Branch${RESET}`, `${cText} ${branch}${RESET}${dirtyBadge}`),
-			boxLine(`${cLabel}Model${RESET}`, `${cAccent}${displayModel}${RESET}${thinkingStr}`),
-			boxLine(`${cLabel}Context${RESET}`, `${gauge} ${cText}${percentStr}${RESET}`),
-			boxLine(`${cLabel}Cost${RESET}`, `${cText}${cost}${RESET}`),
+			boxLine(cLabel("Project"), cText(shortCwd)),
+			boxLine(cLabel("Branch"), `${cText(`${cardBranchGlyph} ${branch}`)}${dirtyBadge}`),
+			boxLine(cLabel("Model"), `${cAccent(displayModel)}${thinkingStr}`),
+			boxLine(cLabel("Context"), `${gauge} ${cText(percentStr)}`),
+			boxLine(cLabel("Cost"), cText(cost)),
 		];
 
 		if (extraStatuses.length > 0) {
-			lines.push(`${border}╠${"═".repeat(safeWidth - 2)}╣${RESET}`);
-			for (const status of extraStatuses.slice(0, 3)) {
-				lines.push(boxLine(`${cMuted}${status}${RESET}`));
+			lines.push(frameFg(theme, `${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
+			for (const status of extraStatuses.slice(0, loadCuteLayout().footer.extraMax)) {
+				lines.push(boxLine(cMuted(status)));
 			}
 		}
 
@@ -311,7 +331,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 	}
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
-		const todos = new CinlodevTodoMirror(ctx, tui);
+		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
@@ -327,7 +347,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			invalidate: () => todos.invalidate(),
 		};
 		const todoPart = sidebarPart(tui, "todo", todoBottom, todoRail);
-		const uninstall = installSidebar(tui);
+		const uninstall = installSidebar(tui, theme);
 		return {
 			...part,
 			dispose() {

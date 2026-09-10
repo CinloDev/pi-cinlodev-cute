@@ -2,7 +2,10 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import * as os from "node:os";
+import { cuteGlyphs, frameFg } from "./cute-theme";
+import { loadCuteLayout } from "./cute-layout.ts";
+import { formatProfileDisplay, loadCuteStrings } from "./cute-strings.ts";
+import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
 
 type HudMode = "full" | "compact";
 
@@ -43,41 +46,27 @@ function shortThinkingLevel(level: string): string {
 	}
 }
 
-function formatCwd(cwd: string): string {
-	try {
-		const homedir = os.homedir();
-		if (cwd === homedir) return "~";
-		if (cwd.startsWith(homedir + "/")) {
-			return "~" + cwd.slice(homedir.length);
-		}
-	} catch {}
-	return cwd;
-}
-
 function borderTop(theme: Theme, title: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
 	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
-	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╔═ " + title + " "
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // tl + h + space + title + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return (
-		"\x1b[38;2;142;68;173m╔═ \x1b[39m" +
-		styledTitle +
-		"\x1b[38;2;142;68;173m " +
-		"═".repeat(dashCount) +
-		"╗\x1b[39m"
-	);
+	return frameFg(theme, `${g.tl}${g.h} `) + styledTitle + frameFg(theme, ` ${g.h.repeat(dashCount)}${g.tr}`);
 }
 
 function borderBottom(theme: Theme, width: number): string {
+	const g = cuteGlyphs(theme);
 	const dashCount = Math.max(0, width - 2);
-	return "\x1b[38;2;142;68;173m╚" + "═".repeat(dashCount) + "╝\x1b[39m";
+	return frameFg(theme, `${g.bl}${g.h.repeat(dashCount)}${g.br}`);
 }
 
 function boxedLine(theme: Theme, content: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const innerWidth = Math.max(0, width - 2);
 	const text = truncateToWidth(content, innerWidth, "…");
 	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(text)));
-	return "\x1b[38;2;142;68;173m║\x1b[39m" + text + padding + "\x1b[38;2;142;68;173m║\x1b[39m";
+	return frameFg(theme, g.v) + text + padding + frameFg(theme, g.v);
 }
 
 let cachedGitBranch: string = "no git";
@@ -85,23 +74,9 @@ let lastGitBranchRead = 0;
 
 function getCachedGitBranch(cwd: string): string {
 	const now = Date.now();
-	if (now - lastGitBranchRead > 3000) {
+	if (now - lastGitBranchRead > loadCuteLayout().hud.gitBranchTtlMs) {
 		lastGitBranchRead = now;
-		try {
-			const gitHeadPath = path.join(cwd, ".git", "HEAD");
-			if (fs.existsSync(gitHeadPath)) {
-				const headContent = fs.readFileSync(gitHeadPath, "utf8").trim();
-				if (headContent.startsWith("ref: refs/heads/")) {
-					cachedGitBranch = headContent.replace("ref: refs/heads/", "");
-				} else {
-					cachedGitBranch = headContent.slice(0, 7);
-				}
-			} else {
-				cachedGitBranch = "no git";
-			}
-		} catch {
-			cachedGitBranch = "no git";
-		}
+		cachedGitBranch = readGitBranch(cwd);
 	}
 	return cachedGitBranch;
 }
@@ -111,18 +86,9 @@ let lastProfileRead = 0;
 
 function getCachedActiveProfile(): string | undefined {
 	const now = Date.now();
-	if (now - lastProfileRead > 5000) {
+	if (now - lastProfileRead > loadCuteLayout().hud.activeProfileTtlMs) {
 		lastProfileRead = now;
-		try {
-			const activePath = path.join(os.homedir(), ".pi", "agent", "profiles", ".active");
-			if (fs.existsSync(activePath)) {
-				cachedActiveProfile = fs.readFileSync(activePath, "utf-8").trim() || undefined;
-			} else {
-				cachedActiveProfile = undefined;
-			}
-		} catch {
-			cachedActiveProfile = undefined;
-		}
+		cachedActiveProfile = readActiveProfile();
 	}
 	return cachedActiveProfile;
 }
@@ -193,11 +159,11 @@ class GentlemanHudWidget implements Component {
 		const theme = this.theme;
 		const stats = collectStats(this.getContext());
 		const mode = this.getMode();
-		const safeWidth = Math.max(30, width);
+		const safeWidth = Math.max(loadCuteLayout().hud.minWidth, width);
 		const innerWidth = safeWidth - 2;
 
-		const title = theme.fg("accent", "◆ Cinlodev CUTE");
-		const sep = theme.fg("borderMuted", " │ ");
+		const title = theme.fg("accent", loadCuteStrings().hudTitle);
+		const sep = theme.fg("borderMuted", ` ${cuteGlyphs(theme).separator} `);
 
 		const pctColor = stats.contextPercent && stats.contextPercent > 75 ? "warning" : "success";
 		const pctStr = formatPercent(stats.contextPercent);
@@ -205,12 +171,15 @@ class GentlemanHudWidget implements Component {
 		const ctxWinStr = stats.contextWindow ? formatNumber(stats.contextWindow) : "n/a";
 		const cwdShort = formatCwd(stats.cwd);
 
-		// Model variants
+		// Model variants (profile as icon plus name, no brackets)
+		const profileDisplay = stats.activeProfile
+			? formatProfileDisplay(cuteGlyphs(theme).profileIcon, loadCuteStrings().profileFormat, stats.activeProfile)
+			: "";
 		const profileLabelFull = stats.activeProfile
-			? theme.fg("muted", "Profile: ") + theme.fg("success", stats.activeProfile)
+			? theme.fg("muted", "Profile: ") + theme.fg("success", profileDisplay)
 			: "";
 		const profileLabelCompact = stats.activeProfile
-			? theme.fg("success", `[${stats.activeProfile}]`)
+			? theme.fg("success", profileDisplay)
 			: "";
 
 		const modelLabelFull =
@@ -277,9 +246,10 @@ class GentlemanHudWidget implements Component {
 		// Cost & Cwd variants
 		const costLabelFull = theme.fg("muted", "Cost: ") + theme.fg("success", `$${stats.cost.toFixed(4)}`);
 		const costLabelCompact = theme.fg("success", `$${stats.cost.toFixed(4)}`);
+		const branchGlyph = cuteGlyphs(theme).branch;
 		const branchSuffix =
 			stats.gitBranch && stats.gitBranch !== "no git"
-				? `${sep}${theme.fg("secondary", ` ${stats.gitBranch}`)}`
+				? `${sep}${theme.fg("secondary", `${branchGlyph} ${stats.gitBranch}`)}`
 				: "";
 		const cwdLabelFull =
 			theme.fg("accent", "Dir: ") +
@@ -290,7 +260,9 @@ class GentlemanHudWidget implements Component {
 			theme.fg("accent", cwdShort) +
 			branchSuffix;
 
-		const lines: string[] = [borderTop(theme, title, safeWidth)];
+		// Un cuadradito de aire arriba: baja la card del HUD (y con ella el input)
+		// una fila para que no quede pegada al contenido de arriba.
+		const lines: string[] = ["", borderTop(theme, title, safeWidth)];
 
 		if (mode === "compact") {
 			let candidate = `  ${modelLabelCompact}${profileLabelCompact ? sep + profileLabelCompact : ""}${sep}${ctxLabelCompact}${sep}${theme.fg("muted", "Msg: ")}${theme.fg("text", `${stats.userMessages}/${stats.assistantMessages}`)}${sep}${costLabelFull}`;
@@ -299,7 +271,7 @@ class GentlemanHudWidget implements Component {
 			}
 			lines.push(boxedLine(theme, candidate, safeWidth));
 		} else {
-			// Tier 1: Wide terminal (>= ~120 cols) -> 2 lines
+			// Tier 1: Wide terminal (>= hud.tierWideMin cols) -> 2 lines
 			const row1Wide = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}${sep}${ctxLabelFull}${sep}${sessionLabelFull}`;
 			const row2Wide = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
 
@@ -307,7 +279,7 @@ class GentlemanHudWidget implements Component {
 				lines.push(boxedLine(theme, row1Wide, safeWidth));
 				lines.push(boxedLine(theme, row2Wide, safeWidth));
 			} else {
-				// Tier 2: Medium terminal (80-119 cols) -> 3 lines clean (no truncation)
+				// Tier 2: Medium terminal (hud.tierMediumMin cols and up) -> 3 lines clean (no truncation)
 				const row1Med = `  ${modelLabelFull}${profileLabelFull ? sep + profileLabelFull : ""}`;
 				const row2Med = `  ${ctxLabelFull}${sep}${sessionLabelFull}`;
 				const row3Med = `  ${tokenLabelFull}${sep}${costLabelFull}${sep}${cwdLabelFull}`;
@@ -317,7 +289,7 @@ class GentlemanHudWidget implements Component {
 					lines.push(boxedLine(theme, row2Med, safeWidth));
 					lines.push(boxedLine(theme, row3Med, safeWidth));
 				} else {
-					// Tier 3: Narrow terminal (< 80 cols) -> adaptive compact badges
+					// Tier 3: Narrow terminal (< hud.tierMediumMin cols) -> adaptive compact badges
 					let row1 = `  ${modelLabelFull}`;
 					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelCompact}`;
 					if (visibleWidth(row1) > innerWidth) row1 = `  ${modelLabelMini}`;
@@ -358,12 +330,13 @@ export default function (pi: ExtensionAPI) {
 		const stats = collectStats(ctx);
 		const context = formatPercent(stats.contextPercent);
 		const model = ctx.model?.id ?? "no-model";
+		const statusLine = loadCuteStrings().hudStatusLine;
 		return [
-			theme.fg("accent", "◆ cinlodev"),
-			theme.fg("dim", `model ${model}`),
-			theme.fg("dim", `ctx ${context}`),
-			theme.fg("dim", `tools ${stats.toolResults}`),
-		].join(theme.fg("borderMuted", " │ "));
+			theme.fg("accent", statusLine.brand),
+			theme.fg("dim", statusLine.modelFmt.replace("{model}", model)),
+			theme.fg("dim", statusLine.ctxFmt.replace("{context}", context)),
+			theme.fg("dim", statusLine.toolsFmt.replace("{tools}", String(stats.toolResults))),
+		].join(theme.fg("borderMuted", ` ${cuteGlyphs(theme).separator} `));
 	}
 
 	function updateStatus(ctx: any): void {
@@ -397,12 +370,12 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("hud", {
-		description: "Toggle or configure persistent Cinlodev CUTE HUD widget above input (/hud, /hud compact, /hud full, /hud off)",
+		description: loadCuteStrings().hudDescriptions.hud,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			latestCtx = ctx;
 
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("Cinlodev CUTE HUD widget is available in TUI mode.", "warning");
+				ctx.ui.notify(loadCuteStrings().notifys.notInTui, "warning");
 				return;
 			}
 
@@ -411,14 +384,14 @@ export default function (pi: ExtensionAPI) {
 			if (commandArg === "off" || commandArg === "close" || commandArg === "hide") {
 				hudEnabled = false;
 				applyHudWidget(ctx);
-				ctx.ui.notify("Cinlodev CUTE HUD desactivado", "info");
+				ctx.ui.notify(loadCuteStrings().notifys.deactivated, "info");
 				return;
 			}
 
 			if (commandArg === "on" || commandArg === "open" || commandArg === "show") {
 				hudEnabled = true;
 				applyHudWidget(ctx);
-				ctx.ui.notify("Cinlodev CUTE HUD activado encima del input", "info");
+				ctx.ui.notify(loadCuteStrings().notifys.activated, "info");
 				return;
 			}
 
@@ -426,7 +399,7 @@ export default function (pi: ExtensionAPI) {
 				hudEnabled = true;
 				hudMode = "compact";
 				applyHudWidget(ctx);
-				ctx.ui.notify("Cinlodev CUTE HUD modo compacto activado", "info");
+				ctx.ui.notify(loadCuteStrings().notifys.compact, "info");
 				return;
 			}
 
@@ -434,27 +407,29 @@ export default function (pi: ExtensionAPI) {
 				hudEnabled = true;
 				hudMode = "full";
 				applyHudWidget(ctx);
-				ctx.ui.notify("Cinlodev CUTE HUD modo completo activado", "info");
+				ctx.ui.notify(loadCuteStrings().notifys.full, "info");
 				return;
 			}
 
 			// Default toggle
 			hudEnabled = !hudEnabled;
 			applyHudWidget(ctx);
+			const notifys = loadCuteStrings().notifys;
 			ctx.ui.notify(
-				hudEnabled ? `Cinlodev CUTE HUD activado encima del input (${hudMode})` : "Cinlodev CUTE HUD desactivado",
+				hudEnabled ? notifys.activatedWithMode.replace("{mode}", hudMode) : notifys.deactivated,
 				"info",
 			);
 		},
 	});
 
 	pi.registerCommand("hud-status", {
-		description: "Toggle the Cinlodev CUTE HUD footer status line",
+		description: loadCuteStrings().hudDescriptions.hudStatus,
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			statusEnabled = !statusEnabled;
 			updateStatus(ctx);
+			const notifys = loadCuteStrings().notifys;
 			ctx.ui.notify(
-				statusEnabled ? "Cinlodev CUTE HUD footer status activado" : "Cinlodev CUTE HUD footer status desactivado",
+				statusEnabled ? notifys.statusActivated : notifys.statusDeactivated,
 				"info",
 			);
 		},

@@ -1,0 +1,10 @@
+{
+	"_note": "Cinlodev CUTE tunable filesystem paths. Defaults are identical to the literals previously hardcoded in src/welcome.ts, src/footer.ts, src/hud.ts and index.ts, so the default visual and behavior stay unchanged — except devBinaryHygiene, which defaults to false so this theme never deletes the foreign gentle-ai dev-binary file unless explicitly opted in. Missing file or keys fall back to the defaults in src/cute-paths.ts.",
+	"agentDir": "~/.pi/agent",
+	"profileActive": "profiles/.active",
+	"contextFiles": ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "SPEC.md"],
+	"homeAlias": "~",
+	"gitNoLabel": "no git",
+	"todoSource": "gentleTodo",
+	"devBinaryHygiene": false
+}

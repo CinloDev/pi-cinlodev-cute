@@ -1,0 +1,50 @@
+{
+	"_note": "Cinlodev CUTE tunable layout numbers. Defaults are identical to the literals previously hardcoded in src/sidebar.ts, src/footer.ts, src/hud.ts, src/todos.ts, src/welcome.ts and src/editor.ts, so the default visual stays unchanged. Missing file or keys fall back to the defaults in src/cute-layout.ts.",
+	"sidebar": {
+		"breakpoint": 140,
+		"railWidth": 52,
+		"railPadding": 1,
+		"gap": 0,
+		"leftBorderWidth": 2,
+		"middleDividerWidth": 2,
+		"fallbackRows": 50,
+		"minColumnsWithBorder": 40,
+		"attachMs": 100
+	},
+	"footer": {
+		"minWidth": 20,
+		"cardMinWidth": 30,
+		"gaugeCells": 6,
+		"dirtyMs": 4000,
+		"branchMax": 18,
+		"extraMax": 3,
+		"costDecimalsAboveOne": 2,
+		"costDecimalsBelowOne": 3
+	},
+	"hud": {
+		"minWidth": 30,
+		"gitBranchTtlMs": 3000,
+		"activeProfileTtlMs": 5000,
+		"tierWideMin": 120,
+		"tierMediumMin": 80
+	},
+	"todos": {
+		"railMaxRows": 8,
+		"bottomMaxRows": 4,
+		"minWidth": 30
+	},
+	"welcome": {
+		"minWidth": 48,
+		"modelBreakpoint": 90,
+		"metaCollapseBreakpoint": 70,
+		"hotkeysCompactBreakpoint": 80,
+		"hotkeysMinimalBreakpoint": 60,
+		"statsTtlMs": 10000
+	},
+	"editor": {
+		"paddingX": 1,
+		"pulseMs": 160,
+		"minWidth": 10,
+		"innerReserve": 3
+	}
+}

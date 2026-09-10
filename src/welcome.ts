@@ -9,9 +9,19 @@ import type { Component } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+
+import { cuteGlyphs, frameFg, safeFg as safeThemeFg } from "./cute-theme";
+import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteStrings } from "./cute-strings.ts";
+import {
+	loadCutePaths,
+	quoteGitCwd,
+	readActiveProfile,
+	readGitBranch,
+	resolveAgentDir,
+} from "./cute-paths.ts";
 
 const execAsync = promisify(exec);
 
@@ -29,92 +39,63 @@ interface WelcomeStats {
 	pendingUpdates: string[];
 }
 
-function safeThemeFg(theme: Theme, colorKey: string, text: string, fallbackColor: string = "text"): string {
-	try {
-		return theme.fg(colorKey as any, text);
-	} catch {
-		try {
-			return theme.fg(fallbackColor as any, text);
-		} catch {
-			return text;
-		}
-	}
-}
-
 function shortModelName(model: string): string {
 	const parts = model.split("/");
 	return parts.length > 1 ? parts[parts.length - 1] : model;
 }
 
-const VIOLET = "\x1b[38;2;142;68;173m";
-const RESET = "\x1b[39m";
-
 function borderTop(theme: Theme, title: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
 	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
-	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╔═ " + title + " "
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // tl + h + space + title + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${VIOLET}╔═ ${RESET}${styledTitle}${VIOLET} ${"═".repeat(dashCount)}╗${RESET}`;
+	return `${frameFg(theme, `${g.tl}${g.h} `)}${styledTitle}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.tr}`)}`;
 }
 
 function borderBottom(theme: Theme, bottomText: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTextLen = Math.max(0, width - 6);
 	const styledText = visibleWidth(bottomText) > maxTextLen ? truncateToWidth(bottomText, maxTextLen) : bottomText;
-	const leftLen = 3 + visibleWidth(styledText) + 1; // "╚═ " + bottomText + " "
+	const leftLen = 3 + visibleWidth(styledText) + 1; // bl + h + space + text + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${VIOLET}╚═ ${RESET}${styledText}${VIOLET} ${"═".repeat(dashCount)}╝${RESET}`;
+	return `${frameFg(theme, `${g.bl}${g.h} `)}${styledText}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.br}`)}`;
 }
 
 function borderDivider(theme: Theme, title: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const maxTitleLen = Math.max(0, width - 6);
 	const styledTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen) : title;
-	const leftLen = 3 + visibleWidth(styledTitle) + 1; // "╠═ " + title + " "
+	const leftLen = 3 + visibleWidth(styledTitle) + 1; // dividerL + h + space + title + space
 	const dashCount = Math.max(0, width - leftLen - 1);
-	return `${VIOLET}╠═ ${RESET}${styledTitle}${VIOLET} ${"═".repeat(dashCount)}╣${RESET}`;
+	return `${frameFg(theme, `${g.dividerL}${g.h} `)}${styledTitle}${frameFg(theme, ` ${g.h.repeat(dashCount)}${g.dividerR}`)}`;
 }
 
 function boxedLine(theme: Theme, content: string, width: number): string {
+	const g = cuteGlyphs(theme);
 	const innerWidth = Math.max(0, width - 2);
 	const truncated = truncateToWidth(content, innerWidth, "…");
 	const pad = " ".repeat(Math.max(0, innerWidth - visibleWidth(truncated)));
-	return `${VIOLET}║${RESET}${truncated}${pad}${VIOLET}║${RESET}`;
+	return `${frameFg(theme, g.v)}${truncated}${pad}${frameFg(theme, g.v)}`;
 }
 
 function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: ExtensionAPI): WelcomeStats {
 	const cwd = ctx.cwd ?? process.cwd();
-	const agentDir = path.join(os.homedir(), ".pi", "agent");
+	const paths = loadCutePaths();
+	const agentDir = resolveAgentDir(paths);
 
-	// 1. Git branch
-	let gitBranch = "no git";
-	try {
-		const gitHeadPath = path.join(cwd, ".git", "HEAD");
-		if (fs.existsSync(gitHeadPath)) {
-			const headContent = fs.readFileSync(gitHeadPath, "utf8").trim();
-			if (headContent.startsWith("ref: refs/heads/")) {
-				gitBranch = headContent.replace("ref: refs/heads/", "");
-			} else {
-				gitBranch = headContent.slice(0, 7);
-			}
-		}
-	} catch {
-		gitBranch = "no git";
-	}
+	// 1. Git branch (path shape from themes/CinlodevCute.paths.json via readGitBranch())
+	const gitBranch = readGitBranch(cwd, paths);
 
 	// 2. Model
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
 	const thinkingLevel = ctx.thinkingLevel ?? "default";
 
-	let activeProfile: string | undefined;
-	try {
-		const activePath = path.join(agentDir, "profiles", ".active");
-		if (fs.existsSync(activePath)) {
-			activeProfile = fs.readFileSync(activePath, "utf-8").trim() || undefined;
-		}
-	} catch {}
+	const activeProfile = readActiveProfile(paths);
 
 	// 3. Context files
 	const contextFiles: string[] = [];
-	const possibleContextFiles = ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "SPEC.md"];
+	const possibleContextFiles = paths.contextFiles;
 	for (const cf of possibleContextFiles) {
 		if (fs.existsSync(path.join(cwd, cf))) {
 			contextFiles.push(cf);
@@ -285,13 +266,13 @@ class GentlemanWelcomeWidget implements Component {
 
 	private getStats(): WelcomeStats {
 		const now = Date.now();
-		if (!this.cachedStats || now - this.lastStatsFetch > 10_000) {
+		if (!this.cachedStats || now - this.lastStatsFetch > loadCuteLayout().welcome.statsTtlMs) {
 			this.cachedStats = loadStats(this.getContext(), this.pi);
 			this.lastStatsFetch = now;
 			// Refresh git branch asynchronously if detached or empty
 			const ctx = this.getContext();
 			if (ctx.cwd) {
-				execAsync(`git -C "${ctx.cwd}" branch --show-current`)
+				execAsync(`git -C ${quoteGitCwd(ctx.cwd)} branch --show-current`)
 					.then(({ stdout }) => {
 						const b = stdout.trim();
 						if (b && this.cachedStats) this.cachedStats.gitBranch = b;
@@ -305,7 +286,10 @@ class GentlemanWelcomeWidget implements Component {
 	render(width: number): string[] {
 		const theme = this.theme;
 		const stats = this.getStats();
-		const safeWidth = Math.max(48, width);
+		const layout = loadCuteLayout().welcome;
+		const safeWidth = Math.max(layout.minWidth, width);
+		const hk = loadCuteStrings().welcomeHotkeys;
+		const g = cuteGlyphs(theme);
 
 		// Colors
 		const cAccent = (s: string) => safeThemeFg(theme, "accent", s, "text");
@@ -316,25 +300,25 @@ class GentlemanWelcomeWidget implements Component {
 		const cMuted = (s: string) => safeThemeFg(theme, "muted", s, "dim");
 		const cDim = (s: string) => safeThemeFg(theme, "dim", s, "dim");
 
-		const themeName = theme.name || "Cinlodev CUTE";
+		const themeName = theme.name || loadCuteStrings().welcomeTitles.themeFallback;
 		const lines: string[] = [];
 
 		// Header row
-		const topTitle = `${cAccent("◆ " + themeName)} ${cDim("·")} ${cHeading("la Gentlewoman")}`;
+		const topTitle = `${cAccent(`${g.brand} ` + themeName)} ${cDim(g.dot)} ${cHeading(loadCuteStrings().welcomeTitles.persona)}`;
 		lines.push(borderTop(theme, topTitle, safeWidth));
 
 		// Meta line
-		const branchLabel = stats.gitBranch !== "no git" ? cSuccess(` ${stats.gitBranch}`) : cDim("no git");
-		const displayModel = safeWidth < 90 ? shortModelName(stats.model) : stats.model;
+		const branchLabel = stats.gitBranch !== "no git" ? cSuccess(`${g.branch} ${stats.gitBranch}`) : cDim("no git");
+		const displayModel = safeWidth < layout.modelBreakpoint ? shortModelName(stats.model) : stats.model;
 		const modelLabel = `${cMuted("Model: ")}${cHeading(displayModel)}`;
-		const profileBadge = stats.activeProfile ? ` ${cDim("│")} ${cMuted("Profile: ")}${cAccent(stats.activeProfile)}` : "";
+		const profileBadge = stats.activeProfile ? ` ${cDim(g.separator)} ${cMuted("Profile: ")}${cAccent(stats.activeProfile)}` : "";
 		const contextLabel = stats.contextFiles.length > 0
 			? `${cMuted("Context: ")}${cText(stats.contextFiles.join(", "))}`
 			: `${cDim("Context: none")}`;
 
-		let metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim("│")} ${branchLabel} ${cDim("│")} ${modelLabel}${profileBadge} ${cDim("│")} ${contextLabel}`;
-		if (visibleWidth(metaRow) > safeWidth - 2 && safeWidth < 70) {
-			metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim("│")} ${branchLabel} ${cDim("│")} ${modelLabel}${profileBadge}`;
+		let metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge} ${cDim(g.separator)} ${contextLabel}`;
+		if (visibleWidth(metaRow) > safeWidth - 2 && safeWidth < layout.metaCollapseBreakpoint) {
+			metaRow = `  ${cAccent(`Pi v${stats.version}`)} ${cDim(g.separator)} ${branchLabel} ${cDim(g.separator)} ${modelLabel}${profileBadge}`;
 		}
 		lines.push(boxedLine(theme, metaRow, safeWidth));
 
@@ -345,15 +329,15 @@ class GentlemanWelcomeWidget implements Component {
 			const promptCount = stats.prompts.length > 0 ? `${cHeading(stats.prompts[0])}` : `${cDim("0 prompts")}`;
 			const toolsBadge = stats.customToolsCount > 0 ? `${cSuccess(stats.customToolsCount + " tools")}` : "";
 
-			const summaryBadges = [skillsCount, extCount, promptCount, toolsBadge].filter(Boolean).join(cDim(" · "));
+			const summaryBadges = [skillsCount, extCount, promptCount, toolsBadge].filter(Boolean).join(cDim(` ${g.dot} `));
 			lines.push(boxedLine(theme, `  ${summaryBadges}`, safeWidth));
 
-			let hotkeys = `${cDim("[Esc]")} ${cMuted("interrupt")} ${cDim("·")} ${cDim("[/]")} ${cMuted("commands")} ${cDim("·")} ${cDim("[!]")} ${cMuted("bash")} ${cDim("·")} ${cAccent("[^O]")} ${cAccent("expand dashboard")}`;
-			if (safeWidth < 80) {
-				hotkeys = `${cDim("[Esc]")} ${cMuted("interrupt")} ${cDim("·")} ${cDim("[/]")} ${cMuted("cmd")} ${cDim("·")} ${cAccent("[^O]")} ${cAccent("expand")}`;
+			let hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim(g.dot)} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expandDashboard)}`;
+			if (safeWidth < layout.hotkeysCompactBreakpoint) {
+				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commandsShort)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
-			if (safeWidth < 60) {
-				hotkeys = `${cDim("[Esc]")} ${cMuted("interrupt")} ${cDim("·")} ${cAccent("[^O]")} ${cAccent("expand")}`;
+			if (safeWidth < layout.hotkeysMinimalBreakpoint) {
+				hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.expand)}`;
 			}
 			lines.push(borderBottom(theme, hotkeys, safeWidth));
 			return lines;
@@ -368,8 +352,8 @@ class GentlemanWelcomeWidget implements Component {
 		} else {
 			let currentLine = "  ";
 			for (const skill of stats.skills) {
-				const pill = `${cAccent("◆")} ${cText(skill)}`;
-				const candidate = currentLine === "  " ? currentLine + pill : currentLine + cDim("  ·  ") + pill;
+				const pill = `${cAccent(g.brand)} ${cText(skill)}`;
+				const candidate = currentLine === "  " ? currentLine + pill : currentLine + cDim(`  ${g.dot}  `) + pill;
 				if (visibleWidth(candidate) > safeWidth - 6) {
 					lines.push(boxedLine(theme, currentLine, safeWidth));
 					currentLine = "  " + pill;
@@ -390,7 +374,7 @@ class GentlemanWelcomeWidget implements Component {
 		let extLine = `  ${cMuted("Extensions: ")}`;
 		for (const ext of shortExt) {
 			const pill = cText(ext);
-			const candidate = extLine === `  ${cMuted("Extensions: ")}` ? extLine + pill : extLine + cDim(" · ") + pill;
+			const candidate = extLine === `  ${cMuted("Extensions: ")}` ? extLine + pill : extLine + cDim(` ${g.dot} `) + pill;
 			if (visibleWidth(candidate) > safeWidth - 6) {
 				lines.push(boxedLine(theme, extLine, safeWidth));
 				extLine = `    ${pill}`;
@@ -408,13 +392,13 @@ class GentlemanWelcomeWidget implements Component {
 		lines.push(
 			boxedLine(
 				theme,
-				`  ${cMuted("Prompts: ")}${cHeading(promptsText)} ${cDim("│")} ${cMuted("Tools: ")}${cSuccess(toolsText)}`,
+				`  ${cMuted("Prompts: ")}${cHeading(promptsText)} ${cDim(g.separator)} ${cMuted("Tools: ")}${cSuccess(toolsText)}`,
 				safeWidth,
 			),
 		);
 
 		// Bottom border
-		const hotkeys = `${cDim("[Esc]")} ${cMuted("interrupt")} ${cDim("·")} ${cDim("[/]")} ${cMuted("commands")} ${cDim("·")} ${cDim("[!]")} ${cMuted("bash")} ${cDim("·")} ${cAccent("[^O]")} ${cAccent("collapse")}`;
+		const hotkeys = `${cDim("[Esc]")} ${cMuted(hk.interrupt)} ${cDim(g.dot)} ${cDim("[/]")} ${cMuted(hk.commands)} ${cDim(g.dot)} ${cDim("[!]")} ${cMuted(hk.bash)} ${cDim(g.dot)} ${cAccent("[^O]")} ${cAccent(hk.collapse)}`;
 		lines.push(borderBottom(theme, hotkeys, safeWidth));
 
 		return lines;
@@ -453,21 +437,22 @@ export default function (pi: ExtensionAPI) {
 
 	// Register commands
 	pi.registerCommand("welcome", {
-		description: "Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
+		description: loadCuteStrings().welcomeTitles.commandDescription,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const arg = args.trim().toLowerCase();
+			const strings = loadCuteStrings();
 
 			if (arg === "off" || arg === "hide") {
 				welcomeVisible = false;
 				applyWelcomeHeader(ctx);
-				ctx.ui.notify("Gentlewoman Welcome Dashboard ocultado", "info");
+				ctx.ui.notify(strings.notifys.welcomeHidden, "info");
 				return;
 			}
 
 			if (arg === "on" || arg === "show") {
 				welcomeVisible = true;
 				applyWelcomeHeader(ctx);
-				ctx.ui.notify("Gentlewoman Welcome Dashboard activado", "info");
+				ctx.ui.notify(strings.notifys.welcomeShown, "info");
 				return;
 			}
 
@@ -480,7 +465,7 @@ export default function (pi: ExtensionAPI) {
 				} else {
 					applyWelcomeHeader(ctx);
 				}
-				ctx.ui.notify("Gentlewoman Welcome Dashboard: modo expandido", "info");
+				ctx.ui.notify(strings.notifys.welcomeExpanded, "info");
 				return;
 			}
 
@@ -493,7 +478,7 @@ export default function (pi: ExtensionAPI) {
 				} else {
 					applyWelcomeHeader(ctx);
 				}
-				ctx.ui.notify("Gentlewoman Welcome Dashboard: modo compacto", "info");
+				ctx.ui.notify(strings.notifys.welcomeCompact, "info");
 				return;
 			}
 
@@ -502,7 +487,7 @@ export default function (pi: ExtensionAPI) {
 					currentWidget.refreshStats();
 					activeTui?.requestRender?.();
 				}
-				ctx.ui.notify("Gentlewoman Welcome Dashboard actualizado", "info");
+				ctx.ui.notify(strings.notifys.welcomeRefreshed, "info");
 				return;
 			}
 
@@ -511,16 +496,16 @@ export default function (pi: ExtensionAPI) {
 				currentWidget.toggle();
 				activeTui?.requestRender?.();
 				ctx.ui.notify(
-					`Gentlewoman Welcome Dashboard: ${currentWidget.isExpanded() ? "modo expandido" : "modo compacto"}`,
+					strings.notifys.welcomeToggleFmt.replace(
+						"{mode}",
+						currentWidget.isExpanded() ? strings.notifys.welcomeModeExpanded : strings.notifys.welcomeModeCompact,
+					),
 					"info",
 				);
 			} else {
 				welcomeVisible = !welcomeVisible;
 				applyWelcomeHeader(ctx);
-				ctx.ui.notify(
-					welcomeVisible ? "Gentlewoman Welcome Dashboard activado" : "Gentlewoman Welcome Dashboard desactivado",
-					"info",
-				);
+				ctx.ui.notify(welcomeVisible ? strings.notifys.welcomeShown : strings.notifys.welcomeDisabled, "info");
 			}
 		},
 	});
@@ -537,21 +522,21 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event) => {
+		const strings = loadCuteStrings();
 		let prompt = event.systemPrompt || "";
 
-		// Reemplazar referencias de Gentleman por Gentlewoman
-		prompt = prompt
-			.replaceAll("el Gentleman", "la Gentlewoman")
-			.replaceAll("El Gentleman", "La Gentlewoman");
+		// Reemplazar referencias legacy por la persona activa (ver welcomePersona.replacements)
+		for (const replacement of strings.welcomePersona.replacements) {
+			prompt = prompt.replaceAll(replacement.from, replacement.to);
+		}
 
-		const gentlewomanContract = `
-
-## Identity & Persona Override: la Gentlewoman
-- Identidad: Sos **la Gentlewoman**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para Cinlo (cinlodev).
-- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: "la Gentlewoman", "tu arquitecta senior", "lista para laburar", "enfocada", "preparada", "tranquila", "segura"). NUNCA uses términos masculinos para referirte a vos misma (nada de "el Gentleman", "listo", "enfocado", "arquitecto", etc.).
-- Interlocutora: Cinlo es mujer y desarrolladora (cinlodev). Tratala como tal, con calidez, camaradería y respeto.
-- Tono y lenguaje: Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.
-`;
+		const gentlewomanContract = strings.welcomePersona.contractTemplate
+			.split("{name}")
+			.join(strings.welcomePersona.name)
+			.split("{user}")
+			.join(strings.welcomePersona.user)
+			.split("{lang}")
+			.join(strings.welcomePersona.lang);
 
 		return {
 			systemPrompt: prompt + gentlewomanContract,
