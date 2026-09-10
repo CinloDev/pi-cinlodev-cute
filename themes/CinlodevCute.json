@@ -50,6 +50,7 @@
     "separator": "│",
     "dot": "·",
     "brand": "◆",
+    "profileIcon": "👤",
     "spinnerFrames": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
     "branch": "",
     "gaugeFilled": "▰",

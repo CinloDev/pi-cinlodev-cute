@@ -49,6 +49,7 @@
 		"moreFmt": "+{remaining} más"
 	},
 	"statusTitle": "✿ Status",
+	"profileFormat": "{icon} {name}",
 	"welcomePersona": {
 		"name": "la Gentlewoman",
 		"user": "Cinlo",

@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
-import { loadCuteStrings } from "./cute-strings.ts";
+import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 
@@ -32,6 +32,13 @@ function separator(theme: Theme): string {
 function gaugeGlyphs(theme: Theme): { filled: string; empty: string } {
 	const g = cuteGlyphs(theme);
 	return { filled: g.gaugeFilled, empty: g.gaugeEmpty };
+}
+
+/** Render a host "[name]" status as icon plus name; other statuses pass through. */
+function prettifyExtraStatus(raw: string, theme: Theme): string {
+	const name = matchBracketProfile(raw);
+	if (name === null) return raw.trim();
+	return formatProfileDisplay(cuteGlyphs(theme).profileIcon, loadCuteStrings().profileFormat, name);
 }
 
 function shortModelName(modelId: string): string {
@@ -165,7 +172,7 @@ export class CinlodevCuteFooter implements Component {
 			if (statusesMap) {
 				for (const [, text] of statusesMap) {
 					if (text && text.trim().length > 0) {
-						extraStatuses.push(c.muted(text.trim()));
+						extraStatuses.push(c.muted(prettifyExtraStatus(text, this.theme)));
 					}
 				}
 			}
@@ -274,7 +281,7 @@ export class CinlodevCuteFooter implements Component {
 			const statusesMap = this.footerData.getExtensionStatuses?.();
 			if (statusesMap) {
 				for (const [, text] of statusesMap) {
-					if (text && text.trim().length > 0) extraStatuses.push(text.trim());
+					if (text && text.trim().length > 0) extraStatuses.push(prettifyExtraStatus(text, this.theme));
 				}
 			}
 		} catch {}

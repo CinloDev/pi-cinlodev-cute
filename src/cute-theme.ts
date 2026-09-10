@@ -74,6 +74,7 @@ export interface CuteGlyphs {
 	separator: string;
 	dot: string;
 	brand: string;
+	profileIcon: string;
 	spinnerFrames: string[];
 	petalFrames: string[];
 	branch: string;
@@ -94,6 +95,7 @@ const DOUBLE_GLYPHS: CuteGlyphs = {
 	separator: "│",
 	dot: "·",
 	brand: "◆",
+	profileIcon: "👤",
 	spinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
 	petalFrames: ["✿", "❀", "❁", "✾"],
 	branch: "\ue0a0",
@@ -121,6 +123,7 @@ const ASCII_FALLBACK: CuteGlyphs = {
 	separator: "|",
 	dot: ".",
 	brand: "*",
+	profileIcon: "@",
 	spinnerFrames: ["-", "\\", "|", "/"],
 	petalFrames: ["*", "+", "o", "x"],
 	branch: ">",
@@ -167,6 +170,7 @@ function mergeGlyphs(raw: unknown): CuteGlyphs {
 	base.separator = pickGlyph(rawFrame.separator, accessoryFallback.separator);
 	base.dot = pickGlyph(rawFrame.dot, accessoryFallback.dot);
 	base.brand = pickGlyph(rawFrame.brand, accessoryFallback.brand);
+	base.profileIcon = pickGlyph(rawFrame.profileIcon, accessoryFallback.profileIcon);
 	base.branch = pickGlyph(rawFrame.branch, accessoryFallback.branch);
 	base.gaugeFilled = pickGlyph(rawFrame.gaugeFilled, accessoryFallback.gaugeFilled);
 	base.gaugeEmpty = pickGlyph(rawFrame.gaugeEmpty, accessoryFallback.gaugeEmpty);
@@ -190,6 +194,7 @@ function mergeGlyphs(raw: unknown): CuteGlyphs {
 	}
 	if (!base.dot) base.dot = ASCII_FALLBACK.dot;
 	if (!base.brand) base.brand = ASCII_FALLBACK.brand;
+	if (!base.profileIcon) base.profileIcon = ASCII_FALLBACK.profileIcon;
 	if (!base.branch) base.branch = ASCII_FALLBACK.branch;
 	if (!base.gaugeFilled) base.gaugeFilled = ASCII_FALLBACK.gaugeFilled;
 	if (!base.gaugeEmpty) base.gaugeEmpty = ASCII_FALLBACK.gaugeEmpty;

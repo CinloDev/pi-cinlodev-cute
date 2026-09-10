@@ -4,7 +4,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { cuteGlyphs, frameFg } from "./cute-theme";
 import { loadCuteLayout } from "./cute-layout.ts";
-import { loadCuteStrings } from "./cute-strings.ts";
+import { formatProfileDisplay, loadCuteStrings } from "./cute-strings.ts";
 import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
 
 type HudMode = "full" | "compact";
@@ -171,12 +171,15 @@ class GentlemanHudWidget implements Component {
 		const ctxWinStr = stats.contextWindow ? formatNumber(stats.contextWindow) : "n/a";
 		const cwdShort = formatCwd(stats.cwd);
 
-		// Model variants
+		// Model variants (profile as icon plus name, no brackets)
+		const profileDisplay = stats.activeProfile
+			? formatProfileDisplay(cuteGlyphs(theme).profileIcon, loadCuteStrings().profileFormat, stats.activeProfile)
+			: "";
 		const profileLabelFull = stats.activeProfile
-			? theme.fg("muted", "Profile: ") + theme.fg("success", stats.activeProfile)
+			? theme.fg("muted", "Profile: ") + theme.fg("success", profileDisplay)
 			: "";
 		const profileLabelCompact = stats.activeProfile
-			? theme.fg("success", `[${stats.activeProfile}]`)
+			? theme.fg("success", profileDisplay)
 			: "";
 
 		const modelLabelFull =
