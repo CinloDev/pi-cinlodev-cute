@@ -114,7 +114,7 @@ pi install /path/to/pi-cinlodev-cute
 
 | Command | Description |
 | :--- | :--- |
-| `/cinlodev` | Instantly re-applies and verifies all Cinlodev CUTE components (Header, HUD, Editor, Footer). |
+| `/cinlodev` | Instantly reloads configuration files and re-applies all Cinlodev CUTE components (Header, HUD, Editor, Footer) with hot-reload. |
 | `/hud` | Configure persistent HUD above input (`/hud`, `/hud full`, `/hud compact`, `/hud off`). |
 | `/welcome` | Toggle or configure the Welcome Dashboard (`/welcome full`, `/welcome compact`, `/welcome off`). |
 | `/gentle:changes` | Open interactive two-pane diff viewer for modified working tree files (`Alt+G`). |
