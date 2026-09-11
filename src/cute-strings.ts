@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -172,7 +173,7 @@ const DEFAULTS: CuteStrings = {
 	profileFormat: "{icon} {name}",
 	welcomePersona: {
 		name: "la Gentlewoman",
-		user: "Cinlo",
+		user: "{auto}",
 		lang: "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
 		contractTemplate:
 			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es desarrolladora. Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
@@ -360,6 +361,36 @@ function candidateStringsFiles(): string[] {
 	return candidates;
 }
 
+let detectedUser: string | null = null;
+
+/**
+ * Auto-detect user name from git config (user.name) or operating system / env,
+ * falling back to "Cinlo" if unavailable.
+ */
+export function detectSystemUser(): string {
+	if (detectedUser !== null) return detectedUser;
+	try {
+		const gitName = execSync("git config user.name", {
+			encoding: "utf8",
+			timeout: 500,
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		if (gitName.length > 0) {
+			detectedUser = gitName;
+			return detectedUser;
+		}
+	} catch {}
+	try {
+		const osUser = os.userInfo()?.username || process.env.USER || process.env.USERNAME;
+		if (osUser && osUser.trim().length > 0) {
+			detectedUser = osUser.trim();
+			return detectedUser;
+		}
+	} catch {}
+	detectedUser = "Cinlo";
+	return detectedUser;
+}
+
 let cached: CuteStrings | null = null;
 
 /**
@@ -368,6 +399,7 @@ let cached: CuteStrings | null = null;
  * rendering with the current visual instead of throwing.
  *
  * Layers package defaults, user-level overrides (~/.pi/agent), and project overrides.
+ * If user is not explicitly configured or set to "{auto}", auto-detects from git/OS.
  */
 export function loadCuteStrings(): CuteStrings {
 	if (cached) return cached;
@@ -381,6 +413,9 @@ export function loadCuteStrings(): CuteStrings {
 			current = mergeStrings(data, current);
 		} catch {}
 	}
+	if (current.welcomePersona.user === "{auto}" || !current.welcomePersona.user) {
+		current.welcomePersona.user = detectSystemUser();
+	}
 	cached = current;
 	return cached;
 }
@@ -388,6 +423,7 @@ export function loadCuteStrings(): CuteStrings {
 /** Clear the in-memory cache (tests and follow-up slices). */
 export function resetCuteStringsCache(): void {
 	cached = null;
+	detectedUser = null;
 }
 
 /**
