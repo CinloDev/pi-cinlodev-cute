@@ -530,16 +530,20 @@ export default function (pi: ExtensionAPI) {
 			prompt = prompt.replaceAll(replacement.from, replacement.to);
 		}
 
-		const gentlewomanContract = strings.welcomePersona.contractTemplate
+		const personaContract = strings.welcomePersona.contractTemplate
 			.split("{name}")
 			.join(strings.welcomePersona.name)
 			.split("{user}")
 			.join(strings.welcomePersona.user)
+			.split("{userRole}")
+			.join(strings.welcomePersona.userRole || "desarrollador")
+			.split("{userPronoun}")
+			.join(strings.welcomePersona.userPronoun || "Tratalo")
 			.split("{lang}")
 			.join(strings.welcomePersona.lang);
 
 		return {
-			systemPrompt: prompt + gentlewomanContract,
+			systemPrompt: prompt + personaContract,
 		};
 	});
 }

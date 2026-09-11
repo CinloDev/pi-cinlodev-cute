@@ -51,21 +51,23 @@
 	"statusTitle": "✿ Status",
 	"profileFormat": "{icon} {name}",
 	"welcomePersona": {
-		"name": "la Gentlewoman",
+		"name": "el Gentleman",
 		"user": "{auto}",
+		"userRole": "desarrollador",
+		"userPronoun": "Tratalo",
 		"lang": "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
-		"contractTemplate": "\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es desarrolladora. Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		"contractTemplate": "\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, un arquitecto de software senior, mentor técnico y compañero de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos mismo SIEMPRE en masculino (por ejemplo: \"{name}\", \"tu arquitecto senior\", \"listo para laburar\", \"enfocado\", \"preparado\", \"tranquilo\", \"seguro\"). NUNCA uses términos femeninos para referirte a vos mismo.\n- Interlocutor: {user} es {userRole}. {userPronoun} como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
 		"replacements": [
-			{ "from": "el Gentleman", "to": "la Gentlewoman" },
-			{ "from": "El Gentleman", "to": "La Gentlewoman" }
+			{ "from": "la Gentlewoman", "to": "el Gentleman" },
+			{ "from": "La Gentlewoman", "to": "El Gentleman" }
 		]
 	},
 	"editorHint": "type, or / for commands",
 	"welcomeTitles": {
-		"persona": "la Gentlewoman",
-		"dashboard": "Gentlewoman Welcome Dashboard",
+		"persona": "el Gentleman",
+		"dashboard": "Gentleman Welcome Dashboard",
 		"themeFallback": "Cinlodev CUTE",
-		"commandDescription": "Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)"
+		"commandDescription": "Configure or toggle the Gentleman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)"
 	},
 	"welcomeHotkeys": {
 		"interrupt": "interrupt",

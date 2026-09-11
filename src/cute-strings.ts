@@ -87,8 +87,10 @@ export interface CuteStrings {
 	welcomePersona: {
 		name: string;
 		user: string;
+		userRole: string;
+		userPronoun: string;
 		lang: string;
-		/** "{name}", "{user}" and "{lang}" placeholders. */
+		/** "{name}", "{user}", "{userRole}", "{userPronoun}" and "{lang}" placeholders. */
 		contractTemplate: string;
 		/** Legacy upstream forms replaced on the incoming prompt. */
 		replacements: Array<{ from: string; to: string }>;
@@ -118,6 +120,86 @@ export interface CuteStrings {
 	commandNotify: string;
 }
 
+export type CutePersonaMode = "gentleman" | "gentlewoman";
+
+export const PERSONA_PRESETS: Record<
+	CutePersonaMode,
+	{
+		name: string;
+		userRole: string;
+		userPronoun: string;
+		contractTemplate: string;
+		replacements: Array<{ from: string; to: string }>;
+		welcomeTitles: {
+			persona: string;
+			dashboard: string;
+			commandDescription: string;
+		};
+		welcomeNotifys: {
+			welcomeHidden: string;
+			welcomeShown: string;
+			welcomeExpanded: string;
+			welcomeCompact: string;
+			welcomeRefreshed: string;
+			welcomeToggleFmt: string;
+			welcomeDisabled: string;
+		};
+	}
+> = {
+	gentleman: {
+		name: "el Gentleman",
+		userRole: "desarrollador",
+		userPronoun: "Tratalo",
+		contractTemplate:
+			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, un arquitecto de software senior, mentor técnico y compañero de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos mismo SIEMPRE en masculino (por ejemplo: \"{name}\", \"tu arquitecto senior\", \"listo para laburar\", \"enfocado\", \"preparado\", \"tranquilo\", \"seguro\"). NUNCA uses términos femeninos para referirte a vos mismo.\n- Interlocutor: {user} es {userRole}. {userPronoun} como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		replacements: [
+			{ from: "la Gentlewoman", to: "el Gentleman" },
+			{ from: "La Gentlewoman", to: "El Gentleman" },
+		],
+		welcomeTitles: {
+			persona: "el Gentleman",
+			dashboard: "Gentleman Welcome Dashboard",
+			commandDescription:
+				"Configure or toggle the Gentleman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
+		},
+		welcomeNotifys: {
+			welcomeHidden: "Gentleman Welcome Dashboard ocultado",
+			welcomeShown: "Gentleman Welcome Dashboard activado",
+			welcomeExpanded: "Gentleman Welcome Dashboard: modo expandido",
+			welcomeCompact: "Gentleman Welcome Dashboard: modo compacto",
+			welcomeRefreshed: "Gentleman Welcome Dashboard actualizado",
+			welcomeToggleFmt: "Gentleman Welcome Dashboard: {mode}",
+			welcomeDisabled: "Gentleman Welcome Dashboard desactivado",
+		},
+	},
+	gentlewoman: {
+		name: "la Gentlewoman",
+		userRole: "desarrolladora",
+		userPronoun: "Tratala",
+		contractTemplate:
+			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es {userRole}. {userPronoun} como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		replacements: [
+			{ from: "el Gentleman", to: "la Gentlewoman" },
+			{ from: "El Gentleman", to: "La Gentlewoman" },
+		],
+		welcomeTitles: {
+			persona: "la Gentlewoman",
+			dashboard: "Gentlewoman Welcome Dashboard",
+			commandDescription:
+				"Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
+		},
+		welcomeNotifys: {
+			welcomeHidden: "Gentlewoman Welcome Dashboard ocultado",
+			welcomeShown: "Gentlewoman Welcome Dashboard activado",
+			welcomeExpanded: "Gentlewoman Welcome Dashboard: modo expandido",
+			welcomeCompact: "Gentlewoman Welcome Dashboard: modo compacto",
+			welcomeRefreshed: "Gentlewoman Welcome Dashboard actualizado",
+			welcomeToggleFmt: "Gentlewoman Welcome Dashboard: {mode}",
+			welcomeDisabled: "Gentlewoman Welcome Dashboard desactivado",
+		},
+	},
+};
+
 export const CUTE_STRINGS_FILENAME = "CinlodevCute.strings.json";
 
 const DEFAULTS: CuteStrings = {
@@ -141,13 +223,7 @@ const DEFAULTS: CuteStrings = {
 		activatedWithMode: "Cinlodev CUTE HUD activado encima del input ({mode})",
 		statusActivated: "Cinlodev CUTE HUD footer status activado",
 		statusDeactivated: "Cinlodev CUTE HUD footer status desactivado",
-		welcomeHidden: "Gentlewoman Welcome Dashboard ocultado",
-		welcomeShown: "Gentlewoman Welcome Dashboard activado",
-		welcomeExpanded: "Gentlewoman Welcome Dashboard: modo expandido",
-		welcomeCompact: "Gentlewoman Welcome Dashboard: modo compacto",
-		welcomeRefreshed: "Gentlewoman Welcome Dashboard actualizado",
-		welcomeToggleFmt: "Gentlewoman Welcome Dashboard: {mode}",
-		welcomeDisabled: "Gentlewoman Welcome Dashboard desactivado",
+		...PERSONA_PRESETS.gentleman.welcomeNotifys,
 		welcomeModeExpanded: "modo expandido",
 		welcomeModeCompact: "modo compacto",
 	},
@@ -172,23 +248,18 @@ const DEFAULTS: CuteStrings = {
 	statusTitle: "✿ Status",
 	profileFormat: "{icon} {name}",
 	welcomePersona: {
-		name: "la Gentlewoman",
+		name: PERSONA_PRESETS.gentleman.name,
 		user: "{auto}",
+		userRole: PERSONA_PRESETS.gentleman.userRole,
+		userPronoun: PERSONA_PRESETS.gentleman.userPronoun,
 		lang: "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
-		contractTemplate:
-			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es desarrolladora. Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
-		replacements: [
-			{ from: "el Gentleman", to: "la Gentlewoman" },
-			{ from: "El Gentleman", to: "La Gentlewoman" },
-		],
+		contractTemplate: PERSONA_PRESETS.gentleman.contractTemplate,
+		replacements: [...PERSONA_PRESETS.gentleman.replacements],
 	},
 	editorHint: "type, or / for commands",
 	welcomeTitles: {
-		persona: "la Gentlewoman",
-		dashboard: "Gentlewoman Welcome Dashboard",
+		...PERSONA_PRESETS.gentleman.welcomeTitles,
 		themeFallback: "Cinlodev CUTE",
-		commandDescription:
-			"Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
 	},
 	welcomeHotkeys: {
 		interrupt: "interrupt",
@@ -226,10 +297,47 @@ function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStr
 		welcomeHotkeys: { ...baseSource.welcomeHotkeys },
 	};
 	if (!isRecord(raw)) return base;
+
+	// Persona preset handling ("gentleman" | "gentlewoman")
+	const personaKey = typeof raw.persona === "string" ? raw.persona.toLowerCase() : (
+		typeof raw.personaMode === "string" ? raw.personaMode.toLowerCase() : undefined
+	);
+	if (personaKey === "gentlewoman" || personaKey === "gentleman") {
+		const preset = PERSONA_PRESETS[personaKey as CutePersonaMode];
+		base.welcomePersona.name = preset.name;
+		base.welcomePersona.userRole = preset.userRole;
+		base.welcomePersona.userPronoun = preset.userPronoun;
+		base.welcomePersona.contractTemplate = preset.contractTemplate;
+		base.welcomePersona.replacements = [...preset.replacements];
+		base.welcomeTitles.persona = preset.welcomeTitles.persona;
+		base.welcomeTitles.dashboard = preset.welcomeTitles.dashboard;
+		base.welcomeTitles.commandDescription = preset.welcomeTitles.commandDescription;
+		for (const [k, v] of Object.entries(preset.welcomeNotifys)) {
+			(base.notifys as Record<string, string>)[k] = v;
+		}
+	}
+
 	const rootUser = pickString(raw.user, pickString(raw.userName, ""));
 	if (rootUser) {
 		base.welcomePersona.user = rootUser;
 	}
+
+	const rootUserRole = pickString(raw.userRole, pickString(raw.role, ""));
+	if (rootUserRole) {
+		base.welcomePersona.userRole = rootUserRole;
+		// Auto-infer pronoun if not explicit:
+		if (rootUserRole.endsWith("a") || rootUserRole.endsWith("ora") || rootUserRole.endsWith("era")) {
+			base.welcomePersona.userPronoun = "Tratala";
+		} else {
+			base.welcomePersona.userPronoun = "Tratalo";
+		}
+	}
+
+	const rootUserPronoun = pickString(raw.userPronoun, pickString(raw.pronoun, ""));
+	if (rootUserPronoun) {
+		base.welcomePersona.userPronoun = rootUserPronoun;
+	}
+
 	base.brandTitle = pickString(raw.brandTitle, base.brandTitle);
 	base.brandShort = pickString(raw.brandShort, base.brandShort);
 	base.brandFallback = pickString(raw.brandFallback, base.brandFallback);
@@ -273,6 +381,8 @@ function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStr
 	if (isRecord(raw.welcomePersona)) {
 		base.welcomePersona.name = pickString(raw.welcomePersona.name, base.welcomePersona.name);
 		base.welcomePersona.user = pickString(raw.welcomePersona.user, base.welcomePersona.user);
+		base.welcomePersona.userRole = pickString(raw.welcomePersona.userRole, base.welcomePersona.userRole);
+		base.welcomePersona.userPronoun = pickString(raw.welcomePersona.userPronoun, base.welcomePersona.userPronoun);
 		base.welcomePersona.lang = pickString(raw.welcomePersona.lang, base.welcomePersona.lang);
 		base.welcomePersona.contractTemplate = pickString(
 			raw.welcomePersona.contractTemplate,
