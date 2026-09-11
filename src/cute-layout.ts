@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -166,31 +167,31 @@ function pickNumber(source: unknown, fallback: number): number {
 }
 
 /** Merge a parsed JSON value over the defaults; unknown keys are ignored. */
-function mergeSection<T extends Record<string, number>>(defaults: T, raw: unknown): T {
-	const base = { ...defaults };
+function mergeSection<T extends Record<string, number>>(currentSection: T, raw: unknown): T {
+	const base = { ...currentSection };
 	if (!isRecord(raw)) return base;
-	for (const key of Object.keys(defaults) as (keyof T)[]) {
+	for (const key of Object.keys(currentSection) as (keyof T)[]) {
 		base[key] = pickNumber(raw[key as string], base[key]) as T[keyof T];
 	}
 	return base;
 }
 
-function mergeLayout(raw: unknown): CuteLayout {
+function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayout {
 	const base: CuteLayout = {
-		sidebar: { ...DEFAULTS.sidebar },
-		footer: { ...DEFAULTS.footer },
-		hud: { ...DEFAULTS.hud },
-		todos: { ...DEFAULTS.todos },
-		welcome: { ...DEFAULTS.welcome },
-		editor: { ...DEFAULTS.editor },
+		sidebar: { ...baseSource.sidebar },
+		footer: { ...baseSource.footer },
+		hud: { ...baseSource.hud },
+		todos: { ...baseSource.todos },
+		welcome: { ...baseSource.welcome },
+		editor: { ...baseSource.editor },
 	};
 	if (!isRecord(raw)) return base;
-	base.sidebar = mergeSection(DEFAULTS.sidebar, raw.sidebar);
-	base.footer = mergeSection(DEFAULTS.footer, raw.footer);
-	base.hud = mergeSection(DEFAULTS.hud, raw.hud);
-	base.todos = mergeSection(DEFAULTS.todos, raw.todos);
-	base.welcome = mergeSection(DEFAULTS.welcome, raw.welcome);
-	base.editor = mergeSection(DEFAULTS.editor, raw.editor);
+	base.sidebar = mergeSection(base.sidebar, raw.sidebar);
+	base.footer = mergeSection(base.footer, raw.footer);
+	base.hud = mergeSection(base.hud, raw.hud);
+	base.todos = mergeSection(base.todos, raw.todos);
+	base.welcome = mergeSection(base.welcome, raw.welcome);
+	base.editor = mergeSection(base.editor, raw.editor);
 	return base;
 }
 
@@ -198,17 +199,51 @@ function mergeLayout(raw: unknown): CuteLayout {
 // themes/ as a theme file and rejects ours ("expected an object with a
 // colors map"). The themes/ location stays as a legacy fallback so existing
 // local installs keep working until they update the package.
-function candidatePaths(): string[] {
+// User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.layout.json
+// layer on top of package defaults and persist across package updates.
+function candidateLayoutFiles(): string[] {
 	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (filePath: string) => {
+		const resolved = path.resolve(filePath);
+		if (!seen.has(resolved)) {
+			seen.add(resolved);
+			candidates.push(resolved);
+		}
+	};
+
+	// 1. Package defaults (repo clone)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
-		candidates.push(path.join(here, "..", "config", CUTE_LAYOUT_FILENAME));
-		candidates.push(path.join(here, "..", "themes", CUTE_LAYOUT_FILENAME));
+		const packageDir = path.resolve(here, "..");
+		add(path.join(packageDir, "config", CUTE_LAYOUT_FILENAME));
+		add(path.join(packageDir, "themes", CUTE_LAYOUT_FILENAME));
 	} catch {}
+
+	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
 	try {
-		candidates.push(path.join(process.cwd(), "config", CUTE_LAYOUT_FILENAME));
-		candidates.push(path.join(process.cwd(), "themes", CUTE_LAYOUT_FILENAME));
+		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, "cinlodev-cute.json"));
+		add(path.join(agentDir, "cute", CUTE_LAYOUT_FILENAME));
+		add(path.join(agentDir, "cute", "layout.json"));
+		add(path.join(agentDir, "cinlodev-cute", CUTE_LAYOUT_FILENAME));
+		add(path.join(agentDir, "cinlodev-cute", "layout.json"));
 	} catch {}
+
+	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const packageDir = path.resolve(here, "..");
+		const cwd = path.resolve(process.cwd());
+		if (cwd !== packageDir) {
+			add(path.join(cwd, ".pi", "cute.json"));
+			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
+			add(path.join(cwd, "config", CUTE_LAYOUT_FILENAME));
+		}
+	} catch {}
+
 	return candidates;
 }
 
@@ -218,18 +253,22 @@ let cached: CuteLayout | null = null;
  * Load tunable layout numbers, cached in memory. Falls back to the compiled
  * defaults when the JSON file is missing or unparsable, so widgets keep
  * rendering with the current visual instead of throwing.
+ *
+ * Layers package defaults, user-level overrides (~/.pi/agent), and project overrides.
  */
 export function loadCuteLayout(): CuteLayout {
 	if (cached) return cached;
-	for (const file of candidatePaths()) {
+	let current: CuteLayout = mergeLayout(undefined, DEFAULTS);
+	for (const file of candidateLayoutFiles()) {
 		try {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-			cached = mergeLayout(parsed);
-			return cached;
+			if (!isRecord(parsed)) continue;
+			const data = "layout" in parsed ? parsed.layout : parsed;
+			current = mergeLayout(data, current);
 		} catch {}
 	}
-	cached = mergeLayout(undefined);
+	cached = current;
 	return cached;
 }
 

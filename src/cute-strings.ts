@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -150,7 +151,7 @@ const DEFAULTS: CuteStrings = {
 		welcomeModeCompact: "modo compacto",
 	},
 	hudStatusLine: {
-		brand: "◆ cinlodev",
+		brand: "◆ {user}",
 		modelFmt: "model {model}",
 		ctxFmt: "ctx {context}",
 		toolsFmt: "tools {tools}",
@@ -174,7 +175,7 @@ const DEFAULTS: CuteStrings = {
 		user: "Cinlo",
 		lang: "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
 		contractTemplate:
-			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user} (cinlodev).\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es mujer y desarrolladora (cinlodev). Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es desarrolladora. Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
 		replacements: [
 			{ from: "el Gentleman", to: "la Gentlewoman" },
 			{ from: "El Gentleman", to: "La Gentlewoman" },
@@ -211,19 +212,23 @@ function pickString(source: unknown, fallback: string): string {
 }
 
 /** Merge a parsed JSON value over the defaults; unknown keys are ignored. */
-function mergeStrings(raw: unknown): CuteStrings {
+function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStrings {
 	const base: CuteStrings = {
-		...DEFAULTS,
-		hudDescriptions: { ...DEFAULTS.hudDescriptions },
-		notifys: { ...DEFAULTS.notifys },
-		hudStatusLine: { ...DEFAULTS.hudStatusLine },
-		sidebarBanner: { ...DEFAULTS.sidebarBanner },
-		todos: { ...DEFAULTS.todos },
-		welcomePersona: { ...DEFAULTS.welcomePersona, replacements: [...DEFAULTS.welcomePersona.replacements] },
-		welcomeTitles: { ...DEFAULTS.welcomeTitles },
-		welcomeHotkeys: { ...DEFAULTS.welcomeHotkeys },
+		...baseSource,
+		hudDescriptions: { ...baseSource.hudDescriptions },
+		notifys: { ...baseSource.notifys },
+		hudStatusLine: { ...baseSource.hudStatusLine },
+		sidebarBanner: { ...baseSource.sidebarBanner },
+		todos: { ...baseSource.todos },
+		welcomePersona: { ...baseSource.welcomePersona, replacements: [...baseSource.welcomePersona.replacements] },
+		welcomeTitles: { ...baseSource.welcomeTitles },
+		welcomeHotkeys: { ...baseSource.welcomeHotkeys },
 	};
 	if (!isRecord(raw)) return base;
+	const rootUser = pickString(raw.user, pickString(raw.userName, ""));
+	if (rootUser) {
+		base.welcomePersona.user = rootUser;
+	}
 	base.brandTitle = pickString(raw.brandTitle, base.brandTitle);
 	base.brandShort = pickString(raw.brandShort, base.brandShort);
 	base.brandFallback = pickString(raw.brandFallback, base.brandFallback);
@@ -307,17 +312,51 @@ function mergeStrings(raw: unknown): CuteStrings {
 
 // Tunables live in config/, NOT in themes/: Pi treats every *.json under
 // themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
-function candidatePaths(): string[] {
+// User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.strings.json
+// layer on top of package defaults and persist across package updates.
+function candidateStringsFiles(): string[] {
 	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (filePath: string) => {
+		const resolved = path.resolve(filePath);
+		if (!seen.has(resolved)) {
+			seen.add(resolved);
+			candidates.push(resolved);
+		}
+	};
+
+	// 1. Package defaults (repo clone)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
-		candidates.push(path.join(here, "..", "config", CUTE_STRINGS_FILENAME));
-		candidates.push(path.join(here, "..", "themes", CUTE_STRINGS_FILENAME));
+		const packageDir = path.resolve(here, "..");
+		add(path.join(packageDir, "config", CUTE_STRINGS_FILENAME));
+		add(path.join(packageDir, "themes", CUTE_STRINGS_FILENAME));
 	} catch {}
+
+	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
 	try {
-		candidates.push(path.join(process.cwd(), "config", CUTE_STRINGS_FILENAME));
-		candidates.push(path.join(process.cwd(), "themes", CUTE_STRINGS_FILENAME));
+		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, "cinlodev-cute.json"));
+		add(path.join(agentDir, "cute", CUTE_STRINGS_FILENAME));
+		add(path.join(agentDir, "cute", "strings.json"));
+		add(path.join(agentDir, "cinlodev-cute", CUTE_STRINGS_FILENAME));
+		add(path.join(agentDir, "cinlodev-cute", "strings.json"));
 	} catch {}
+
+	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const packageDir = path.resolve(here, "..");
+		const cwd = path.resolve(process.cwd());
+		if (cwd !== packageDir) {
+			add(path.join(cwd, ".pi", "cute.json"));
+			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
+			add(path.join(cwd, "config", CUTE_STRINGS_FILENAME));
+		}
+	} catch {}
+
 	return candidates;
 }
 
@@ -327,18 +366,22 @@ let cached: CuteStrings | null = null;
  * Load customizable strings, cached in memory. Falls back to the compiled
  * defaults when the JSON file is missing or unparsable, so widgets keep
  * rendering with the current visual instead of throwing.
+ *
+ * Layers package defaults, user-level overrides (~/.pi/agent), and project overrides.
  */
 export function loadCuteStrings(): CuteStrings {
 	if (cached) return cached;
-	for (const file of candidatePaths()) {
+	let current: CuteStrings = mergeStrings(undefined, DEFAULTS);
+	for (const file of candidateStringsFiles()) {
 		try {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-			cached = mergeStrings(parsed);
-			return cached;
+			if (!isRecord(parsed)) continue;
+			const data = "strings" in parsed ? parsed.strings : parsed;
+			current = mergeStrings(data, current);
 		} catch {}
 	}
-	cached = mergeStrings(undefined);
+	cached = current;
 	return cached;
 }
 

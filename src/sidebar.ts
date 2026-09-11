@@ -103,10 +103,12 @@ function escapeRegExp(value: string): string {
 export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] {
 	const pink = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const text = (s: string): string => (theme ? safeFg(theme, "text", s) : s);
-	const banner = loadCuteStrings().sidebarBanner;
+	const strings = loadCuteStrings();
+	const user = strings.welcomePersona.user || "Cinlo";
+	const banner = strings.sidebarBanner;
 
-	const label = banner.full;
-	const shortLabel = banner.short;
+	const label = banner.full.replace("{user}", user);
+	const shortLabel = banner.short.replace("{user}", user);
 	const raw = width >= visibleWidth(label) ? label : shortLabel;
 	const space = width - visibleWidth(raw);
 	if (space < 0) return [];

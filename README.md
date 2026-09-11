@@ -73,6 +73,26 @@
 * **`config/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
 * **`config/CinlodevCute.paths.json`** — filesystem touchpoints (kept outside `themes/` on purpose: Pi rejects any non-theme JSON found there). `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
 
+#### 🐱 User Overrides (Persistent Across Updates)
+To personalize your theme without modifying files inside the git repository — so `pi update --extensions` never overwrites your customizations — place an override file at `~/.pi/agent/cute.json` (or in `~/.pi/agent/cute/`):
+
+```json
+{
+  "user": "YourName",
+  "glyphs": {
+    "petalFrames": ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"]
+  },
+  "strings": {
+    "brandTitle": "◆ YourName CUTE"
+  },
+  "layout": {
+    "sidebar": { "railWidth": 52 }
+  }
+}
+```
+
+Overrides are merged on top of package defaults: `user` dynamically replaces `{user}` placeholders across the HUD, Header, Footer and persona instructions. Any key you omit continues using the official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.
+
 ---
 
 ## 📦 Installation

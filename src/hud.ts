@@ -162,7 +162,9 @@ class GentlemanHudWidget implements Component {
 		const safeWidth = Math.max(loadCuteLayout().hud.minWidth, width);
 		const innerWidth = safeWidth - 2;
 
-		const title = theme.fg("accent", loadCuteStrings().hudTitle);
+		const strings = loadCuteStrings();
+		const user = strings.welcomePersona.user || "Cinlo";
+		const title = theme.fg("accent", strings.hudTitle.replace("{user}", user));
 		const sep = theme.fg("borderMuted", ` ${cuteGlyphs(theme).separator} `);
 
 		const pctColor = stats.contextPercent && stats.contextPercent > 75 ? "warning" : "success";
@@ -330,9 +332,12 @@ export default function (pi: ExtensionAPI) {
 		const stats = collectStats(ctx);
 		const context = formatPercent(stats.contextPercent);
 		const model = ctx.model?.id ?? "no-model";
-		const statusLine = loadCuteStrings().hudStatusLine;
+		const strings = loadCuteStrings();
+		const user = strings.welcomePersona.user || "Cinlo";
+		const statusLine = strings.hudStatusLine;
+		const brand = statusLine.brand.replace("{user}", user);
 		return [
-			theme.fg("accent", statusLine.brand),
+			theme.fg("accent", brand),
 			theme.fg("dim", statusLine.modelFmt.replace("{model}", model)),
 			theme.fg("dim", statusLine.ctxFmt.replace("{context}", context)),
 			theme.fg("dim", statusLine.toolsFmt.replace("{tools}", String(stats.toolResults))),
