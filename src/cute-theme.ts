@@ -132,6 +132,19 @@ const ASCII_FALLBACK: CuteGlyphs = {
 	gaugeEmpty: "-",
 };
 
+export type CutePetalPreset = "petals" | "cats" | "kittens" | "sparkles" | "stars" | "hearts" | "ascii";
+
+export const PETAL_PRESETS: Record<string, string[]> = {
+	petals: ["✿", "❀", "❁", "✾"],
+	flowers: ["✿", "❀", "❁", "✾"],
+	cats: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	kittens: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	sparkles: ["✦", "✧", "★", "☆"],
+	stars: ["✦", "✧", "★", "☆"],
+	hearts: ["♡", "♥", "ღ", "❦"],
+	ascii: ["*", "+", "o", "x"],
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -186,6 +199,14 @@ function mergeGlyphs(raw: unknown, baseGlyphs: CuteGlyphs = DOUBLE_GLYPHS): Cute
 		if (typeof explicit === "string" && explicit.length > 0) {
 			base[key] = explicit;
 		}
+	}
+
+	// Preset lookup for animation frames (preset / petalPreset)
+	const presetKey = typeof rawRecord.preset === "string" ? rawRecord.preset.toLowerCase() : (
+		typeof rawRecord.petalPreset === "string" ? rawRecord.petalPreset.toLowerCase() : undefined
+	);
+	if (presetKey && presetKey in PETAL_PRESETS) {
+		base.petalFrames = [...PETAL_PRESETS[presetKey]];
 	}
 
 	const rawFrames = rawRecord.spinnerFrames;
@@ -271,7 +292,10 @@ function resolveBaseGlyphs(): CuteGlyphs {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
 			if (!isRecord(parsed)) continue;
-			const glyphs = "glyphs" in parsed ? parsed.glyphs : parsed;
+			let glyphs = "glyphs" in parsed ? parsed.glyphs : parsed;
+			if (isRecord(parsed) && "preset" in parsed && isRecord(glyphs) && !("preset" in glyphs)) {
+				glyphs = { ...glyphs, preset: parsed.preset };
+			}
 			current = mergeGlyphs(glyphs, current);
 		} catch {}
 	}

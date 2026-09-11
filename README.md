@@ -79,19 +79,16 @@ To personalize your theme without modifying files inside the git repository — 
 ```json
 {
   "user": "YourName",
-  "glyphs": {
-    "petalFrames": ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"]
-  },
-  "strings": {
-    "brandTitle": "◆ YourName CUTE"
-  },
+  "preset": "cats",
   "layout": {
     "sidebar": { "railWidth": 52 }
   }
 }
 ```
 
-Overrides are merged on top of package defaults: `user` dynamically replaces `{user}` placeholders across the HUD, Header, Footer and persona instructions. Any key you omit continues using the official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.
+* **Animation presets:** easily switch animations with `"preset": "cats"` (or `"kittens"`), `"petals"` (default), `"sparkles"` (or `"stars"`), `"hearts"`, or `"ascii"`. You can also supply custom `petalFrames` if you want your own kaomojis.
+* **Dynamic `{user}`:** `user` replaces `{user}` placeholders across HUD, Header, Footer and persona instructions.
+* Overrides merge on top of package defaults; omitted keys continue using official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.
 
 ---
 
