@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS } from "../src/cute-theme.ts";
+import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame } from "../src/cute-theme.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -111,6 +111,20 @@ test("User Overrides - custom persona, user name and animation preset", () => {
 test("User detection - detectSystemUser fallback and caching", () => {
 	const user = detectSystemUser();
 	assert.ok(typeof user === "string" && user.length > 0);
+});
+
+test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot glyph", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const input = "\u001b[32m╭\u001b[39m\u001b[35m─\u001b[39m 🌹︎ Gentle AI · completed · command \u001b[35m──\u001b[39m ctrl+o \u001b[35m╮\u001b[39m";
+	const transformed = unifyCardFrame(input, mockTheme);
+
+	assert.ok(transformed.includes("🤖 Gentle AI"));
+	assert.ok(!transformed.includes("🌹"));
+	assert.ok(transformed.includes("╔"));
+	assert.ok(transformed.includes("╗"));
+	assert.ok(transformed.includes("[success]"));
 });
 
 test("Syntax check across all source files", () => {
