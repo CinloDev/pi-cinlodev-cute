@@ -340,11 +340,13 @@ export function cutePalette(theme: Theme): CutePalette {
 	};
 }
 
-// Las cards de gentle-pi (Changes/Agents/Todo/Command) llegan en línea simple redondeada
-// bicolor (riel en tono + resto en border). Las pasamos a doble línea simétrica CUTE
-// con borde iluminado en verde mint (#B4E7C7) si está en completed/éxito, y el robot 🤖.
-// Sin theme se devuelve el token intacto (sin re-colorear a mano).
-export function unifyCardFrame(raw: string, theme?: Theme): string {
+export function stripAnsi(text: string): string {
+	return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x1b]*(?:\x1b\\|\x07)/g, "");
+}
+
+// Sidebar cards (Changes, Agents, Todo) remain uniformly colored in the theme's border
+// tone (no green override on diff additions or status).
+export function unifySidebarCardFrame(raw: string, theme?: Theme): string {
 	if (!theme) return raw;
 	const g = cuteGlyphs(theme);
 	const toConfigured: Record<string, string> = {
@@ -356,29 +358,134 @@ export function unifyCardFrame(raw: string, theme?: Theme): string {
 		"─": g.h,
 	};
 
-	// 1. Reemplazar rosa/flor de Gentle AI por el robot 🤖
-	let line = raw.replace(/\u{1F339}\uFE0E/gu, "🤖").replace(/🌹/g, "🤖");
-
-	// 2. Determinar el rol de color de la card (verde mint para completed)
-	const isFailed = line.includes("failed");
-	const isRunning = line.includes("running") || line.includes("preparing");
-	const isCompleted = line.includes("completed") || /\x1b\[(?:32|38;2;[0-9;]+)m[ ╭╰│]/.test(line);
-	const toneRole = isCompleted ? "success" : isFailed ? "error" : isRunning ? "warning" : "border";
-
-	// 3. Reemplazar tokens ANSI de marco
+	let line = raw;
+	// Replace ANSI-colored frame tokens with configured double-line glyphs in border tone
 	line = line.replace(
-		/\x1b\[[0-9;]+m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)/g,
+		/\x1b\[[0-9;]*m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)?/g,
 		(token) => {
-			const open = token.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
+			const open = token.match(/^\x1b\[[0-9;]*m/)?.[0] ?? "";
 			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
-			const glyphs = token.slice(open.length, token.length - close.length);
+			const glyphs = token.slice(open.length, close ? token.length - close.length : undefined);
 			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
-			return safeFg(theme, toneRole, doubled);
+			return safeFg(theme, "border", doubled);
+		},
+	);
+
+	// Replace remaining bare frame glyphs
+	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, "border", toConfigured[c] ?? c));
+
+	return line;
+}
+
+export type CuteCardTone = "success" | "warning" | "error" | "border";
+
+// Gentle AI card lines in transcript & dock: double-line frame, appropriate tone
+// (warning = yellow #F2B86D, success = mint green #B4E7C7, error = red #FF718F),
+// and robot glyph 🤖 replacing rose, tulip, or flower.
+export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCardTone = "success"): string {
+	if (!theme) return raw;
+	const g = cuteGlyphs(theme);
+	const toConfigured: Record<string, string> = {
+		"╭": g.tl,
+		"╮": g.tr,
+		"╰": g.bl,
+		"╯": g.br,
+		"│": g.v,
+		"─": g.h,
+	};
+
+	// 1. Detectar si contiene flor de 1 columna (✿) para compensar el ancho del título
+	const hadSingleColFlower = /✿\s*(?=Gentle AI)/u.test(raw);
+
+	// 2. Reemplazar rosa, tulipán o flor por EXACTAMENTE UN robot 🤖
+	let line = raw
+		.replace(/(?:\u{1F339}\uFE0E|\u{1F339}|🌹|\u{1F337}|🌷|✿)\s*(?=Gentle AI)/gu, "🤖 ")
+		.replace(/(?:\u{1F339}\uFE0E|\u{1F339}|🌹|\u{1F337}|🌷)/gu, "🤖");
+
+	// 3. Reemplazar tokens ANSI de marco y pintarlos con el tono correspondiente (warning = yellow, success = mint)
+	line = line.replace(
+		/\x1b\[[0-9;]*m[ ╭╮╰╯│─╔╗╚╝║═]*[╭╮╰╯│─╔╗╚╝║═][ ╭╮╰╯│─╔╗╚╝║═]*(?:\x1b\[39m|\x1b\[0m)?/g,
+		(token) => {
+			const open = token.match(/^\x1b\[[0-9;]*m/)?.[0] ?? "";
+			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
+			const glyphs = token.slice(open.length, close ? token.length - close.length : undefined);
+			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
+			return safeFg(theme, tone, doubled);
 		},
 	);
 
 	// 4. Reemplazar cualquier glifo de marco restante fuera de ANSI
-	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, toneRole, toConfigured[c] ?? c));
+	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, tone, toConfigured[c] ?? c));
+
+	// 5. Si reemplazamos ✿ (1 columna) por 🤖 (2 columnas), el título creció 1 columna:
+	// acortamos la regla horizontal por 1 columna para que el marco cierre perfectamente simétrico.
+	if (hadSingleColFlower) {
+		line = line.replace(/═{3,}/, (r) => r.slice(1));
+	}
 
 	return line;
+}
+
+// Stateful processor for transcript & dock lines: transforms Gentle AI cards into double-line
+// themed frames (warning = yellow, success = mint) with robot 🤖 while leaving other lines intact.
+export function transformTranscriptLines(rawLines: string[], theme?: Theme): string[] {
+	if (!theme || !rawLines.length) return rawLines;
+	let inGentleCard = false;
+	let currentTone: CuteCardTone = "success";
+
+	return rawLines.map((line) => {
+		const plain = stripAnsi(line);
+		const hasGentleTitle = plain.includes("Gentle AI");
+		const isTopRule = (plain.includes("╭") || plain.includes("╔")) && hasGentleTitle;
+		const isBottomRule = plain.includes("╰") || plain.includes("╚") || plain.includes("╯") || plain.includes("╝");
+
+		if (isTopRule) {
+			inGentleCard = true;
+			if (
+				plain.includes("dev binary override") ||
+				plain.includes("field-test only") ||
+				plain.includes("warning") ||
+				plain.includes("preparing")
+			) {
+				currentTone = "warning";
+			} else if (plain.includes("failed") || plain.includes("error") || plain.includes("invalid")) {
+				currentTone = "error";
+			} else {
+				currentTone = "success";
+			}
+		}
+
+		if (inGentleCard) {
+			const transformed = formatGentleAiCardLine(line, theme, currentTone);
+			if (isBottomRule && !isTopRule) {
+				inGentleCard = false;
+				currentTone = "success";
+			}
+			return transformed;
+		}
+
+		return line;
+	});
+}
+
+// Las cards de gentle-pi adaptadas: si es Gentle AI se formatea con robot y tono adecuado,
+// de lo contrario se formatea con marco doble en tono border.
+export function unifyCardFrame(raw: string, theme?: Theme): string {
+	if (!theme) return raw;
+	const plain = stripAnsi(raw);
+	if (plain.includes("Gentle AI") || plain.includes("🤖") || /[\u{1F339}\uFE0E\u{1F339}🌹\u{1F337}🌷]/.test(raw)) {
+		let tone: CuteCardTone = "success";
+		if (
+			plain.includes("dev binary override") ||
+			plain.includes("field-test only") ||
+			plain.includes("warning") ||
+			plain.includes("preparing")
+		) {
+			tone = "warning";
+		} else if (plain.includes("failed") || plain.includes("error") || plain.includes("invalid")) {
+			tone = "error";
+		}
+		return formatGentleAiCardLine(raw, theme, tone);
+	}
+	return unifySidebarCardFrame(raw, theme);
 }
