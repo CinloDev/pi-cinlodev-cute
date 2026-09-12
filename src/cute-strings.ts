@@ -1,4 +1,6 @@
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -85,8 +87,10 @@ export interface CuteStrings {
 	welcomePersona: {
 		name: string;
 		user: string;
+		userRole: string;
+		userPronoun: string;
 		lang: string;
-		/** "{name}", "{user}" and "{lang}" placeholders. */
+		/** "{name}", "{user}", "{userRole}", "{userPronoun}" and "{lang}" placeholders. */
 		contractTemplate: string;
 		/** Legacy upstream forms replaced on the incoming prompt. */
 		replacements: Array<{ from: string; to: string }>;
@@ -116,6 +120,86 @@ export interface CuteStrings {
 	commandNotify: string;
 }
 
+export type CutePersonaMode = "gentleman" | "gentlewoman";
+
+export const PERSONA_PRESETS: Record<
+	CutePersonaMode,
+	{
+		name: string;
+		userRole: string;
+		userPronoun: string;
+		contractTemplate: string;
+		replacements: Array<{ from: string; to: string }>;
+		welcomeTitles: {
+			persona: string;
+			dashboard: string;
+			commandDescription: string;
+		};
+		welcomeNotifys: {
+			welcomeHidden: string;
+			welcomeShown: string;
+			welcomeExpanded: string;
+			welcomeCompact: string;
+			welcomeRefreshed: string;
+			welcomeToggleFmt: string;
+			welcomeDisabled: string;
+		};
+	}
+> = {
+	gentleman: {
+		name: "el Gentleman",
+		userRole: "desarrollador",
+		userPronoun: "Tratalo",
+		contractTemplate:
+			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, un arquitecto de software senior, mentor técnico y compañero de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos mismo SIEMPRE en masculino (por ejemplo: \"{name}\", \"tu arquitecto senior\", \"listo para laburar\", \"enfocado\", \"preparado\", \"tranquilo\", \"seguro\"). NUNCA uses términos femeninos para referirte a vos mismo.\n- Interlocutor: {user} es {userRole}. {userPronoun} como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		replacements: [
+			{ from: "la Gentlewoman", to: "el Gentleman" },
+			{ from: "La Gentlewoman", to: "El Gentleman" },
+		],
+		welcomeTitles: {
+			persona: "el Gentleman",
+			dashboard: "Gentleman Welcome Dashboard",
+			commandDescription:
+				"Configure or toggle the Gentleman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
+		},
+		welcomeNotifys: {
+			welcomeHidden: "Gentleman Welcome Dashboard ocultado",
+			welcomeShown: "Gentleman Welcome Dashboard activado",
+			welcomeExpanded: "Gentleman Welcome Dashboard: modo expandido",
+			welcomeCompact: "Gentleman Welcome Dashboard: modo compacto",
+			welcomeRefreshed: "Gentleman Welcome Dashboard actualizado",
+			welcomeToggleFmt: "Gentleman Welcome Dashboard: {mode}",
+			welcomeDisabled: "Gentleman Welcome Dashboard desactivado",
+		},
+	},
+	gentlewoman: {
+		name: "la Gentlewoman",
+		userRole: "desarrolladora",
+		userPronoun: "Tratala",
+		contractTemplate:
+			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user}.\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es {userRole}. {userPronoun} como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
+		replacements: [
+			{ from: "el Gentleman", to: "la Gentlewoman" },
+			{ from: "El Gentleman", to: "La Gentlewoman" },
+		],
+		welcomeTitles: {
+			persona: "la Gentlewoman",
+			dashboard: "Gentlewoman Welcome Dashboard",
+			commandDescription:
+				"Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
+		},
+		welcomeNotifys: {
+			welcomeHidden: "Gentlewoman Welcome Dashboard ocultado",
+			welcomeShown: "Gentlewoman Welcome Dashboard activado",
+			welcomeExpanded: "Gentlewoman Welcome Dashboard: modo expandido",
+			welcomeCompact: "Gentlewoman Welcome Dashboard: modo compacto",
+			welcomeRefreshed: "Gentlewoman Welcome Dashboard actualizado",
+			welcomeToggleFmt: "Gentlewoman Welcome Dashboard: {mode}",
+			welcomeDisabled: "Gentlewoman Welcome Dashboard desactivado",
+		},
+	},
+};
+
 export const CUTE_STRINGS_FILENAME = "CinlodevCute.strings.json";
 
 const DEFAULTS: CuteStrings = {
@@ -139,18 +223,12 @@ const DEFAULTS: CuteStrings = {
 		activatedWithMode: "Cinlodev CUTE HUD activado encima del input ({mode})",
 		statusActivated: "Cinlodev CUTE HUD footer status activado",
 		statusDeactivated: "Cinlodev CUTE HUD footer status desactivado",
-		welcomeHidden: "Gentlewoman Welcome Dashboard ocultado",
-		welcomeShown: "Gentlewoman Welcome Dashboard activado",
-		welcomeExpanded: "Gentlewoman Welcome Dashboard: modo expandido",
-		welcomeCompact: "Gentlewoman Welcome Dashboard: modo compacto",
-		welcomeRefreshed: "Gentlewoman Welcome Dashboard actualizado",
-		welcomeToggleFmt: "Gentlewoman Welcome Dashboard: {mode}",
-		welcomeDisabled: "Gentlewoman Welcome Dashboard desactivado",
+		...PERSONA_PRESETS.gentleman.welcomeNotifys,
 		welcomeModeExpanded: "modo expandido",
 		welcomeModeCompact: "modo compacto",
 	},
 	hudStatusLine: {
-		brand: "◆ cinlodev",
+		brand: "◆ {user}",
 		modelFmt: "model {model}",
 		ctxFmt: "ctx {context}",
 		toolsFmt: "tools {tools}",
@@ -170,23 +248,18 @@ const DEFAULTS: CuteStrings = {
 	statusTitle: "✿ Status",
 	profileFormat: "{icon} {name}",
 	welcomePersona: {
-		name: "la Gentlewoman",
-		user: "Cinlo",
+		name: PERSONA_PRESETS.gentleman.name,
+		user: "{auto}",
+		userRole: PERSONA_PRESETS.gentleman.userRole,
+		userPronoun: PERSONA_PRESETS.gentleman.userPronoun,
 		lang: "Español rioplatense natural con voseo (vos sos, vos tenés, fijate, contame, laburemos), directo, cálido, riguroso a nivel técnico y sin rodeos.",
-		contractTemplate:
-			"\n\n## Identity & Persona Override: {name}\n- Identidad: Sos **{name}**, una arquitecta de software senior, mentora técnica y compañera de desarrollo para {user} (cinlodev).\n- Voz y género gramatical: Hablá y referite a vos misma SIEMPRE en femenino (por ejemplo: \"{name}\", \"tu arquitecta senior\", \"lista para laburar\", \"enfocada\", \"preparada\", \"tranquila\", \"segura\"). NUNCA uses términos masculinos para referirte a vos misma (nada de \"el Gentleman\", \"listo\", \"enfocado\", \"arquitecto\", etc.).\n- Interlocutora: {user} es mujer y desarrolladora (cinlodev). Tratala como tal, con calidez, camaradería y respeto.\n- Tono y lenguaje: {lang}\n",
-		replacements: [
-			{ from: "el Gentleman", to: "la Gentlewoman" },
-			{ from: "El Gentleman", to: "La Gentlewoman" },
-		],
+		contractTemplate: PERSONA_PRESETS.gentleman.contractTemplate,
+		replacements: [...PERSONA_PRESETS.gentleman.replacements],
 	},
 	editorHint: "type, or / for commands",
 	welcomeTitles: {
-		persona: "la Gentlewoman",
-		dashboard: "Gentlewoman Welcome Dashboard",
+		...PERSONA_PRESETS.gentleman.welcomeTitles,
 		themeFallback: "Cinlodev CUTE",
-		commandDescription:
-			"Configure or toggle the Gentlewoman Welcome Dashboard (/welcome, /welcome full, /welcome compact, /welcome off)",
 	},
 	welcomeHotkeys: {
 		interrupt: "interrupt",
@@ -211,19 +284,60 @@ function pickString(source: unknown, fallback: string): string {
 }
 
 /** Merge a parsed JSON value over the defaults; unknown keys are ignored. */
-function mergeStrings(raw: unknown): CuteStrings {
+function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStrings {
 	const base: CuteStrings = {
-		...DEFAULTS,
-		hudDescriptions: { ...DEFAULTS.hudDescriptions },
-		notifys: { ...DEFAULTS.notifys },
-		hudStatusLine: { ...DEFAULTS.hudStatusLine },
-		sidebarBanner: { ...DEFAULTS.sidebarBanner },
-		todos: { ...DEFAULTS.todos },
-		welcomePersona: { ...DEFAULTS.welcomePersona, replacements: [...DEFAULTS.welcomePersona.replacements] },
-		welcomeTitles: { ...DEFAULTS.welcomeTitles },
-		welcomeHotkeys: { ...DEFAULTS.welcomeHotkeys },
+		...baseSource,
+		hudDescriptions: { ...baseSource.hudDescriptions },
+		notifys: { ...baseSource.notifys },
+		hudStatusLine: { ...baseSource.hudStatusLine },
+		sidebarBanner: { ...baseSource.sidebarBanner },
+		todos: { ...baseSource.todos },
+		welcomePersona: { ...baseSource.welcomePersona, replacements: [...baseSource.welcomePersona.replacements] },
+		welcomeTitles: { ...baseSource.welcomeTitles },
+		welcomeHotkeys: { ...baseSource.welcomeHotkeys },
 	};
 	if (!isRecord(raw)) return base;
+
+	// Persona preset handling ("gentleman" | "gentlewoman")
+	const personaKey = typeof raw.persona === "string" ? raw.persona.toLowerCase() : (
+		typeof raw.personaMode === "string" ? raw.personaMode.toLowerCase() : undefined
+	);
+	if (personaKey === "gentlewoman" || personaKey === "gentleman") {
+		const preset = PERSONA_PRESETS[personaKey as CutePersonaMode];
+		base.welcomePersona.name = preset.name;
+		base.welcomePersona.userRole = preset.userRole;
+		base.welcomePersona.userPronoun = preset.userPronoun;
+		base.welcomePersona.contractTemplate = preset.contractTemplate;
+		base.welcomePersona.replacements = [...preset.replacements];
+		base.welcomeTitles.persona = preset.welcomeTitles.persona;
+		base.welcomeTitles.dashboard = preset.welcomeTitles.dashboard;
+		base.welcomeTitles.commandDescription = preset.welcomeTitles.commandDescription;
+		for (const [k, v] of Object.entries(preset.welcomeNotifys)) {
+			(base.notifys as Record<string, string>)[k] = v;
+		}
+	}
+
+	const rootUser = pickString(raw.user, pickString(raw.userName, ""));
+	if (rootUser) {
+		base.welcomePersona.user = rootUser;
+	}
+
+	const rootUserRole = pickString(raw.userRole, pickString(raw.role, ""));
+	if (rootUserRole) {
+		base.welcomePersona.userRole = rootUserRole;
+		// Auto-infer pronoun if not explicit:
+		if (rootUserRole.endsWith("a") || rootUserRole.endsWith("ora") || rootUserRole.endsWith("era")) {
+			base.welcomePersona.userPronoun = "Tratala";
+		} else {
+			base.welcomePersona.userPronoun = "Tratalo";
+		}
+	}
+
+	const rootUserPronoun = pickString(raw.userPronoun, pickString(raw.pronoun, ""));
+	if (rootUserPronoun) {
+		base.welcomePersona.userPronoun = rootUserPronoun;
+	}
+
 	base.brandTitle = pickString(raw.brandTitle, base.brandTitle);
 	base.brandShort = pickString(raw.brandShort, base.brandShort);
 	base.brandFallback = pickString(raw.brandFallback, base.brandFallback);
@@ -267,6 +381,8 @@ function mergeStrings(raw: unknown): CuteStrings {
 	if (isRecord(raw.welcomePersona)) {
 		base.welcomePersona.name = pickString(raw.welcomePersona.name, base.welcomePersona.name);
 		base.welcomePersona.user = pickString(raw.welcomePersona.user, base.welcomePersona.user);
+		base.welcomePersona.userRole = pickString(raw.welcomePersona.userRole, base.welcomePersona.userRole);
+		base.welcomePersona.userPronoun = pickString(raw.welcomePersona.userPronoun, base.welcomePersona.userPronoun);
 		base.welcomePersona.lang = pickString(raw.welcomePersona.lang, base.welcomePersona.lang);
 		base.welcomePersona.contractTemplate = pickString(
 			raw.welcomePersona.contractTemplate,
@@ -307,18 +423,82 @@ function mergeStrings(raw: unknown): CuteStrings {
 
 // Tunables live in config/, NOT in themes/: Pi treats every *.json under
 // themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
-function candidatePaths(): string[] {
+// User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.strings.json
+// layer on top of package defaults and persist across package updates.
+function candidateStringsFiles(): string[] {
 	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (filePath: string) => {
+		const resolved = path.resolve(filePath);
+		if (!seen.has(resolved)) {
+			seen.add(resolved);
+			candidates.push(resolved);
+		}
+	};
+
+	// 1. Package defaults (repo clone)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
-		candidates.push(path.join(here, "..", "config", CUTE_STRINGS_FILENAME));
-		candidates.push(path.join(here, "..", "themes", CUTE_STRINGS_FILENAME));
+		const packageDir = path.resolve(here, "..");
+		add(path.join(packageDir, "config", CUTE_STRINGS_FILENAME));
+		add(path.join(packageDir, "themes", CUTE_STRINGS_FILENAME));
+	} catch {}
+
+	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
+	try {
+		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, "cinlodev-cute.json"));
+		add(path.join(agentDir, "cute", CUTE_STRINGS_FILENAME));
+		add(path.join(agentDir, "cute", "strings.json"));
+		add(path.join(agentDir, "cinlodev-cute", CUTE_STRINGS_FILENAME));
+		add(path.join(agentDir, "cinlodev-cute", "strings.json"));
+	} catch {}
+
+	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const packageDir = path.resolve(here, "..");
+		const cwd = path.resolve(process.cwd());
+		if (cwd !== packageDir) {
+			add(path.join(cwd, ".pi", "cute.json"));
+			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
+			add(path.join(cwd, "config", CUTE_STRINGS_FILENAME));
+		}
+	} catch {}
+
+	return candidates;
+}
+
+let detectedUser: string | null = null;
+
+/**
+ * Auto-detect user name from git config (user.name) or operating system / env,
+ * falling back to "Cinlo" if unavailable.
+ */
+export function detectSystemUser(): string {
+	if (detectedUser !== null) return detectedUser;
+	try {
+		const gitName = execSync("git config user.name", {
+			encoding: "utf8",
+			timeout: 500,
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		if (gitName.length > 0) {
+			detectedUser = gitName;
+			return detectedUser;
+		}
 	} catch {}
 	try {
-		candidates.push(path.join(process.cwd(), "config", CUTE_STRINGS_FILENAME));
-		candidates.push(path.join(process.cwd(), "themes", CUTE_STRINGS_FILENAME));
+		const osUser = os.userInfo()?.username || process.env.USER || process.env.USERNAME;
+		if (osUser && osUser.trim().length > 0) {
+			detectedUser = osUser.trim();
+			return detectedUser;
+		}
 	} catch {}
-	return candidates;
+	detectedUser = "Cinlo";
+	return detectedUser;
 }
 
 let cached: CuteStrings | null = null;
@@ -327,24 +507,33 @@ let cached: CuteStrings | null = null;
  * Load customizable strings, cached in memory. Falls back to the compiled
  * defaults when the JSON file is missing or unparsable, so widgets keep
  * rendering with the current visual instead of throwing.
+ *
+ * Layers package defaults, user-level overrides (~/.pi/agent), and project overrides.
+ * If user is not explicitly configured or set to "{auto}", auto-detects from git/OS.
  */
 export function loadCuteStrings(): CuteStrings {
 	if (cached) return cached;
-	for (const file of candidatePaths()) {
+	let current: CuteStrings = mergeStrings(undefined, DEFAULTS);
+	for (const file of candidateStringsFiles()) {
 		try {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-			cached = mergeStrings(parsed);
-			return cached;
+			if (!isRecord(parsed)) continue;
+			const data = "strings" in parsed ? parsed.strings : parsed;
+			current = mergeStrings(data, current);
 		} catch {}
 	}
-	cached = mergeStrings(undefined);
+	if (current.welcomePersona.user === "{auto}" || !current.welcomePersona.user) {
+		current.welcomePersona.user = detectSystemUser();
+	}
+	cached = current;
 	return cached;
 }
 
 /** Clear the in-memory cache (tests and follow-up slices). */
 export function resetCuteStringsCache(): void {
 	cached = null;
+	detectedUser = null;
 }
 
 /**

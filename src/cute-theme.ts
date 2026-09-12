@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -131,6 +132,19 @@ const ASCII_FALLBACK: CuteGlyphs = {
 	gaugeEmpty: "-",
 };
 
+export type CutePetalPreset = "petals" | "cats" | "kittens" | "sparkles" | "stars" | "hearts" | "ascii";
+
+export const PETAL_PRESETS: Record<string, string[]> = {
+	petals: ["✿", "❀", "❁", "✾"],
+	flowers: ["✿", "❀", "❁", "✾"],
+	cats: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	kittens: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	sparkles: ["✦", "✧", "★", "☆"],
+	stars: ["✦", "✧", "★", "☆"],
+	hearts: ["♡", "♥", "ღ", "❦"],
+	ascii: ["*", "+", "o", "x"],
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -143,51 +157,70 @@ function normalizeFrameStyle(source: unknown): CuteFrameStyle {
 	return source === "single" || source === "rounded" || source === "ascii" ? source : "double";
 }
 
-/** Merge a parsed `glyphs` JSON value over the double defaults. */
-function mergeGlyphs(raw: unknown): CuteGlyphs {
-	const record = isRecord(raw) ? raw : {};
-	const frameStyle = normalizeFrameStyle(record.frameStyle);
-	const preset = FRAME_PRESETS[frameStyle];
-	const frameKeys = ["tl", "tr", "bl", "br", "h", "v", "dividerL", "dividerR"] as const;
-	const rawFrame = isRecord(raw) ? (raw as Record<string, unknown>) : {};
+/** Merge a parsed `glyphs` JSON value over the base glyphs (defaults to DOUBLE_GLYPHS). */
+function mergeGlyphs(raw: unknown, baseGlyphs: CuteGlyphs = DOUBLE_GLYPHS): CuteGlyphs {
 	const base: CuteGlyphs = {
-		...DOUBLE_GLYPHS,
-		spinnerFrames: [...DOUBLE_GLYPHS.spinnerFrames],
-		petalFrames: [...DOUBLE_GLYPHS.petalFrames],
+		...baseGlyphs,
+		spinnerFrames: [...baseGlyphs.spinnerFrames],
+		petalFrames: [...baseGlyphs.petalFrames],
 	};
-	// frameStyle selects the frame preset; explicit keys win over the preset.
-	for (const key of frameKeys) {
-		const explicit = rawFrame[key];
-		base[key] =
-			typeof explicit === "string" && explicit.length > 0
-				? explicit
-				: (preset[key] ?? ASCII_FALLBACK[key]);
+	if (!isRecord(raw)) return base;
+	const rawRecord = raw as Record<string, unknown>;
+
+	if (typeof rawRecord.frameStyle === "string") {
+		const frameStyle = normalizeFrameStyle(rawRecord.frameStyle);
+		base.frameStyle = frameStyle;
+		const preset = FRAME_PRESETS[frameStyle];
+		const frameKeys = ["tl", "tr", "bl", "br", "h", "v", "dividerL", "dividerR"] as const;
+		for (const key of frameKeys) {
+			base[key] = preset[key] ?? ASCII_FALLBACK[key];
+		}
 	}
-	base.frameStyle = frameStyle;
-	// Under the ascii style, unset accessory glyphs also resolve to ASCII so
-	// widgets keep rendering without a Nerd Font; other styles keep double.
-	const accessoryFallback = frameStyle === "ascii" ? ASCII_FALLBACK : DOUBLE_GLYPHS;
-	base.separator = pickGlyph(rawFrame.separator, accessoryFallback.separator);
-	base.dot = pickGlyph(rawFrame.dot, accessoryFallback.dot);
-	base.brand = pickGlyph(rawFrame.brand, accessoryFallback.brand);
-	base.profileIcon = pickGlyph(rawFrame.profileIcon, accessoryFallback.profileIcon);
-	base.branch = pickGlyph(rawFrame.branch, accessoryFallback.branch);
-	base.gaugeFilled = pickGlyph(rawFrame.gaugeFilled, accessoryFallback.gaugeFilled);
-	base.gaugeEmpty = pickGlyph(rawFrame.gaugeEmpty, accessoryFallback.gaugeEmpty);
-	const rawFrames = rawFrame.spinnerFrames;
+
+	const frameKeys = ["tl", "tr", "bl", "br", "h", "v", "dividerL", "dividerR"] as const;
+	for (const key of frameKeys) {
+		const explicit = rawRecord[key];
+		if (typeof explicit === "string" && explicit.length > 0) {
+			base[key] = explicit;
+		}
+	}
+
+	const accessoryKeys = [
+		"separator",
+		"dot",
+		"brand",
+		"profileIcon",
+		"branch",
+		"gaugeFilled",
+		"gaugeEmpty",
+	] as const;
+	for (const key of accessoryKeys) {
+		const explicit = rawRecord[key];
+		if (typeof explicit === "string" && explicit.length > 0) {
+			base[key] = explicit;
+		}
+	}
+
+	// Preset lookup for animation frames (preset / petalPreset)
+	const presetKey = typeof rawRecord.preset === "string" ? rawRecord.preset.toLowerCase() : (
+		typeof rawRecord.petalPreset === "string" ? rawRecord.petalPreset.toLowerCase() : undefined
+	);
+	if (presetKey && presetKey in PETAL_PRESETS) {
+		base.petalFrames = [...PETAL_PRESETS[presetKey]];
+	}
+
+	const rawFrames = rawRecord.spinnerFrames;
 	if (Array.isArray(rawFrames)) {
 		const cleaned = rawFrames.filter((f): f is string => typeof f === "string" && f.length > 0);
-		base.spinnerFrames = cleaned.length > 0 ? cleaned : [...accessoryFallback.spinnerFrames];
-	} else if (frameStyle === "ascii") {
-		base.spinnerFrames = [...ASCII_FALLBACK.spinnerFrames];
+		if (cleaned.length > 0) base.spinnerFrames = cleaned;
 	}
-	const rawPetals = rawFrame.petalFrames;
+
+	const rawPetals = rawRecord.petalFrames;
 	if (Array.isArray(rawPetals)) {
 		const cleaned = rawPetals.filter((f): f is string => typeof f === "string" && f.length > 0);
-		base.petalFrames = cleaned.length > 0 ? cleaned : [...accessoryFallback.petalFrames];
-	} else if (frameStyle === "ascii") {
-		base.petalFrames = [...ASCII_FALLBACK.petalFrames];
+		if (cleaned.length > 0) base.petalFrames = cleaned;
 	}
+
 	// ASCII fallback: any empty frame/box key left blank resolves to ASCII.
 	for (const key of ["tl", "tr", "bl", "br", "h", "v", "dividerL", "dividerR", "separator"] as const) {
 		if (!base[key]) base[key] = ASCII_FALLBACK[key];
@@ -205,23 +238,68 @@ function mergeGlyphs(raw: unknown): CuteGlyphs {
 
 let cachedGlyphs: CuteGlyphs | null = null;
 
-function readGlyphsFile(): unknown {
+function candidateGlyphsFiles(): string[] {
 	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (filePath: string) => {
+		const resolved = path.resolve(filePath);
+		if (!seen.has(resolved)) {
+			seen.add(resolved);
+			candidates.push(resolved);
+		}
+	};
+
+	// 1. Package defaults (repo clone)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
-		candidates.push(path.join(here, "..", "themes", "CinlodevCute.json"));
+		const packageDir = path.resolve(here, "..");
+		add(path.join(packageDir, "themes", "CinlodevCute.json"));
+		add(path.join(packageDir, "config", "CinlodevCute.glyphs.json"));
+		add(path.join(packageDir, "themes", "CinlodevCute.glyphs.json"));
 	} catch {}
+
+	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
 	try {
-		candidates.push(path.join(process.cwd(), "themes", "CinlodevCute.json"));
+		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, "cinlodev-cute.json"));
+		add(path.join(agentDir, "cute", "CinlodevCute.glyphs.json"));
+		add(path.join(agentDir, "cute", "glyphs.json"));
+		add(path.join(agentDir, "cinlodev-cute", "CinlodevCute.glyphs.json"));
+		add(path.join(agentDir, "cinlodev-cute", "glyphs.json"));
 	} catch {}
-	for (const file of candidates) {
+
+	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const packageDir = path.resolve(here, "..");
+		const cwd = path.resolve(process.cwd());
+		if (cwd !== packageDir) {
+			add(path.join(cwd, ".pi", "cute.json"));
+			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
+			add(path.join(cwd, "config", "CinlodevCute.glyphs.json"));
+		}
+	} catch {}
+
+	return candidates;
+}
+
+function resolveBaseGlyphs(): CuteGlyphs {
+	let current: CuteGlyphs = mergeGlyphs(undefined, DOUBLE_GLYPHS);
+	for (const file of candidateGlyphsFiles()) {
 		try {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-			if (isRecord(parsed) && "glyphs" in parsed) return parsed.glyphs;
+			if (!isRecord(parsed)) continue;
+			let glyphs = "glyphs" in parsed ? parsed.glyphs : parsed;
+			if (isRecord(parsed) && "preset" in parsed && isRecord(glyphs) && !("preset" in glyphs)) {
+				glyphs = { ...glyphs, preset: parsed.preset };
+			}
+			current = mergeGlyphs(glyphs, current);
 		} catch {}
 	}
-	return undefined;
+	return current;
 }
 
 /**
@@ -229,14 +307,17 @@ function readGlyphsFile(): unknown {
  * literals previously hardcoded in hud/footer frames, so the default visual
  * stays unchanged. Missing keys fall back to ASCII so widgets keep rendering
  * without a Nerd Font.
+ *
+ * User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.glyphs.json
+ * layer on top of package defaults and persist across package updates.
  */
 export function cuteGlyphs(theme?: unknown): CuteGlyphs {
-	const fromTheme = isRecord(theme) && isRecord((theme as Record<string, unknown>).glyphs)
-		? (theme as Record<string, unknown>).glyphs
-		: undefined;
-	if (fromTheme) return mergeGlyphs(fromTheme);
-	if (cachedGlyphs) return cachedGlyphs;
-	cachedGlyphs = mergeGlyphs(readGlyphsFile());
+	if (!cachedGlyphs) {
+		cachedGlyphs = resolveBaseGlyphs();
+	}
+	if (isRecord(theme) && isRecord((theme as Record<string, unknown>).glyphs)) {
+		return mergeGlyphs((theme as Record<string, unknown>).glyphs, cachedGlyphs);
+	}
 	return cachedGlyphs;
 }
 

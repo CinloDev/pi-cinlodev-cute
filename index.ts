@@ -3,8 +3,10 @@ import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
 import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
 import { installCinlodevFooter } from "./src/footer.js";
-import { loadCuteStrings } from "./src/cute-strings.ts";
-import { loadCutePaths, resolveDevBinaryPath } from "./src/cute-paths.ts";
+import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
+import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
+import { resetCuteGlyphsCache } from "./src/cute-theme.ts";
+import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
@@ -54,11 +56,17 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		} catch {}
 	});
 
-	// 5. Command to inspect / reapply
+	// 5. Command to inspect / reapply with hot-reload of configurations
 	pi.registerCommand(loadCuteStrings().commandName, {
 		description: loadCuteStrings().commandDescription,
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			if (!ctx.hasUI) return;
+			// Clear in-memory caches so changes in ~/.pi/agent/cute.json or project configs load immediately
+			resetCuteGlyphsCache();
+			resetCuteStringsCache();
+			resetCuteLayoutCache();
+			resetCutePathsCache();
+
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);
 			ctx.ui.notify(loadCuteStrings().commandNotify, "info");

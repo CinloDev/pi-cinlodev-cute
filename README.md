@@ -73,6 +73,25 @@
 * **`config/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
 * **`config/CinlodevCute.paths.json`** — filesystem touchpoints (kept outside `themes/` on purpose: Pi rejects any non-theme JSON found there). `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
 
+#### 🐱 User Overrides (Persistent Across Updates)
+To personalize your theme without modifying files inside the git repository — so `pi update --extensions` never overwrites your customizations — place an override file at `~/.pi/agent/cute.json` (or in `~/.pi/agent/cute/`):
+
+```json
+{
+  "user": "YourName",
+  "persona": "gentlewoman",
+  "preset": "cats",
+  "layout": {
+    "sidebar": { "railWidth": 52 }
+  }
+}
+```
+
+* **Animation presets:** easily switch animations with `"preset": "cats"` (or `"kittens"`), `"petals"` (default), `"sparkles"` (or `"stars"`), `"hearts"`, or `"ascii"`. You can also supply custom `petalFrames` if you want your own kaomojis.
+* **Dynamic `{user}` with auto-detection:** `user` replaces `{user}` placeholders across HUD, Header, Footer and persona instructions. If omitted, it automatically detects your name from `git config user.name` or your OS username.
+* **Persona mode & userRole:** `"persona": "gentleman"` (default, male agent and "desarrollador" treatment) or `"persona": "gentlewoman"` (female agent and "desarrolladora" treatment). You can also explicitly specify `"userRole"` (e.g. `"desarrolladora"`, `"desarrollador"`, `"developer"`).
+* Overrides merge on top of package defaults; omitted keys continue using official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.
+
 ---
 
 ## 📦 Installation
@@ -95,7 +114,7 @@ pi install /path/to/pi-cinlodev-cute
 
 | Command | Description |
 | :--- | :--- |
-| `/cinlodev` | Instantly re-applies and verifies all Cinlodev CUTE components (Header, HUD, Editor, Footer). |
+| `/cinlodev` | Instantly reloads configuration files and re-applies all Cinlodev CUTE components (Header, HUD, Editor, Footer) with hot-reload. |
 | `/hud` | Configure persistent HUD above input (`/hud`, `/hud full`, `/hud compact`, `/hud off`). |
 | `/welcome` | Toggle or configure the Welcome Dashboard (`/welcome full`, `/welcome compact`, `/welcome off`). |
 | `/gentle:changes` | Open interactive two-pane diff viewer for modified working tree files (`Alt+G`). |

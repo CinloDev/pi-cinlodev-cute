@@ -137,7 +137,9 @@ export class CinlodevCuteFooter implements Component {
 
 		// 1. Brand segment (texts from config/CinlodevCute.strings.json via loadCuteStrings())
 		const strings = loadCuteStrings();
-		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerBrand)}`;
+		const user = strings.welcomePersona.user || "Cinlo";
+		const brandText = strings.footerBrand.replace("{user}", user);
+		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(brandText)}`;
 
 		// 2. Git branch & dirty badge (branch glyph via cuteGlyphs)
 		const branch = this.footerData.getGitBranch() || "no-git";
@@ -220,7 +222,8 @@ export class CinlodevCuteFooter implements Component {
 		}
 		if (visibleWidth(line) > safeWidth) {
 			// 5. Shorten brand (texts from config/CinlodevCute.strings.json via loadCuteStrings())
-			const shortBrand = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(strings.footerShort)}`;
+			const shortText = strings.footerShort.replace("{user}", user);
+			const shortBrand = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(shortText)}`;
 			segments = [shortBrand, segments[1]];
 			line = joinLine(segments);
 		}

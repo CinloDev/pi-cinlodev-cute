@@ -69,8 +69,8 @@ function pickStringArray(source: unknown, fallback: string[]): string[] {
 }
 
 /** Merge a parsed JSON value over the defaults; unknown keys are ignored. */
-function mergePaths(raw: unknown): CutePaths {
-	const base: CutePaths = { ...DEFAULTS, contextFiles: [...DEFAULTS.contextFiles] };
+function mergePaths(raw: unknown, baseSource: CutePaths = DEFAULTS): CutePaths {
+	const base: CutePaths = { ...baseSource, contextFiles: [...baseSource.contextFiles] };
 	if (!isRecord(raw)) return base;
 	base.agentDir = pickString(raw.agentDir, base.agentDir);
 	base.profileActive = pickString(raw.profileActive, base.profileActive);
@@ -84,17 +84,51 @@ function mergePaths(raw: unknown): CutePaths {
 
 // Tunables live in config/, NOT in themes/: Pi treats every *.json under
 // themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
-function candidatePaths(): string[] {
+// User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.paths.json
+// layer on top of package defaults and persist across package updates.
+function candidatePathsFiles(): string[] {
 	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (filePath: string) => {
+		const resolved = path.resolve(filePath);
+		if (!seen.has(resolved)) {
+			seen.add(resolved);
+			candidates.push(resolved);
+		}
+	};
+
+	// 1. Package defaults (repo clone)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
-		candidates.push(path.join(here, "..", "config", CUTE_PATHS_FILENAME));
-		candidates.push(path.join(here, "..", "themes", CUTE_PATHS_FILENAME));
+		const packageDir = path.resolve(here, "..");
+		add(path.join(packageDir, "config", CUTE_PATHS_FILENAME));
+		add(path.join(packageDir, "themes", CUTE_PATHS_FILENAME));
 	} catch {}
+
+	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
 	try {
-		candidates.push(path.join(process.cwd(), "config", CUTE_PATHS_FILENAME));
-		candidates.push(path.join(process.cwd(), "themes", CUTE_PATHS_FILENAME));
+		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, "cinlodev-cute.json"));
+		add(path.join(agentDir, "cute", CUTE_PATHS_FILENAME));
+		add(path.join(agentDir, "cute", "paths.json"));
+		add(path.join(agentDir, "cinlodev-cute", CUTE_PATHS_FILENAME));
+		add(path.join(agentDir, "cinlodev-cute", "paths.json"));
 	} catch {}
+
+	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const packageDir = path.resolve(here, "..");
+		const cwd = path.resolve(process.cwd());
+		if (cwd !== packageDir) {
+			add(path.join(cwd, ".pi", "cute.json"));
+			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
+			add(path.join(cwd, "config", CUTE_PATHS_FILENAME));
+		}
+	} catch {}
+
 	return candidates;
 }
 
@@ -104,18 +138,22 @@ let cached: CutePaths | null = null;
  * Load tunable paths, cached in memory. Falls back to the compiled
  * defaults when the JSON file is missing or unparsable, so widgets keep
  * rendering with the current behavior instead of throwing.
+ *
+ * Layers package defaults, user-level overrides (~/.pi/agent), and project overrides.
  */
 export function loadCutePaths(): CutePaths {
 	if (cached) return cached;
-	for (const file of candidatePaths()) {
+	let current: CutePaths = mergePaths(undefined, DEFAULTS);
+	for (const file of candidatePathsFiles()) {
 		try {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-			cached = mergePaths(parsed);
-			return cached;
+			if (!isRecord(parsed)) continue;
+			const data = "paths" in parsed ? parsed.paths : parsed;
+			current = mergePaths(data, current);
 		} catch {}
 	}
-	cached = mergePaths(undefined);
+	cached = current;
 	return cached;
 }
 
