@@ -339,3 +339,46 @@ export function cutePalette(theme: Theme): CutePalette {
 		mint: (s) => safeFg(theme, "green", s),
 	};
 }
+
+// Las cards de gentle-pi (Changes/Agents/Todo/Command) llegan en línea simple redondeada
+// bicolor (riel en tono + resto en border). Las pasamos a doble línea simétrica CUTE
+// con borde iluminado en verde mint (#B4E7C7) si está en completed/éxito, y el robot 🤖.
+// Sin theme se devuelve el token intacto (sin re-colorear a mano).
+export function unifyCardFrame(raw: string, theme?: Theme): string {
+	if (!theme) return raw;
+	const g = cuteGlyphs(theme);
+	const toConfigured: Record<string, string> = {
+		"╭": g.tl,
+		"╮": g.tr,
+		"╰": g.bl,
+		"╯": g.br,
+		"│": g.v,
+		"─": g.h,
+	};
+
+	// 1. Reemplazar rosa/flor de Gentle AI por el robot 🤖
+	let line = raw.replace(/\u{1F339}\uFE0E/gu, "🤖").replace(/🌹/g, "🤖");
+
+	// 2. Determinar el rol de color de la card (verde mint para completed)
+	const isFailed = line.includes("failed");
+	const isRunning = line.includes("running") || line.includes("preparing");
+	const isCompleted = line.includes("completed") || /\x1b\[(?:32|38;2;[0-9;]+)m[ ╭╰│]/.test(line);
+	const toneRole = isCompleted ? "success" : isFailed ? "error" : isRunning ? "warning" : "border";
+
+	// 3. Reemplazar tokens ANSI de marco
+	line = line.replace(
+		/\x1b\[[0-9;]+m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)/g,
+		(token) => {
+			const open = token.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
+			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
+			const glyphs = token.slice(open.length, token.length - close.length);
+			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
+			return safeFg(theme, toneRole, doubled);
+		},
+	);
+
+	// 4. Reemplazar cualquier glifo de marco restante fuera de ANSI
+	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, toneRole, toConfigured[c] ?? c));
+
+	return line;
+}
