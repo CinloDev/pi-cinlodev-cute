@@ -1,6 +1,6 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, frameFg, safeFg } from "./cute-theme.ts";
+import { cuteGlyphs, frameFg, safeFg, unifyCardFrame } from "./cute-theme.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 
@@ -12,34 +12,6 @@ import { loadCuteLayout } from "./cute-layout.ts";
 
 // Single/rounded frame tokens map to the configured double (or ascii) preset
 // via cuteGlyphs at render time, so frameStyle switches stay consistent.
-
-// Las cards de gentle-pi (Changes/Agents/Todo) llegan en línea simple redondeada
-// bicolor (riel en tono + resto en border). Las pasamos a doble línea toda en
-// violeta oscuro, igual que nuestra card de Status. Solo toca tokens ANSI que
-// sean puro marco, así el contenido (título, +366, −10, etc.) queda intacto.
-// Sin theme se devuelve el token intacto (sin re-colorear a mano).
-function unifyCardFrame(raw: string, theme?: Theme): string {
-	return raw.replace(
-		/\x1b\[[0-9;]+m[ ╭╮╰╯│─]*[╭╮╰╯│─][ ╭╮╰╯│─]*(?:\x1b\[39m|\x1b\[0m)/g,
-		(token) => {
-			if (!theme) return token;
-			const g = cuteGlyphs(theme);
-			const toConfigured: Record<string, string> = {
-				"╭": g.tl,
-				"╮": g.tr,
-				"╰": g.bl,
-				"╯": g.br,
-				"│": g.v,
-				"─": g.h,
-			};
-			const open = token.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
-			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
-			const glyphs = token.slice(open.length, token.length - close.length);
-			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
-			return frameFg(theme, doubled);
-		},
-	);
-}
 
 function findTranscript(root: unknown): ScrollView | undefined {
 	if (!root || typeof root !== "object") return undefined;
@@ -240,6 +212,16 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const originalScrollbarTrackStyle = transcript ? (transcript as any).scrollbarTrackStyle : undefined;
 			const originalScrollbarThumbStyle = transcript ? (transcript as any).scrollbarThumbStyle : undefined;
 
+			const originalTranscriptRender = transcript ? transcript.render.bind(transcript) : undefined;
+			if (transcript && !(transcript as any).__cuteWrapped) {
+				(transcript as any).__cuteWrapped = true;
+				const orig = transcript.render.bind(transcript);
+				transcript.render = (width: number) => {
+					const rawLines = orig(width);
+					return rawLines.map((line) => unifyCardFrame(line, theme));
+				};
+			}
+
 			const applyCuteScrollbars = () => {
 				if (!transcript) return;
 				(transcript as any).scrollbarTrackStyle = () => subtle(railV);
@@ -250,6 +232,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 			const restoreTranscript = () => {
 				if (!transcript) return;
+				if (originalTranscriptRender) transcript.render = originalTranscriptRender;
+				delete (transcript as any).__cuteWrapped;
 				if (originalScrollbarTrackStyle) (transcript as any).scrollbarTrackStyle = originalScrollbarTrackStyle;
 				if (originalScrollbarThumbStyle) (transcript as any).scrollbarThumbStyle = originalScrollbarThumbStyle;
 				if (transcript.scrollbar !== originalScrollbar) transcript.setScrollbar(originalScrollbar);
@@ -268,7 +252,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			};
 
 			const left = {
-				render: (width: number) => root.render(width),
+				render: (width: number) => {
+					const lines = root.render(width);
+					return lines.map((line) => unifyCardFrame(line, theme));
+				},
 				invalidate: () => root.invalidate?.(),
 				[NODE]: () => original.call(root),
 			};
