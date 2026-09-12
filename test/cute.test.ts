@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame } from "../src/cute-theme.ts";
+import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine } from "../src/cute-theme.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -111,6 +111,104 @@ test("User Overrides - custom persona, user name and animation preset", () => {
 test("User detection - detectSystemUser fallback and caching", () => {
 	const user = detectSystemUser();
 	assert.ok(typeof user === "string" && user.length > 0);
+});
+
+test("unifySidebarCardFrame - sidebar cards keep border tone and never turn green", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	// Changes card line with diff additions containing green ANSI (like +16019 -0)
+	const changesTop = "\u001b[35m╭─\u001b[39m 🌸 Changes \u001b[35m───────────────────────╮\u001b[39m";
+	const changesBody = "\u001b[35m│\u001b[39m 55 files · \u001b[32m+16019\u001b[39m \u001b[31m-0\u001b[39m                 \u001b[35m│\u001b[39m";
+	const changesBottom = "\u001b[35m╰─────────────────────────────────────╯\u001b[39m";
+
+	const topTransformed = unifySidebarCardFrame(changesTop, mockTheme);
+	const bodyTransformed = unifySidebarCardFrame(changesBody, mockTheme);
+	const bottomTransformed = unifySidebarCardFrame(changesBottom, mockTheme);
+
+	// Must be double-line
+	assert.ok(topTransformed.includes("╔═"));
+	assert.ok(topTransformed.includes("╗"));
+	assert.ok(bodyTransformed.includes("║"));
+	assert.ok(bottomTransformed.includes("╚═"));
+	assert.ok(bottomTransformed.includes("╝"));
+
+	// Frame must be in [border] tone, NOT [success]
+	assert.ok(topTransformed.includes("[border]"));
+	assert.ok(!topTransformed.includes("[success]"));
+	assert.ok(bottomTransformed.includes("[border]"));
+	assert.ok(!bottomTransformed.includes("[success]"));
+});
+
+test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-line mint green frame and robot", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const transcriptLines = [
+		"$ git status",
+		"\u001b[32m╭\u001b[39m\u001b[35m─\u001b[39m 🌷 Gentle AI · completed · command \u001b[35m──────────────────\u001b[39m ctrl+o to expand \u001b[35m╮\u001b[39m",
+		"\u001b[32m│\u001b[39m 2 lines                                                                          \u001b[35m│\u001b[39m",
+		"\u001b[32m╰\u001b[39m\u001b[35m─────────────────────────────────────────────────────────────────────────────────╯\u001b[39m",
+		"$ next command",
+	];
+
+	const transformed = transformTranscriptLines(transcriptLines, mockTheme);
+
+	// Non-card lines must be untouched
+	assert.equal(transformed[0], "$ git status");
+	assert.equal(transformed[4], "$ next command");
+
+	// Card lines transformed
+	assert.ok(transformed[1].includes("🤖 Gentle AI"));
+	assert.ok(!transformed[1].includes("🌷"));
+	assert.ok(transformed[1].includes("╔"));
+	assert.ok(transformed[1].includes("═"));
+	assert.ok(transformed[1].includes("╗"));
+	assert.ok(transformed[1].includes("[success]"));
+
+	assert.ok(transformed[2].includes("║"));
+	assert.ok(transformed[2].includes("2 lines"));
+	assert.ok(transformed[2].includes("[success]"));
+
+	assert.ok(transformed[3].includes("╚"));
+	assert.ok(transformed[3].includes("═"));
+	assert.ok(transformed[3].includes("╝"));
+	assert.ok(transformed[3].includes("[success]"));
+});
+
+test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to double-line yellow frame and robot", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const warningLines = [
+		"\u001b[33m╭─\u001b[39m ✿ Gentle AI · dev binary override · field-test only \u001b[35m──────────────────╮\u001b[39m",
+		"\u001b[33m│\u001b[39m /home/cinlodev/go/bin/gentle-ai · sha256:882bfd7a9d5c16f1              \u001b[35m│\u001b[39m",
+		"\u001b[33m╰\u001b[39m\u001b[35m────────────────────────────────────────────────────────────────────────╯\u001b[39m",
+		"",
+	];
+
+	const transformed = transformTranscriptLines(warningLines, mockTheme);
+
+	// Card lines transformed
+	assert.ok(transformed[0].includes("🤖 Gentle AI"));
+	assert.ok(!transformed[0].includes("✿"));
+	assert.ok(transformed[0].includes("╔"));
+	assert.ok(transformed[0].includes("═"));
+	assert.ok(transformed[0].includes("╗"));
+	assert.ok(transformed[0].includes("[warning]"));
+
+	assert.ok(transformed[1].includes("║"));
+	assert.ok(transformed[1].includes("/home/cinlodev/go/bin/gentle-ai"));
+	assert.ok(transformed[1].includes("[warning]"));
+
+	assert.ok(transformed[2].includes("╚"));
+	assert.ok(transformed[2].includes("═"));
+	assert.ok(transformed[2].includes("╝"));
+	assert.ok(transformed[2].includes("[warning]"));
+
+	assert.equal(transformed[3], "");
 });
 
 test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot glyph", () => {
