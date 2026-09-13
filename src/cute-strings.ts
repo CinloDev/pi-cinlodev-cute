@@ -425,6 +425,15 @@ function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStr
 // themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
 // User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.strings.json
 // layer on top of package defaults and persist across package updates.
+function isPackageClone(dir: string): boolean {
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+		return pkg?.name === "pi-cinlodev-cute";
+	} catch {
+		return false;
+	}
+}
+
 function candidateStringsFiles(): string[] {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
@@ -461,10 +470,9 @@ function candidateStringsFiles(): string[] {
 		const here = path.dirname(fileURLToPath(import.meta.url));
 		const packageDir = path.resolve(here, "..");
 		const cwd = path.resolve(process.cwd());
-		if (cwd !== packageDir) {
+		if (cwd !== packageDir && !isPackageClone(cwd)) {
 			add(path.join(cwd, ".pi", "cute.json"));
 			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
-			add(path.join(cwd, "config", CUTE_STRINGS_FILENAME));
 		}
 	} catch {}
 
@@ -519,8 +527,12 @@ export function loadCuteStrings(): CuteStrings {
 			if (!fs.existsSync(file)) continue;
 			const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
 			if (!isRecord(parsed)) continue;
-			const data = "strings" in parsed ? parsed.strings : parsed;
-			current = mergeStrings(data, current);
+			// 1. Merge root-level properties (user, persona, userRole, userPronoun, etc.)
+			current = mergeStrings(parsed, current);
+			// 2. If there is a nested "strings" block, merge it on top
+			if (isRecord(parsed.strings)) {
+				current = mergeStrings(parsed.strings, current);
+			}
 		} catch {}
 	}
 	if (current.welcomePersona.user === "{auto}" || !current.welcomePersona.user) {

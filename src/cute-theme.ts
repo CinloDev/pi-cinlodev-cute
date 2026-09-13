@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadCuteColors } from "./cute-colors.ts";
 
 /**
  * Safe theme.fg wrapper in the welcome.ts style: on unknown keys fall back
@@ -238,6 +239,15 @@ function mergeGlyphs(raw: unknown, baseGlyphs: CuteGlyphs = DOUBLE_GLYPHS): Cute
 
 let cachedGlyphs: CuteGlyphs | null = null;
 
+function isPackageClone(dir: string): boolean {
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+		return pkg?.name === "pi-cinlodev-cute";
+	} catch {
+		return false;
+	}
+}
+
 function candidateGlyphsFiles(): string[] {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
@@ -275,10 +285,9 @@ function candidateGlyphsFiles(): string[] {
 		const here = path.dirname(fileURLToPath(import.meta.url));
 		const packageDir = path.resolve(here, "..");
 		const cwd = path.resolve(process.cwd());
-		if (cwd !== packageDir) {
+		if (cwd !== packageDir && !isPackageClone(cwd)) {
 			add(path.join(cwd, ".pi", "cute.json"));
 			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
-			add(path.join(cwd, "config", "CinlodevCute.glyphs.json"));
 		}
 	} catch {}
 
@@ -349,6 +358,7 @@ export function stripAnsi(text: string): string {
 export function unifySidebarCardFrame(raw: string, theme?: Theme): string {
 	if (!theme) return raw;
 	const g = cuteGlyphs(theme);
+	const colors = loadCuteColors();
 	const toConfigured: Record<string, string> = {
 		"╭": g.tl,
 		"╮": g.tr,
@@ -367,12 +377,12 @@ export function unifySidebarCardFrame(raw: string, theme?: Theme): string {
 			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
 			const glyphs = token.slice(open.length, close ? token.length - close.length : undefined);
 			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
-			return safeFg(theme, "border", doubled);
+			return safeFg(theme, colors.sidebarBorder, doubled);
 		},
 	);
 
 	// Replace remaining bare frame glyphs
-	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, "border", toConfigured[c] ?? c));
+	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, colors.sidebarBorder, toConfigured[c] ?? c));
 
 	return line;
 }
@@ -385,6 +395,16 @@ export type CuteCardTone = "success" | "warning" | "error" | "border";
 export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCardTone = "success"): string {
 	if (!theme) return raw;
 	const g = cuteGlyphs(theme);
+	const colors = loadCuteColors();
+	const resolvedTone =
+		tone === "warning"
+			? colors.gentleCardWarning
+			: tone === "error"
+				? colors.gentleCardError
+				: tone === "border"
+					? colors.sidebarBorder
+					: colors.gentleCardSuccess;
+
 	const toConfigured: Record<string, string> = {
 		"╭": g.tl,
 		"╮": g.tr,
@@ -402,7 +422,7 @@ export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCar
 		.replace(/(?:\u{1F339}\uFE0E|\u{1F339}|🌹|\u{1F337}|🌷|✿)\s*(?=Gentle AI)/gu, "🤖 ")
 		.replace(/(?:\u{1F339}\uFE0E|\u{1F339}|🌹|\u{1F337}|🌷)/gu, "🤖");
 
-	// 3. Reemplazar tokens ANSI de marco y pintarlos con el tono correspondiente (warning = yellow, success = mint)
+	// 3. Reemplazar tokens ANSI de marco y pintarlos con el tono correspondiente
 	line = line.replace(
 		/\x1b\[[0-9;]*m[ ╭╮╰╯│─╔╗╚╝║═]*[╭╮╰╯│─╔╗╚╝║═][ ╭╮╰╯│─╔╗╚╝║═]*(?:\x1b\[39m|\x1b\[0m)?/g,
 		(token) => {
@@ -410,12 +430,12 @@ export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCar
 			const close = token.match(/(?:\x1b\[39m|\x1b\[0m)$/)?.[0] ?? "";
 			const glyphs = token.slice(open.length, close ? token.length - close.length : undefined);
 			const doubled = glyphs.replace(/[╭╮╰╯│─]/g, (c) => toConfigured[c] ?? c);
-			return safeFg(theme, tone, doubled);
+			return safeFg(theme, resolvedTone, doubled);
 		},
 	);
 
 	// 4. Reemplazar cualquier glifo de marco restante fuera de ANSI
-	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, tone, toConfigured[c] ?? c));
+	line = line.replace(/[╭╮╰╯│─]/g, (c) => safeFg(theme, resolvedTone, toConfigured[c] ?? c));
 
 	// 5. Si reemplazamos ✿ (1 columna) por 🤖 (2 columnas), el título creció 1 columna:
 	// acortamos la regla horizontal por 1 columna para que el marco cierre perfectamente simétrico.

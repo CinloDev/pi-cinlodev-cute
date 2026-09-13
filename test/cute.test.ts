@@ -4,15 +4,18 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine } from "../src/cute-theme.ts";
+import { frameCategoryBox, formatTranscriptChild } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
+import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
 	resetCuteStringsCache();
 	resetCuteLayoutCache();
 	resetCutePathsCache();
+	resetCuteColorsCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -98,6 +101,27 @@ test("User Overrides - custom persona, user name and animation preset", () => {
 		assert.deepEqual(glyphs.petalFrames, ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"]);
 		assert.equal(glyphs.tl, "╔"); // untouched default preserved
 		assert.equal(layout.sidebar.railWidth, 54);
+
+		// Also test when cute.json contains BOTH root persona/user AND a nested "strings" block:
+		fs.writeFileSync(
+			userConfigFile,
+			JSON.stringify({
+				user: "Cinlo",
+				persona: "gentlewoman",
+				strings: {
+					brandTitle: "✿ Cinlodev",
+				},
+			}, null, 2),
+			"utf8",
+		);
+		resetAll();
+
+		const stringsWithNested = loadCuteStrings();
+		assert.equal(stringsWithNested.welcomePersona.name, "la Gentlewoman");
+		assert.equal(stringsWithNested.welcomePersona.user, "Cinlo");
+		assert.equal(stringsWithNested.welcomePersona.userRole, "desarrolladora");
+		assert.equal(stringsWithNested.welcomePersona.userPronoun, "Tratala");
+		assert.equal(stringsWithNested.brandTitle, "✿ Cinlodev");
 	} finally {
 		if (originalContent !== null) {
 			fs.writeFileSync(userConfigFile, originalContent, "utf8");
@@ -225,8 +249,102 @@ test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot gly
 	assert.ok(transformed.includes("[success]"));
 });
 
+test("frameCategoryBox - exact width and double-line framing", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const content = ["line 1", "line 2 with some text"];
+	const framed = frameCategoryBox(content, "Test Box", "heading", 50, mockTheme);
+
+	assert.equal(framed.length, 4); // top, line 1, line 2, bottom
+	assert.ok(framed[0].includes("╔═"));
+	assert.ok(framed[0].includes("Test Box"));
+	assert.ok(framed[0].includes("╗"));
+	assert.ok(framed[0].includes("[heading]"));
+
+	assert.ok(framed[1].includes("║"));
+	assert.ok(framed[1].includes("line 1"));
+	assert.ok(framed[2].includes("║"));
+	assert.ok(framed[2].includes("line 2 with some text"));
+
+	assert.ok(framed[3].includes("╚═"));
+	assert.ok(framed[3].includes("╝"));
+});
+
+test("formatTranscriptChild - frames user messages in CUTE golden box and leaves others natural", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	// 1. User Message (Dorado / heading con ❀)
+	class UserMessageComponent {
+		render() { return ["echo hello from user"]; }
+	}
+	const userFramed = formatTranscriptChild(new UserMessageComponent() as any, 60, mockTheme);
+	assert.ok(userFramed[0].includes("[heading]"));
+	assert.ok(userFramed[0].includes("❀"));
+	assert.ok(userFramed[1].includes("echo hello from user"));
+	assert.ok(userFramed[2].includes("╚"));
+
+	// 2. Assistant Message renders naturally without extra bounding box
+	class AssistantMessageComponent {
+		render() { return ["# Title", "Explicación del asistente"]; }
+	}
+	const asstRender = formatTranscriptChild(new AssistantMessageComponent() as any, 60, mockTheme);
+	assert.equal(asstRender[0], "# Title");
+	assert.equal(asstRender[1], "Explicación del asistente");
+
+	// 3. Bash Execution renders naturally
+	class BashExecutionComponent {
+		render() { return ["$ npm test", "# pass 10"]; }
+	}
+	const bashRender = formatTranscriptChild(new BashExecutionComponent() as any, 60, mockTheme);
+	assert.equal(bashRender[0], "$ npm test");
+});
+
+test("Cute Colors - defaults and user overrides", () => {
+	const originalContent = fs.existsSync(userConfigFile) ? fs.readFileSync(userConfigFile, "utf8") : null;
+	try {
+		if (fs.existsSync(userConfigFile)) fs.unlinkSync(userConfigFile);
+		resetAll();
+
+		const colors = loadCuteColors();
+		assert.equal(colors.userMessage, "heading");
+		assert.equal(colors.gentleCardSuccess, "success");
+		assert.equal(colors.gentleCardWarning, "warning");
+		assert.equal(colors.gentleCardError, "error");
+		assert.equal(colors.sidebarBorder, "border");
+
+		// Test user override
+		fs.writeFileSync(
+			userConfigFile,
+			JSON.stringify({
+				colors: {
+					userMessage: "accent",
+					gentleCardWarning: "gold",
+				},
+			}),
+			"utf8",
+		);
+		resetAll();
+
+		const overridden = loadCuteColors();
+		assert.equal(overridden.userMessage, "accent");
+		assert.equal(overridden.gentleCardWarning, "gold");
+		assert.equal(overridden.gentleCardSuccess, "success");
+	} finally {
+		if (originalContent !== null) {
+			fs.writeFileSync(userConfigFile, originalContent, "utf8");
+		} else if (fs.existsSync(userConfigFile)) {
+			fs.unlinkSync(userConfigFile);
+		}
+		resetAll();
+	}
+});
+
 test("Syntax check across all source files", () => {
-	const srcFiles = ["index.ts", "src/cute-theme.ts", "src/cute-strings.ts", "src/cute-layout.ts", "src/cute-paths.ts", "src/hud.ts", "src/footer.ts", "src/sidebar.ts", "src/welcome.ts", "src/editor.ts", "src/todos.ts"];
+	const srcFiles = ["index.ts", "src/cute-theme.ts", "src/cute-strings.ts", "src/cute-layout.ts", "src/cute-paths.ts", "src/cute-colors.ts", "src/hud.ts", "src/footer.ts", "src/sidebar.ts", "src/welcome.ts", "src/editor.ts", "src/todos.ts", "src/cute-transcript.ts"];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
 	}
