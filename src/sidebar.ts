@@ -1,6 +1,7 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, frameFg, safeFg, unifyCardFrame } from "./cute-theme.ts";
+import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
+import { formatTranscriptChild } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 
@@ -13,6 +14,18 @@ import { loadCuteLayout } from "./cute-layout.ts";
 // Single/rounded frame tokens map to the configured double (or ascii) preset
 // via cuteGlyphs at render time, so frameStyle switches stay consistent.
 
+function findDock(root: unknown): any {
+	if (!root || typeof root !== "object") return undefined;
+	const entries = (root as any).entries;
+	if (Array.isArray(entries) && entries.length >= 2) {
+		const candidate = entries[1]?.component;
+		if (candidate && Array.isArray((candidate as any).entries)) {
+			return candidate;
+		}
+	}
+	return undefined;
+}
+
 function findTranscript(root: unknown): ScrollView | undefined {
 	if (!root || typeof root !== "object") return undefined;
 	if ("scrollbar" in root && typeof (root as any).setScrollbar === "function") {
@@ -22,6 +35,13 @@ function findTranscript(root: unknown): ScrollView | undefined {
 	if (Array.isArray(entries)) {
 		for (const entry of entries) {
 			const found = findTranscript(entry?.component);
+			if (found) return found;
+		}
+	}
+	const children = (root as any).children;
+	if (Array.isArray(children)) {
+		for (const child of children) {
+			const found = findTranscript(child);
 			if (found) return found;
 		}
 	}
@@ -167,7 +187,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				.map((key) => {
 					const lines = [...(state.parts.get(key)?.render(contentWidth - layout.railPadding * 2) ?? [])];
 					while (lines.length && lines[lines.length - 1]?.trim() === "") lines.pop();
-					if (key !== "footer") return lines.map((line) => unifyCardFrame(line, theme));
+					if (key !== "footer") return lines.map((line) => unifySidebarCardFrame(line, theme));
 					return lines;
 				})
 				.filter((lines) => lines.length > 0);
@@ -218,7 +238,61 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				const orig = transcript.render.bind(transcript);
 				transcript.render = (width: number) => {
 					const rawLines = orig(width);
-					return rawLines.map((line) => unifyCardFrame(line, theme));
+					return transformTranscriptLines(rawLines, theme);
+				};
+			}
+
+			const doc = (transcript as any)?.child as Component | undefined;
+			const originalDocRender = doc ? doc.render.bind(doc) : undefined;
+			if (doc && !(doc as any).__cuteDocWrapped) {
+				(doc as any).__cuteDocWrapped = true;
+				const origDoc = doc.render.bind(doc);
+				doc.render = (width: number) => {
+					const rawLines = origDoc(width);
+					return transformTranscriptLines(rawLines, theme);
+				};
+			}
+
+			// Wrap chatContainer to frame each transcript component by category
+			const chatContainer = (doc as any)?.children?.[2];
+			const originalChatRender = chatContainer ? chatContainer.render.bind(chatContainer) : undefined;
+			if (chatContainer && !(chatContainer as any).__cuteChatWrapped && Array.isArray(chatContainer.children)) {
+				(chatContainer as any).__cuteChatWrapped = true;
+				chatContainer.render = (width: number) => {
+					const lines: string[] = [];
+					const mouseChildren: any[] = [];
+					for (const child of chatContainer.children) {
+						const childLines = formatTranscriptChild(child, width, theme);
+						mouseChildren.push({ component: child, height: childLines.length });
+						for (const line of childLines) {
+							lines.push(line);
+						}
+					}
+					chatContainer.mouseLayout = { width, children: mouseChildren };
+					return lines;
+				};
+			}
+
+			const dock = findDock(root);
+			const widgetsAbove = dock?.entries?.[2]?.component as Component | undefined;
+			const originalWidgetsAboveRender = widgetsAbove ? widgetsAbove.render.bind(widgetsAbove) : undefined;
+			if (widgetsAbove && !(widgetsAbove as any).__cuteWidgetsWrapped) {
+				(widgetsAbove as any).__cuteWidgetsWrapped = true;
+				const origWidgets = widgetsAbove.render.bind(widgetsAbove);
+				widgetsAbove.render = (width: number) => {
+					const rawLines = origWidgets(width);
+					return transformTranscriptLines(rawLines, theme);
+				};
+			}
+
+			const widgetsBelow = dock?.entries?.[4]?.component as Component | undefined;
+			const originalWidgetsBelowRender = widgetsBelow ? widgetsBelow.render.bind(widgetsBelow) : undefined;
+			if (widgetsBelow && !(widgetsBelow as any).__cuteWidgetsWrapped) {
+				(widgetsBelow as any).__cuteWidgetsWrapped = true;
+				const origWidgets = widgetsBelow.render.bind(widgetsBelow);
+				widgetsBelow.render = (width: number) => {
+					const rawLines = origWidgets(width);
+					return transformTranscriptLines(rawLines, theme);
 				};
 			}
 
@@ -234,6 +308,22 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				if (!transcript) return;
 				if (originalTranscriptRender) transcript.render = originalTranscriptRender;
 				delete (transcript as any).__cuteWrapped;
+				if (doc && (doc as any).__cuteDocWrapped) {
+					if (originalDocRender) doc.render = originalDocRender;
+					delete (doc as any).__cuteDocWrapped;
+				}
+				if (chatContainer && (chatContainer as any).__cuteChatWrapped) {
+					if (originalChatRender) chatContainer.render = originalChatRender;
+					delete (chatContainer as any).__cuteChatWrapped;
+				}
+				if (widgetsAbove && (widgetsAbove as any).__cuteWidgetsWrapped) {
+					if (originalWidgetsAboveRender) widgetsAbove.render = originalWidgetsAboveRender;
+					delete (widgetsAbove as any).__cuteWidgetsWrapped;
+				}
+				if (widgetsBelow && (widgetsBelow as any).__cuteWidgetsWrapped) {
+					if (originalWidgetsBelowRender) widgetsBelow.render = originalWidgetsBelowRender;
+					delete (widgetsBelow as any).__cuteWidgetsWrapped;
+				}
 				if (originalScrollbarTrackStyle) (transcript as any).scrollbarTrackStyle = originalScrollbarTrackStyle;
 				if (originalScrollbarThumbStyle) (transcript as any).scrollbarThumbStyle = originalScrollbarThumbStyle;
 				if (transcript.scrollbar !== originalScrollbar) transcript.setScrollbar(originalScrollbar);
@@ -254,7 +344,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const left = {
 				render: (width: number) => {
 					const lines = root.render(width);
-					return lines.map((line) => unifyCardFrame(line, theme));
+					return transformTranscriptLines(lines, theme);
 				},
 				invalidate: () => root.invalidate?.(),
 				[NODE]: () => original.call(root),

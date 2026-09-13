@@ -5,8 +5,9 @@ import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromp
 import { installCinlodevFooter } from "./src/footer.js";
 import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
-import { resetCuteGlyphsCache } from "./src/cute-theme.ts";
+import { resetCuteGlyphsCache, transformTranscriptLines } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
+import { resetCuteColorsCache } from "./src/cute-colors.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
@@ -22,6 +23,34 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 		// Install custom prompt editor with double violet frame & pink cursor
 		installCinlodevPrompt(ctx);
+
+		// Intercept ctx.ui.setWidget so any widgets registered by other extensions
+		// (such as gentle-shell-dev-binary warning cards) render with double line and themed tones.
+		if (ctx.ui && typeof ctx.ui.setWidget === "function" && !(ctx.ui as any).__cuteSetWidgetWrapped) {
+			(ctx.ui as any).__cuteSetWidgetWrapped = true;
+			const origSetWidget = ctx.ui.setWidget.bind(ctx.ui);
+			ctx.ui.setWidget = (key: string, content: any, options?: any) => {
+				if (typeof content === "function") {
+					const origFactory = content;
+					content = (tui: any, theme: any) => {
+						const comp = origFactory(tui, theme);
+						if (!comp || typeof comp.render !== "function") return comp;
+						const origRender = comp.render.bind(comp);
+						return {
+							...comp,
+							render(width: number) {
+								const rawLines = origRender(width);
+								return transformTranscriptLines(rawLines, theme);
+							},
+							dispose() {
+								comp.dispose?.();
+							},
+						};
+					};
+				}
+				return origSetWidget(key, content, options);
+			};
+		}
 
 		// Install custom CUTE statusline footer
 		installCinlodevFooter(ctx, pi);
@@ -66,6 +95,7 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 			resetCuteStringsCache();
 			resetCuteLayoutCache();
 			resetCutePathsCache();
+			resetCuteColorsCache();
 
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);
