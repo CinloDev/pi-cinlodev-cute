@@ -201,6 +201,15 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 // local installs keep working until they update the package.
 // User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.layout.json
 // layer on top of package defaults and persist across package updates.
+function isPackageClone(dir: string): boolean {
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+		return pkg?.name === "pi-cinlodev-cute";
+	} catch {
+		return false;
+	}
+}
+
 function candidateLayoutFiles(): string[] {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
@@ -237,10 +246,9 @@ function candidateLayoutFiles(): string[] {
 		const here = path.dirname(fileURLToPath(import.meta.url));
 		const packageDir = path.resolve(here, "..");
 		const cwd = path.resolve(process.cwd());
-		if (cwd !== packageDir) {
+		if (cwd !== packageDir && !isPackageClone(cwd)) {
 			add(path.join(cwd, ".pi", "cute.json"));
 			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
-			add(path.join(cwd, "config", CUTE_LAYOUT_FILENAME));
 		}
 	} catch {}
 

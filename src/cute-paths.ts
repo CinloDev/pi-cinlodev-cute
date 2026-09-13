@@ -86,6 +86,15 @@ function mergePaths(raw: unknown, baseSource: CutePaths = DEFAULTS): CutePaths {
 // themes/ as a theme file and rejects ours. Legacy themes/ fallback kept.
 // User overrides in ~/.pi/agent/cute.json or ~/.pi/agent/cute/CinlodevCute.paths.json
 // layer on top of package defaults and persist across package updates.
+function isPackageClone(dir: string): boolean {
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+		return pkg?.name === "pi-cinlodev-cute";
+	} catch {
+		return false;
+	}
+}
+
 function candidatePathsFiles(): string[] {
 	const candidates: string[] = [];
 	const seen = new Set<string>();
@@ -122,10 +131,9 @@ function candidatePathsFiles(): string[] {
 		const here = path.dirname(fileURLToPath(import.meta.url));
 		const packageDir = path.resolve(here, "..");
 		const cwd = path.resolve(process.cwd());
-		if (cwd !== packageDir) {
+		if (cwd !== packageDir && !isPackageClone(cwd)) {
 			add(path.join(cwd, ".pi", "cute.json"));
 			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
-			add(path.join(cwd, "config", CUTE_PATHS_FILENAME));
 		}
 	} catch {}
 

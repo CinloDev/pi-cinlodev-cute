@@ -7,6 +7,7 @@ import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
 import { resetCuteGlyphsCache, transformTranscriptLines } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
+import { resetCuteColorsCache } from "./src/cute-colors.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
@@ -94,6 +95,7 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 			resetCuteStringsCache();
 			resetCuteLayoutCache();
 			resetCutePathsCache();
+			resetCuteColorsCache();
 
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);

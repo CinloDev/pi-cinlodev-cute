@@ -1,6 +1,7 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
+import { formatTranscriptChild } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 
@@ -252,6 +253,26 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				};
 			}
 
+			// Wrap chatContainer to frame each transcript component by category
+			const chatContainer = (doc as any)?.children?.[2];
+			const originalChatRender = chatContainer ? chatContainer.render.bind(chatContainer) : undefined;
+			if (chatContainer && !(chatContainer as any).__cuteChatWrapped && Array.isArray(chatContainer.children)) {
+				(chatContainer as any).__cuteChatWrapped = true;
+				chatContainer.render = (width: number) => {
+					const lines: string[] = [];
+					const mouseChildren: any[] = [];
+					for (const child of chatContainer.children) {
+						const childLines = formatTranscriptChild(child, width, theme);
+						mouseChildren.push({ component: child, height: childLines.length });
+						for (const line of childLines) {
+							lines.push(line);
+						}
+					}
+					chatContainer.mouseLayout = { width, children: mouseChildren };
+					return lines;
+				};
+			}
+
 			const dock = findDock(root);
 			const widgetsAbove = dock?.entries?.[2]?.component as Component | undefined;
 			const originalWidgetsAboveRender = widgetsAbove ? widgetsAbove.render.bind(widgetsAbove) : undefined;
@@ -290,6 +311,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				if (doc && (doc as any).__cuteDocWrapped) {
 					if (originalDocRender) doc.render = originalDocRender;
 					delete (doc as any).__cuteDocWrapped;
+				}
+				if (chatContainer && (chatContainer as any).__cuteChatWrapped) {
+					if (originalChatRender) chatContainer.render = originalChatRender;
+					delete (chatContainer as any).__cuteChatWrapped;
 				}
 				if (widgetsAbove && (widgetsAbove as any).__cuteWidgetsWrapped) {
 					if (originalWidgetsAboveRender) widgetsAbove.render = originalWidgetsAboveRender;
