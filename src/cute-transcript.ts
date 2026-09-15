@@ -226,6 +226,40 @@ function tryRender(child: Component, width: number): string[] | undefined {
 }
 
 /**
+ * Tool names that render a `search ...` header (pi-web-access registers
+ * `web_search` by default; `search` is kept as an alias). Like fetch,
+ * tool names are user-renamable, so headers are sniffed as a fallback.
+ */
+const SEARCH_TOOL_NAMES = new Set(["search", "web_search"]);
+
+/**
+ * Checks whether a transcript component is a search tool execution.
+ * Matches by toolName (`web_search` / `search`) or by its rendered
+ * `search ...` header line when the tool was renamed.
+ */
+export function isSearchComponent(child: Component, renderedLines?: string[]): boolean {
+	if (!child) return false;
+	const toolName = (child as any).toolName;
+	if (typeof toolName === "string" && SEARCH_TOOL_NAMES.has(toolName)) return true;
+	if (typeof toolName !== "string") return false;
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines) return looksLikeSearchLines(lines);
+	return false;
+}
+
+/**
+ * True when rendered lines open with a `search ...` tool header.
+ */
+export function looksLikeSearchLines(rawLines: string[]): boolean {
+	for (const line of rawLines) {
+		const plain = stripAnsi(line).trim();
+		if (!plain) continue;
+		return /^search\s+/i.test(plain);
+	}
+	return false;
+}
+
+/**
  * Detects top-level Pi error lines (showError Text components):
  * lines starting with "Error:" plus known provider failure signatures
  * (auth_unavailable, Retry failed). Strict on purpose so normal assistant
@@ -655,6 +689,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
 	}
 
+	// Search tool execution in dusty-rose card (#D7A0B8 / colors.searchMessage).
+	// Softer sibling of the fetch pink so adjacent search/fetch blocks
+	// stay distinguishable; inner dark background preserved untouched.
+	if (isSearchComponent(child)) {
+		const rawLines = child.render(width - 4);
+		return frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
+	}
+
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
 	if (isErrorTextComponent(child)) {
 		const rawLines = child.render(width - 4);
@@ -674,6 +716,7 @@ export function formatTranscriptChild(
  * - Formats user messages with the golden user box.
  * - Frames read executions in soft lilac and write/edit in barely-blue.
  * - Frames fetch executions in pink (same tone as fetch title text).
+ * - Frames search executions in dusty rose (softer sibling of fetch pink).
  * - Groups consecutive top-level error Texts into ONE SINGLE coral card.
  * - Passes other components through transformTranscriptLines.
  */
@@ -782,6 +825,16 @@ export function formatTranscriptChildren(
 		if (isFetchComponent(child)) {
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+			mouseChildren.push({ component: child, height: boxed.length });
+			lines.push(...boxed);
+			i++;
+			continue;
+		}
+
+		// 4c. Search tool execution in dusty-rose card; inner dark background preserved
+		if (isSearchComponent(child)) {
+			const rawLines = child.render(width - 4);
+			const boxed = frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
 			i++;

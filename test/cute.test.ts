@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -357,6 +357,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		assert.equal(colors.userMessage, "heading");
 		assert.equal(colors.bashMessage, "bash");
 		assert.equal(colors.fetchMessage, "pink");
+		assert.equal(colors.searchMessage, "secondary");
 		assert.equal(colors.gentleCardSuccess, "success");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
@@ -597,6 +598,36 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	// NOTE: class name here is PlainText, not Text, so it stays natural.
 	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
 	assert.equal(plainRender[0], "some note about error handling in docs");
+});
+
+test("isSearchComponent - matches web_search, search alias and search headers, nothing else", () => {
+	// pi-web-access registers `web_search` by default (renders `search ...`)
+	assert.ok(isSearchComponent({ toolName: "web_search" } as any));
+	assert.ok(isSearchComponent({ toolName: "search" } as any));
+	// Renamed tools keep rendering the `search ...` header: sniffed fallback
+	assert.ok(isSearchComponent({ toolName: "buscar", render: () => ["search 2 queries"] } as any));
+	assert.ok(looksLikeSearchLines(["", "  search \"ghcr.io supabase...\""]));
+	// fetch_content, read and plain messages mentioning search stay out
+	assert.equal(isSearchComponent({ toolName: "fetch_content" } as any), false);
+	assert.equal(isSearchComponent({ toolName: "read" } as any), false);
+	assert.equal(isSearchComponent({ render: () => ["let me search the docs for you"] } as any), false);
+	assert.equal(looksLikeSearchLines(["fetch https://example.com/a"]), false);
+	assert.equal(looksLikeSearchLines([]), false);
+});
+
+test("formatTranscriptChild - frames web_search in dusty-rose card", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	class WebSearchToolComponent {
+		toolName = "web_search";
+		render() { return ['search 2 queries', '2/2 queries, 10 sources']; }
+	}
+	const framed = formatTranscriptChild(new WebSearchToolComponent() as any, 60, mockTheme);
+	assert.ok(framed[0].includes("[secondary]"));
+	assert.ok(framed[0].includes("search"));
+	assert.ok(framed[1].includes("search 2 queries"));
+	assert.ok(framed[framed.length - 1].includes("╚"));
 });
 
 test("isFetchComponent - matches fetch_content, fetch alias and fetch headers, nothing else", () => {
