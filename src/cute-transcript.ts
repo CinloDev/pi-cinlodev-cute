@@ -260,6 +260,24 @@ export function looksLikeSearchLines(rawLines: string[]): boolean {
 }
 
 /**
+ * Formats lines inside an Engram memory card:
+ * Highlights paths, URLs, quoted text, numbers, and identifiers Dracula-style
+ * using theme syntax roles while preserving existing ANSI formatting.
+ */
+export function formatMemoryOutputLines(rawLines: string[], theme?: Theme): string[] {
+	if (!theme || !rawLines.length) return rawLines;
+	return rawLines.map((line) => {
+		const plain = stripAnsi(line);
+		if (plain.trim() === "") return line;
+		if (hasKeptColor(line, theme)) return line;
+		const leadingSpace = line.match(/^(\s*)/)?.[1] ?? "";
+		const content = plain.slice(leadingSpace.length);
+		if (!content) return line;
+		return leadingSpace + highlightCodeLine(content, theme);
+	});
+}
+
+/**
  * Checks whether a transcript component is a memory (Engram) tool execution.
  * Engram registers every tool under the `mem_` prefix (mem_search,
  * mem_save, mem_timeline, mem_doctor, ...), so a prefix match is enough
@@ -327,12 +345,25 @@ export function toolFileHighlightable(filePath: unknown): boolean {
 	return HIGHLIGHTABLE_EXTENSIONS.has(ext);
 }
 
-/** Reads the target file path from a read/write/edit tool component's args. */
-export function toolFilePath(child: Component): string | undefined {
+/** Reads the target file path from a read/write/edit tool component's args or rendered header. */
+export function toolFilePath(child: Component, renderedLines?: string[]): string | undefined {
 	const args = (child as unknown as { args?: Record<string, unknown> })?.args;
-	if (!args || typeof args !== "object") return undefined;
-	const p = (args as Record<string, unknown>).path ?? (args as Record<string, unknown>).file_path;
-	return typeof p === "string" ? p : undefined;
+	if (args && typeof args === "object") {
+		const p = (args as Record<string, unknown>).path ?? (args as Record<string, unknown>).file_path;
+		if (typeof p === "string" && p.length > 0) return p;
+	}
+	// Fallback: extract path from first rendered header line, e.g. "edit src/cute-theme.ts" or "write foo.ts"
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines && lines.length > 0) {
+		const first = stripAnsi(lines[0] ?? "").trim();
+		const m = /^(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(first);
+		if (m && m[1]) {
+			// Strip line ranges like ":1-10" or ":50" from read paths
+			const clean = m[1].replace(/:\d+(?:-\d+)?$/, "");
+			return clean;
+		}
+	}
+	return undefined;
 }
 
 const CODE_KEYWORDS =
@@ -649,9 +680,10 @@ export function formatBashOutputLines(
 
 /**
  * Formats assistant prose: headings get a slightly heavier typeface (bold,
- * same color) and plain uncolored body lines take the celeste `write` tone.
- * Lines that already carry colors (links, code, quotes, headings) and code
- * inside fenced blocks pass through untouched, as do empty lines.
+ * same color) while body text and markdown elements render naturally via
+ * Pi's Markdown renderer and CUTE theme roles (bold pink, mint code,
+ * gold headings, pinkBright bullets).
+ * Fenced code inside blocks passes through untouched.
  */
 export function formatAssistantProse(rawLines: string[], theme?: Theme): string[] {
 	if (!theme || !rawLines.length) return rawLines;
@@ -664,9 +696,6 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme): string[
 		if (inFence || isFence) return line;
 		if (/^\s*#{1,6}\s+\S/.test(plain)) {
 			return bolden(theme, line);
-		}
-		if (plain.trim() !== "" && !/\x1b\[[0-9;]*[a-zA-Z]/.test(line)) {
-			return safeFg(theme, "write", line, "text");
 		}
 		return line;
 	});
@@ -706,7 +735,7 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting for code lines.
 	if (isReadComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatReadLines(rawLines, toolFilePath(child), theme);
+		const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
 		return frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 	}
 
@@ -714,7 +743,7 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting inside diff lines.
 	if (isWriteComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatWriteDiffLines(rawLines, toolFilePath(child), theme);
+		const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
 		return frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 	}
 
@@ -734,12 +763,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
 	}
 
-	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage).
+	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage)
+	// with Dracula-style token highlighting inside.
 	// Single-child fallback; consecutive memory calls are grouped into one
-	// card by formatTranscriptChildren. Inner lines pass through untouched.
+	// card by formatTranscriptChildren.
 	if (isMemoryComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "🧠 memory", colors.memoryMessage, width, theme);
+		const styled = formatMemoryOutputLines(rawLines, theme);
+		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
 	}
 
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
@@ -767,7 +798,7 @@ export function formatTranscriptChild(
  * - Frames read executions in soft lilac and write/edit in barely-blue.
  * - Frames fetch executions in pink (same tone as fetch title text).
  * - Frames search executions in dusty rose (softer sibling of fetch pink).
- * - Groups consecutive memory (Engram) calls into ONE single salmon card.
+ * - Groups consecutive memory (Engram) calls into ONE single salmon card (🧠 engram).
  * - Groups consecutive top-level error Texts into ONE SINGLE coral card.
  * - Passes other components through transformTranscriptLines.
  */
@@ -853,7 +884,7 @@ export function formatTranscriptChildren(
 		// 3. Read tool execution in soft lilac card with Dracula highlighting
 		if (isReadComponent(child)) {
 			const rawLines = child.render(width - 4);
-			const styled = formatReadLines(rawLines, toolFilePath(child), theme);
+			const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
@@ -864,7 +895,7 @@ export function formatTranscriptChildren(
 		// 4. Write / edit tool execution in barely-blue card
 		if (isWriteComponent(child)) {
 			const rawLines = child.render(width - 4);
-			const styled = formatWriteDiffLines(rawLines, toolFilePath(child), theme);
+			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
@@ -915,12 +946,13 @@ export function formatTranscriptChildren(
 				if (combinedLines.length > 0) {
 					combinedLines.push(""); // subtle separation between calls
 				}
-				combinedLines.push(...raw);
+				const styled = formatMemoryOutputLines(raw, theme);
+				combinedLines.push(...styled);
 			}
 
 			const cardLines = frameCategoryBox(
-				combinedLines.length ? combinedLines : ["memory"],
-				"🧠 memory",
+				combinedLines.length ? combinedLines : ["engram"],
+				"🧠 engram",
 				colors.memoryMessage,
 				width,
 				theme,

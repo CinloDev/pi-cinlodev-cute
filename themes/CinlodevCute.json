@@ -110,7 +110,7 @@
     "mdQuote": "warning",
     "mdQuoteBorder": "borderSubtle",
     "mdHr": "muted",
-    "mdListBullet": "pink",
+    "mdListBullet": "pinkBright",
     "toolDiffAdded": "green",
     "toolDiffRemoved": "red",
     "toolDiffContext": "muted",
