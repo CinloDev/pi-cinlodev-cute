@@ -2,7 +2,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteColors } from "./cute-colors.ts";
-import { safeFg, stripAnsi } from "./cute-theme.ts";
+import { safeFg, stripAnsi, transformTranscriptLines } from "./cute-theme.ts";
 
 export interface CuteFrameOptions {
 	title?: string;
@@ -80,7 +80,7 @@ export function frameCategoryBox(
 	// ╔═ (2) + titleStr (titleWidth) + ═.repeat(fillLen) + ╗ (1) = safeWidth
 	// fillLen = safeWidth - titleWidth - 3
 	const fillLen = Math.max(0, safeWidth - titleWidth - 3);
-	const top = color("╔═") + titleStr + color("═".repeat(fillLen) + "╗");
+	const top = color("╔═" + titleStr + "═".repeat(fillLen) + "╗");
 	const bot = color("╚" + "═".repeat(safeWidth - 2) + "╝");
 
 	const body = lines.map((line) => {
@@ -115,6 +115,9 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, `❀ ${user}`, colors.userMessage, width, theme);
 	}
 
-	// All other components (Assistant, Bash, Tools, Notices) render naturally
-	return child.render(width);
+	// All other components (Assistant, Bash, Tools, Notices) pass through transformTranscriptLines
+	// so Gentle AI cards (review start/consent/completed), warning notices, and tools adopt
+	// double lines, the robot glyph 🤖 and themed tones (mint green / yellow / error).
+	const rawLines = child.render(width);
+	return transformTranscriptLines(rawLines, theme);
 }

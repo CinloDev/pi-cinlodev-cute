@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-import { cuteGlyphs, frameFg, safeFg as safeThemeFg } from "./cute-theme";
+import { cuteGlyphs, frameFg, installWelcomeHeaderGuard, safeFg as safeThemeFg } from "./cute-theme";
 import { loadCuteLayout } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import {
@@ -237,13 +237,19 @@ class GentlemanWelcomeWidget implements Component {
 	private expanded: boolean = false;
 	private cachedStats: WelcomeStats | null = null;
 	private lastStatsFetch: number = 0;
+	private readonly getContext: () => ExtensionContext | ExtensionCommandContext;
+	private readonly theme: Theme;
+	private readonly pi: ExtensionAPI;
 
 	constructor(
-		private readonly getContext: () => ExtensionContext | ExtensionCommandContext,
-		private readonly theme: Theme,
-		private readonly pi: ExtensionAPI,
+		getContext: () => ExtensionContext | ExtensionCommandContext,
+		theme: Theme,
+		pi: ExtensionAPI,
 		defaultExpanded: boolean = false,
 	) {
+		this.getContext = getContext;
+		this.theme = theme;
+		this.pi = pi;
 		this.expanded = defaultExpanded;
 	}
 
@@ -418,12 +424,14 @@ export default function (pi: ExtensionAPI) {
 	const applyWelcomeHeader = (ctx: ExtensionContext | ExtensionCommandContext) => {
 		if (!ctx.hasUI || ctx.mode !== "tui") return;
 
+		installWelcomeHeaderGuard(ctx, () => welcomeVisible);
+
 		if (!welcomeVisible) {
 			ctx.ui.setHeader(undefined);
 			return;
 		}
 
-		ctx.ui.setHeader((tui, theme) => {
+		const factory = (tui: any, theme: any) => {
 			activeTui = tui;
 			currentWidget = new GentlemanWelcomeWidget(
 				() => ctx,
@@ -432,7 +440,10 @@ export default function (pi: ExtensionAPI) {
 				defaultMode === "full",
 			);
 			return currentWidget;
-		});
+		};
+		(factory as any).__isCuteWelcome = true;
+
+		ctx.ui.setHeader(factory);
 	};
 
 	// Register commands
