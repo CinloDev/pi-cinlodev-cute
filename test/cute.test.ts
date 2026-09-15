@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine } from "../src/cute-theme.ts";
+import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache } from "../src/cute-layout.ts";
@@ -301,6 +301,27 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	}
 	const bashRender = formatTranscriptChild(new BashExecutionComponent() as any, 60, mockTheme);
 	assert.equal(bashRender[0], "$ npm test");
+
+	// 4. Gentle AI Tool Call Card adapts to double lines, robot glyph and mint green
+	class GentleAiToolComponent {
+		render() {
+			return [
+				"╭─ 🌹 Gentle AI · completed · review start ─────────────────── ctrl+o to expand ╮",
+				"│ 1 line                                                                       │",
+				"╰──────────────────────────────────────────────────────────────────────────────╯",
+			];
+		}
+	}
+	const toolRender = formatTranscriptChild(new GentleAiToolComponent() as any, 80, mockTheme);
+	assert.ok(toolRender[0].includes("🤖 Gentle AI"));
+	assert.ok(!toolRender[0].includes("🌹"));
+	assert.ok(toolRender[0].includes("╔"));
+	assert.ok(toolRender[0].includes("═"));
+	assert.ok(toolRender[0].includes("╗"));
+	assert.ok(toolRender[0].includes("[success]"));
+	assert.ok(toolRender[1].includes("║"));
+	assert.ok(toolRender[2].includes("╚"));
+	assert.ok(toolRender[2].includes("╝"));
 });
 
 test("Cute Colors - defaults and user overrides", () => {
@@ -341,6 +362,51 @@ test("Cute Colors - defaults and user overrides", () => {
 		}
 		resetAll();
 	}
+});
+
+test("installWelcomeHeaderGuard - protects Welcome Dashboard against late foreign overwrites", () => {
+	const mockTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+	};
+	let activeHeader: any = null;
+	const mockCtx: any = {
+		hasUI: true,
+		mode: "tui",
+		ui: {
+			setHeader(factory: any) {
+				activeHeader = factory;
+			},
+		},
+	};
+
+	let welcomeActive = true;
+	installWelcomeHeaderGuard(mockCtx, () => welcomeActive);
+
+	// 1. Own welcome header installs correctly
+	const cuteFactory: any = () => ({ render: () => ["╔═ la Gentlewoman ═╗"] });
+	cuteFactory.__isCuteWelcome = true;
+	mockCtx.ui.setHeader(cuteFactory);
+	assert.equal(activeHeader, cuteFactory);
+
+	// 2. Foreign extension (e.g. gentle-pi startup-banner deferred setTimeout) tries to overwrite
+	const foreignBannerFactory: any = () => ({ render: () => ["GIT: main", "MCP: 3"] });
+	mockCtx.ui.setHeader(foreignBannerFactory);
+
+	// Active header MUST remain the cute factory, foreign overwrite is blocked!
+	assert.equal(activeHeader, cuteFactory, "Foreign overwrite must be blocked while Welcome Dashboard is active");
+
+	// 3. User disables welcome (/welcome off) -> header is cleared
+	welcomeActive = false;
+	mockCtx.ui.setHeader(undefined);
+	assert.equal(activeHeader, undefined, "Header should be cleared when welcome is toggled off");
+
+	// 4. Foreign extension sets header while welcome is disabled -> passes and is adapted
+	mockCtx.ui.setHeader(foreignBannerFactory);
+	assert.ok(activeHeader !== null && activeHeader !== undefined);
+	assert.ok(typeof activeHeader === "function");
+	const rendered = activeHeader({}, mockTheme).render(40);
+	assert.ok(Array.isArray(rendered));
 });
 
 test("Syntax check across all source files", () => {

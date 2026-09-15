@@ -355,18 +355,21 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				const active = prepare(columns);
 				const hasLeftBorder = columns >= layout.minColumnsWithBorder;
 
-				if (!hasLeftBorder && !active) {
-					restoreTranscript();
-					return original.call(root);
-				}
-
 				if (active) {
 					// Con el middleDivider visible de arriba a abajo, ocultamos el scrollbar del transcript
 					if (transcript && transcript.scrollbar !== "hidden") {
 						transcript.setScrollbar("hidden");
 					}
 				} else {
-					restoreTranscript();
+					// Si el sidebar no cabe, restauramos el scrollbar original pero mantenemos
+					// intactos los wrappers CUTE del transcript y de las cards
+					if (transcript && transcript.scrollbar !== originalScrollbar) {
+						transcript.setScrollbar(originalScrollbar);
+					}
+				}
+
+				if (!hasLeftBorder && !active) {
+					return original.call(root);
 				}
 
 				const entries: any[] = [];
