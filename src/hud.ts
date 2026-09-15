@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } f
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { cuteGlyphs, frameFg } from "./cute-theme";
-import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatProfileDisplay, loadCuteStrings } from "./cute-strings.ts";
 import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
 
@@ -369,6 +369,7 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.setWidget(
 				"gentleman-hud",
 				(tui: TUI, theme: Theme) => {
+					tuneTuiScroll(tui);
 					activeTui = tui;
 					return new GentlemanHudWidget(() => latestCtx ?? ctx, theme, () => hudMode);
 				},

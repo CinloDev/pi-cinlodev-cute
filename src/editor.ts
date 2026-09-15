@@ -3,7 +3,7 @@ import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { cursorStyle, cuteGlyphs, safeFg } from "./cute-theme.ts";
-import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 
 export const PROMPT_STATE = {
@@ -209,6 +209,7 @@ export function installCinlodevPrompt(ctx: ExtensionContext): void {
 	if (!ctx.hasUI) return;
 	const initialLevel = (ctx as unknown as { thinkingLevel?: string }).thinkingLevel ?? "default";
 	ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
+		tuneTuiScroll(tui);
 		activeCinlodevPrompt = new CinlodevPromptEditor(
 			tui,
 			editorTheme,
