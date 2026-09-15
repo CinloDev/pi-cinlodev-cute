@@ -180,6 +180,62 @@ export function isWriteComponent(child: Component): boolean {
 }
 
 /**
+ * Checks whether a transcript component is a grep tool execution
+ * (toolName === "grep").
+ */
+export function isGrepComponent(child: Component): boolean {
+	if (!child) return false;
+	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+	const toolName = (child as any).toolName;
+	if (name === "ToolExecutionComponent" && toolName === "grep") return true;
+	if (toolName === "grep") return true;
+	return false;
+}
+
+/**
+ * Formats grep tool output lines without framing:
+ * Renders file paths in subtle lilac/accent, line numbers in syntax gold/orange,
+ * and code content in Dracula-style syntax highlighting.
+ * Header lines (grep /pattern/ in path) and hints pass through untouched.
+ */
+export function formatGrepLines(rawLines: string[], theme?: Theme): string[] {
+	if (!theme || !rawLines.length) return rawLines;
+	return rawLines.map((line, idx) => {
+		const plain = stripAnsi(line);
+		const trimmed = plain.trim();
+		if (!trimmed) return line;
+
+		// 1. Tool call header: "grep /pattern/ in path..."
+		if (idx === 0 && /^grep\s+/i.test(trimmed)) {
+			return line;
+		}
+
+		// 2. Expand hint or truncation notice
+		if (trimmed.startsWith("... (") || trimmed.startsWith("[Truncated:")) {
+			return line;
+		}
+
+		// 3. Match format: "filepath:linenum:code" or "filepath:linenum-code"
+		const match = /^([^\s:]+):(\d+)[:\-](.*)$/.exec(plain);
+		if (match) {
+			const filePath = match[1];
+			const lineNum = match[2];
+			const code = match[3];
+
+			const coloredPath = safeFg(theme, "read", filePath, "accent");
+			const separator = safeFg(theme, "syntaxPunctuation", ":", "muted");
+			const coloredLineNum = safeFg(theme, "syntaxNumber", lineNum, "warning");
+			const highlightedCode = highlightCodeLine(code, theme);
+
+			return `${coloredPath}${separator}${coloredLineNum}${separator}${highlightedCode}`;
+		}
+
+		// 4. Continued lines or wrapped matches: highlight if it looks like code
+		return highlightCodeLine(line, theme);
+	});
+}
+
+/**
  * Tool names that render a `fetch <url>` header (pi-web-access registers
  * `fetch_content` by default; `fetch` is kept as an alias). Tool names are
  * user-renamable, so rendered headers are sniffed as a fallback.
@@ -679,6 +735,39 @@ export function formatBashOutputLines(
 }
 
 /**
+ * Highlights plain uncolored text segments inside a line that may already
+ * contain ANSI sequences (like markdown bold, links, list markers).
+ * Preserves text that is already styled with foreground color, and passes
+ * plain text through the highlighter function.
+ */
+export function highlightUncoloredSegments(line: string, highlightFn: (text: string) => string): string {
+	const ANSI_RE = /(\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\)/g;
+	const parts = line.split(ANSI_RE);
+	let hasActiveColor = false;
+	let out = "";
+
+	for (const part of parts) {
+		if (!part) continue;
+		if (ANSI_RE.test(part)) {
+			if (/\x1b\[38;2;|\x1b\[3[0-7]m/.test(part)) {
+				hasActiveColor = true;
+			} else if (/\x1b\[39m|\x1b\[0m/.test(part)) {
+				hasActiveColor = false;
+			}
+			out += part;
+			continue;
+		}
+
+		if (hasActiveColor) {
+			out += part;
+		} else {
+			out += highlightFn(part);
+		}
+	}
+	return out;
+}
+
+/**
  * Formats assistant prose: headings get a slightly heavier typeface (bold,
  * same color) while body text and markdown elements render naturally via
  * Pi's Markdown renderer and CUTE theme roles (bold pink, mint code,
@@ -697,7 +786,9 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme): string[
 		if (/^\s*#{1,6}\s+\S/.test(plain)) {
 			return bolden(theme, line);
 		}
-		return line;
+		// Highlight plain uncolored prose segments Dracula-style (quoted strings,
+		// numbers, types/identifiers, keywords) while keeping markdown bold/link/code colors intact.
+		return highlightUncoloredSegments(line, (text) => highlightCodeLine(text, theme));
 	});
 }
 
@@ -771,6 +862,13 @@ export function formatTranscriptChild(
 		const rawLines = child.render(width - 4);
 		const styled = formatMemoryOutputLines(rawLines, theme);
 		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
+	}
+
+	// Grep tool execution without bounding box, but with full Dracula-style
+	// syntax highlighting on matches, line numbers, and file paths.
+	if (isGrepComponent(child)) {
+		const rawLines = child.render(width);
+		return formatGrepLines(rawLines, theme);
 	}
 
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
@@ -1021,7 +1119,17 @@ export function formatTranscriptChildren(
 			continue;
 		}
 
-		// 6. Assistant prose (bolder headings, celeste body) and other
+		// 6. Grep tool execution (free, no card, Dracula highlighted)
+		if (isGrepComponent(child)) {
+			const rawLines = child.render(width);
+			const styled = formatGrepLines(rawLines, theme);
+			mouseChildren.push({ component: child, height: styled.length });
+			lines.push(...styled);
+			i++;
+			continue;
+		}
+
+		// 7. Assistant prose (bolder headings, dracula text) and other
 		// components (remaining tools, notices) via transformTranscriptLines
 		const rawLines = child.render(width);
 		const transformed =
