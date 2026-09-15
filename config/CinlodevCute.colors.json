@@ -1,6 +1,7 @@
 {
 	"_note": "Cinlodev CUTE configurable card & transcript frame colors. Keys resolve to theme color roles (e.g. heading, success, warning, error, border, accent). Overrides in ~/.pi/agent/cute.json under 'colors' layer on top of these defaults.",
 	"userMessage": "heading",
+	"bashMessage": "bash",
 	"gentleCardSuccess": "success",
 	"gentleCardWarning": "warning",
 	"gentleCardError": "error",

@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -295,14 +295,26 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.equal(asstRender[0], "# Title");
 	assert.equal(asstRender[1], "Explicación del asistente");
 
-	// 3. Bash Execution renders naturally
+	// 3. Bash Execution renders in sunset orange card with >_ bash
 	class BashExecutionComponent {
 		render() { return ["$ npm test", "# pass 10"]; }
 	}
 	const bashRender = formatTranscriptChild(new BashExecutionComponent() as any, 60, mockTheme);
-	assert.equal(bashRender[0], "$ npm test");
+	assert.ok(bashRender[0].includes("╔═ >_ bash"));
+	assert.ok(bashRender[1].includes("$ npm test"));
+	assert.ok(bashRender[2].includes("# pass 10"));
+	assert.ok(bashRender[3].includes("╚"));
 
-	// 4. Gentle AI Tool Call Card adapts to double lines, robot glyph and mint green
+	// 4. ToolExecutionComponent for bash renders in >_ bash card
+	class ToolExecutionComponent {
+		toolName = "bash";
+		render() { return ["$ git status", "On branch develop"]; }
+	}
+	const toolBashRender = formatTranscriptChild(new ToolExecutionComponent() as any, 60, mockTheme);
+	assert.ok(toolBashRender[0].includes("╔═ >_ bash"));
+	assert.ok(toolBashRender[1].includes("$ git status"));
+
+	// 5. Gentle AI Tool Call Card adapts to double lines, robot glyph and mint green
 	class GentleAiToolComponent {
 		render() {
 			return [
@@ -332,6 +344,7 @@ test("Cute Colors - defaults and user overrides", () => {
 
 		const colors = loadCuteColors();
 		assert.equal(colors.userMessage, "heading");
+		assert.equal(colors.bashMessage, "bash");
 		assert.equal(colors.gentleCardSuccess, "success");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
@@ -407,6 +420,64 @@ test("installWelcomeHeaderGuard - protects Welcome Dashboard against late foreig
 	assert.ok(typeof activeHeader === "function");
 	const rendered = activeHeader({}, mockTheme).render(40);
 	assert.ok(Array.isArray(rendered));
+});
+
+test("formatTranscriptChildren - groups multiple consecutive bash executions into ONE single unified card", () => {
+	const mockTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+	};
+	class BashExecutionComponent {
+		cmd: string;
+		out: string;
+		constructor(cmd: string, out: string) {
+			this.cmd = cmd;
+			this.out = out;
+		}
+		render() { return [`$ ${this.cmd}`, this.out]; }
+	}
+	class ToolExecutionComponent {
+		toolName: string;
+		cmd: string;
+		out: string;
+		constructor(toolName: string, cmd: string, out: string) {
+			this.toolName = toolName;
+			this.cmd = cmd;
+			this.out = out;
+		}
+		render() { return [`$ ${this.cmd}`, this.out]; }
+	}
+	class AssistantMessageComponent {
+		render() { return ["Assistant says hi"]; }
+	}
+
+	const children: any[] = [
+		new BashExecutionComponent("git status", "On branch develop"),
+		new ToolExecutionComponent("bash", "git diff", "diff output"),
+		new BashExecutionComponent("npm test", "✔ all tests pass"),
+		new AssistantMessageComponent(),
+		new ToolExecutionComponent("bash", "echo done", "done!"),
+	];
+
+	const { lines, mouseChildren } = formatTranscriptChildren(children, 70, mockTheme);
+
+	// The first 3 consecutive bash commands MUST be merged into ONE single card!
+	// That card starts with ╔═ >_ bash and ends with ╚════
+	const firstCardStart = lines.findIndex((l) => l.includes("╔═ >_ bash"));
+	assert.ok(firstCardStart !== -1, "First bash card must start");
+	const firstCardEnd = lines.findIndex((l, idx) => idx > firstCardStart && l.includes("╚═"));
+	assert.ok(firstCardEnd !== -1, "First bash card must close");
+
+	const cardSlice = lines.slice(firstCardStart, firstCardEnd + 1).join("\n");
+	assert.ok(cardSlice.includes("$ git status"), "Contains first bash command");
+	assert.ok(cardSlice.includes("$ git diff"), "Contains second bash command");
+	assert.ok(cardSlice.includes("$ npm test"), "Contains third bash command");
+
+	// There should NOT be 3 separate bash cards for the first 3 commands!
+	const allCardHeaders = lines.filter((l) => l.includes("╔═ >_ bash"));
+	assert.equal(allCardHeaders.length, 2, "Exactly 2 bash cards total: 1 for the first 3 grouped commands, 1 for the trailing command");
+
+	assert.equal(mouseChildren.length, children.length, "All children must be mapped in mouseLayout");
 });
 
 test("tuneTuiScroll - accelerates slow mouse wheel scroll", () => {
