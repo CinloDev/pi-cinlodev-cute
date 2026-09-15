@@ -180,6 +180,18 @@ export function isWriteComponent(child: Component): boolean {
 }
 
 /**
+ * Checks whether a transcript component is a fetch tool execution
+ * (ToolExecutionComponent with toolName: "fetch").
+ */
+export function isFetchComponent(child: Component): boolean {
+	if (!child) return false;
+	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+	if (name === "ToolExecutionComponent" && (child as any).toolName === "fetch") return true;
+	if ((child as any).toolName === "fetch") return true;
+	return false;
+}
+
+/**
  * Detects top-level Pi error lines (showError Text components):
  * lines starting with "Error:" plus known provider failure signatures
  * (auth_unavailable, Retry failed). Strict on purpose so normal assistant
@@ -601,6 +613,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 	}
 
+	// Fetch tool execution in pink card (#F095C8 / colors.fetchMessage).
+	// Inner lines pass through untouched so the native dark tool background
+	// (toolSuccessBg) is preserved; only the double-line frame is added.
+	if (isFetchComponent(child)) {
+		const rawLines = child.render(width - 4);
+		return frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+	}
+
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
 	if (isErrorTextComponent(child)) {
 		const rawLines = child.render(width - 4);
@@ -619,6 +639,7 @@ export function formatTranscriptChild(
  * - Groups consecutive bash executions into ONE SINGLE unified sunset orange card.
  * - Formats user messages with the golden user box.
  * - Frames read executions in soft lilac and write/edit in barely-blue.
+ * - Frames fetch executions in pink (same tone as fetch title text).
  * - Groups consecutive top-level error Texts into ONE SINGLE coral card.
  * - Passes other components through transformTranscriptLines.
  */
@@ -717,6 +738,16 @@ export function formatTranscriptChildren(
 			const rawLines = child.render(width - 4);
 			const styled = formatWriteDiffLines(rawLines, toolFilePath(child), theme);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
+			mouseChildren.push({ component: child, height: boxed.length });
+			lines.push(...boxed);
+			i++;
+			continue;
+		}
+
+		// 4b. Fetch tool execution in pink card; inner dark background preserved
+		if (isFetchComponent(child)) {
+			const rawLines = child.render(width - 4);
+			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
 			i++;
