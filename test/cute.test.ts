@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -597,6 +597,36 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	// NOTE: class name here is PlainText, not Text, so it stays natural.
 	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
 	assert.equal(plainRender[0], "some note about error handling in docs");
+});
+
+test("isFetchComponent - matches fetch_content, fetch alias and fetch headers, nothing else", () => {
+	// pi-web-access registers `fetch_content` by default (renders `fetch <url>`)
+	assert.ok(isFetchComponent({ toolName: "fetch_content" } as any));
+	assert.ok(isFetchComponent({ toolName: "fetch" } as any));
+	// Renamed tools keep rendering the `fetch <url>` header: sniffed fallback
+	assert.ok(isFetchComponent({ toolName: "descargar", render: () => ["fetch https://example.com/a"] } as any));
+	assert.ok(looksLikeFetchLines(["", "  fetch https://example.com/a ..."]));
+	// web_search, read and plain messages mentioning fetch stay out
+	assert.equal(isFetchComponent({ toolName: "web_search" } as any), false);
+	assert.equal(isFetchComponent({ toolName: "read" } as any), false);
+	assert.equal(isFetchComponent({ render: () => ["let me fetch the docs for you"] } as any), false);
+	assert.equal(looksLikeFetchLines(["search 2 queries"]), false);
+	assert.equal(looksLikeFetchLines([]), false);
+});
+
+test("formatTranscriptChild - frames fetch_content in pink card with dark background intact", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	class FetchContentToolComponent {
+		toolName = "fetch_content";
+		render() { return ["fetch https://example.com/docs", "mode: raw", '{"ok":true}']; }
+	}
+	const framed = formatTranscriptChild(new FetchContentToolComponent() as any, 60, mockTheme);
+	assert.ok(framed[0].includes("[pink]"));
+	assert.ok(framed[0].includes("fetch"));
+	assert.ok(framed[1].includes("fetch https://example.com/docs"));
+	assert.ok(framed[framed.length - 1].includes("╚"));
 });
 
 test("formatTranscriptChildren - groups consecutive errors into ONE single coral card", () => {
