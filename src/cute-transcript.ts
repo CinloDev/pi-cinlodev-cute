@@ -180,15 +180,49 @@ export function isWriteComponent(child: Component): boolean {
 }
 
 /**
- * Checks whether a transcript component is a fetch tool execution
- * (ToolExecutionComponent with toolName: "fetch").
+ * Tool names that render a `fetch <url>` header (pi-web-access registers
+ * `fetch_content` by default; `fetch` is kept as an alias). Tool names are
+ * user-renamable, so rendered headers are sniffed as a fallback.
  */
-export function isFetchComponent(child: Component): boolean {
+const FETCH_TOOL_NAMES = new Set(["fetch", "fetch_content"]);
+
+/**
+ * Checks whether a transcript component is a fetch tool execution.
+ * Matches by toolName (`fetch_content` / `fetch`) or, when the tool was
+ * renamed, by its rendered `fetch <url>` header line.
+ */
+export function isFetchComponent(child: Component, renderedLines?: string[]): boolean {
 	if (!child) return false;
-	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
-	if (name === "ToolExecutionComponent" && (child as any).toolName === "fetch") return true;
-	if ((child as any).toolName === "fetch") return true;
+	const toolName = (child as any).toolName;
+	if (typeof toolName === "string" && FETCH_TOOL_NAMES.has(toolName)) return true;
+	// Header sniff applies only to tool executions (renamed tools keep
+	// rendering `fetch <url>`), never to plain messages that mention fetch.
+	if (typeof toolName !== "string") return false;
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines) return looksLikeFetchLines(lines);
 	return false;
+}
+
+/**
+ * True when rendered lines open with a `fetch <url>` tool header
+ * (e.g. pi-web-access `fetch_content` with a custom tool name).
+ */
+export function looksLikeFetchLines(rawLines: string[]): boolean {
+	for (const line of rawLines) {
+		const plain = stripAnsi(line).trim();
+		if (!plain) continue;
+		return /^fetch\s+/i.test(plain);
+	}
+	return false;
+}
+
+/** Renders a child best-effort for content sniffing; undefined when it throws. */
+function tryRender(child: Component, width: number): string[] | undefined {
+	try {
+		return (child as unknown as { render?: (w: number) => string[] }).render?.(width);
+	} catch {
+		return undefined;
+	}
 }
 
 /**
