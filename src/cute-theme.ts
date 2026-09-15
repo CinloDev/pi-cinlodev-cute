@@ -145,9 +145,9 @@ export const PETAL_PRESETS: Record<string, string[]> = {
 	petals: ["✿", "❀", "❁", "✾"],
 	flowers: ["✿", "❀", "❁", "✾"],
 	cats: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
-	kittens: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	kittens: ["/×᷅×᷄\\੭", "/-᷅-᷄\\੭", "/^᷅^᷄\\੭", "/o᷅o᷄\\੭"],
 	sparkles: ["✦", "✧", "★", "☆"],
-	stars: ["✦", "✧", "★", "☆"],
+	stars: ["✶", "✷", "✸", "✹"],
 	hearts: ["♡", "♥", "ღ", "❦"],
 	ascii: ["*", "+", "o", "x"],
 };
@@ -356,7 +356,7 @@ export function cutePalette(theme: Theme): CutePalette {
 }
 
 export function stripAnsi(text: string): string {
-	return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x1b]*(?:\x1b\\|\x07)/g, "");
+	return text.replace(/\[[0-9;]*[a-zA-Z]|\][^]*(?:\\|\x07)|_[^]*\\/g, "");
 }
 
 // Sidebar cards (Changes, Agents, Todo) remain uniformly colored in the theme's border

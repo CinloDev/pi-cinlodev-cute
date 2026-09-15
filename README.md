@@ -87,7 +87,7 @@ To personalize your theme without modifying files inside the git repository — 
 }
 ```
 
-* **Animation presets:** easily switch animations with `"preset": "cats"` (or `"kittens"`), `"petals"` (default), `"sparkles"` (or `"stars"`), `"hearts"`, or `"ascii"`. You can also supply custom `petalFrames` if you want your own kaomojis.
+* **Animation presets:** easily switch animations with `"preset": "cats"`, `"kittens"` (smaller faces), `"petals"` (default), `"sparkles"`, `"stars"`, `"hearts"`, or `"ascii"`. You can also supply custom `petalFrames` if you want your own kaomojis.
 * **Dynamic `{user}` with auto-detection:** `user` replaces `{user}` placeholders across HUD, Header, Footer and persona instructions. If omitted, it automatically detects your name from `git config user.name` or your OS username.
 * **Persona mode & userRole:** `"persona": "gentleman"` (default, male agent and "desarrollador" treatment) or `"persona": "gentlewoman"` (female agent and "desarrolladora" treatment). You can also explicitly specify `"userRole"` (e.g. `"desarrolladora"`, `"desarrollador"`, `"developer"`).
 * Overrides merge on top of package defaults; omitted keys continue using official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.

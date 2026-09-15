@@ -40,6 +40,8 @@ export function calcVisibleWidth(text: string): number {
 
 /**
  * Truncates a string to fit within a given visible terminal width.
+ * NOTE: not ANSI-safe (it can sever escape sequences mid-way); prefer
+ * truncateAnsiAware for any line that may carry colors.
  */
 export function truncateToVisibleWidth(text: string, maxWidth: number): string {
 	if (calcVisibleWidth(text) <= maxWidth) return text;
@@ -49,6 +51,46 @@ export function truncateToVisibleWidth(text: string, maxWidth: number): string {
 		current += char;
 	}
 	return current;
+}
+
+/**
+ * Escape sequences that must travel as atomic zero-width units: CSI colors,
+ * OSC / iTerm2 inline images, and Kitty keyboard/graphics (APC) sequences.
+ * Image attachments can smuggle these into read lines; counting or cutting
+ * them breaks the frame.
+ */
+const ESCAPE_ATOM = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\/g;
+const ESCAPE_ATOM_SINGLE = /^(?:\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\)$/;
+
+/**
+ * ANSI-aware truncation: escape sequences travel as atomic zero-width units
+ * so they are never severed, and only plain text consumes the width budget.
+ * When the cut lands inside colored text a reset is appended so color never
+ * bleeds into the frame border or the padded fill.
+ */
+export function truncateAnsiAware(text: string, maxWidth: number): string {
+	if (calcVisibleWidth(text) <= maxWidth) return text;
+	const parts = text.split(/(\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\)/g);
+	let out = "";
+	let cut = false;
+	for (const part of parts) {
+		if (!part) continue;
+		if (ESCAPE_ATOM_SINGLE.test(part)) {
+			out += part;
+			continue;
+		}
+		for (const char of part) {
+			if (calcVisibleWidth(out + char) > maxWidth) {
+				cut = true;
+				break;
+			}
+			out += char;
+		}
+		if (cut) break;
+	}
+	ESCAPE_ATOM.lastIndex = 0;
+	if (cut && ESCAPE_ATOM.test(text)) out += "\x1b[39m";
+	return out;
 }
 
 /**
@@ -84,7 +126,7 @@ export function frameCategoryBox(
 	const bot = color("╚" + "═".repeat(safeWidth - 2) + "╝");
 
 	const body = lines.map((line) => {
-		const truncated = truncateToVisibleWidth(line, innerWidth);
+		const truncated = truncateAnsiAware(line, innerWidth);
 		const w = calcVisibleWidth(truncated);
 		const pad = " ".repeat(Math.max(0, innerWidth - w));
 		return color("║") + " " + truncated + pad + " " + color("║");
