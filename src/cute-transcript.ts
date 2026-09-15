@@ -94,10 +94,42 @@ export function frameCategoryBox(
 }
 
 /**
+ * Checks whether a transcript component is a bash execution
+ * (either interactive BashExecutionComponent or ToolExecutionComponent with toolName: "bash").
+ */
+export function isBashComponent(child: Component): boolean {
+	if (!child) return false;
+	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+	if (name === "BashExecutionComponent" || (typeof (child as any).command === "string" && Array.isArray((child as any).outputLines))) return true;
+	if (name === "ToolExecutionComponent" && (child as any).toolName === "bash") return true;
+	if ((child as any).toolName === "bash") return true;
+	return false;
+}
+
+export function isSpacer(child: Component): boolean {
+	if (!child) return false;
+	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+	return name === "Spacer";
+}
+
+/**
+ * Strips empty lines and horizontal border divider lines (e.g. ─── or ═══)
+ * from raw bash component output so it nests cleanly inside our card.
+ */
+export function cleanBashLines(rawLines: string[]): string[] {
+	return rawLines.filter((line) => {
+		const plain = stripAnsi(line).trim();
+		if (plain === "") return false;
+		if (/^[─═\-]+$/.test(plain)) return false;
+		return true;
+	});
+}
+
+/**
  * Format a transcript child component:
- * Frames user messages in the CUTE golden box with ❀, while allowing
- * all other components (assistant messages, tools, bash) to render naturally
- * without restrictive extra outer boxes.
+ * Frames user messages in the CUTE golden box with ❀, bash executions
+ * in the sunset orange box with >_ bash, while allowing
+ * other components (assistant messages, non-bash tools) to render naturally.
  */
 export function formatTranscriptChild(
 	child: Component,
@@ -115,9 +147,111 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, `❀ ${user}`, colors.userMessage, width, theme);
 	}
 
-	// All other components (Assistant, Bash, Tools, Notices) pass through transformTranscriptLines
+	// Bash execution (single child fallback)
+	if (isBashComponent(child)) {
+		const rawLines = child.render(width - 4);
+		const cleaned = cleanBashLines(rawLines);
+		return frameCategoryBox(cleaned.length ? cleaned : rawLines, ">_ bash", colors.bashMessage, width, theme);
+	}
+
+	// All other components (Assistant, Tools, Notices) pass through transformTranscriptLines
 	// so Gentle AI cards (review start/consent/completed), warning notices, and tools adopt
 	// double lines, the robot glyph 🤖 and themed tones (mint green / yellow / error).
 	const rawLines = child.render(width);
 	return transformTranscriptLines(rawLines, theme);
+}
+
+/**
+ * Formats a list of transcript children with intelligent grouping:
+ * - Groups consecutive bash executions into ONE SINGLE unified sunset orange card.
+ * - Formats user messages with the golden user box.
+ * - Passes other components through transformTranscriptLines.
+ */
+export function formatTranscriptChildren(
+	children: Component[],
+	width: number,
+	theme?: Theme,
+): { lines: string[]; mouseChildren: Array<{ component: Component; height: number }> } {
+	const lines: string[] = [];
+	const mouseChildren: Array<{ component: Component; height: number }> = [];
+	const strings = loadCuteStrings();
+	const colors = loadCuteColors();
+	const user = strings.welcomePersona.user || "CinloDev";
+
+	let i = 0;
+	while (i < children.length) {
+		const child = children[i];
+		const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+
+		// 1. User Message
+		if (name === "UserMessageComponent") {
+			const rawLines = child.render(width - 4);
+			const boxed = frameCategoryBox(rawLines, `❀ ${user}`, colors.userMessage, width, theme);
+			mouseChildren.push({ component: child, height: boxed.length });
+			lines.push(...boxed);
+			i++;
+			continue;
+		}
+
+		// 2. Group consecutive bash executions into ONE single unified card
+		if (isBashComponent(child)) {
+			const bashGroup: Component[] = [];
+			while (i < children.length) {
+				const curr = children[i];
+				if (isBashComponent(curr)) {
+					bashGroup.push(curr);
+					i++;
+				} else if (isSpacer(curr) && i + 1 < children.length && isBashComponent(children[i + 1])) {
+					// Intervening spacer between bash calls - consume so group stays united
+					mouseChildren.push({ component: curr, height: 0 });
+					i++;
+				} else {
+					break;
+				}
+			}
+
+			const combinedLines: string[] = [];
+			for (let j = 0; j < bashGroup.length; j++) {
+				const comp = bashGroup[j];
+				const raw = comp.render(width - 4);
+				const cleaned = cleanBashLines(raw);
+				if (cleaned.length > 0) {
+					if (combinedLines.length > 0) {
+						combinedLines.push(""); // subtle separation between commands
+					}
+					combinedLines.push(...cleaned);
+				}
+			}
+
+			const cardLines = frameCategoryBox(
+				combinedLines.length ? combinedLines : ["$"],
+				">_ bash",
+				colors.bashMessage,
+				width,
+				theme,
+			);
+
+			// Distribute mouse heights across the grouped children
+			const avgHeight = Math.max(1, Math.floor(cardLines.length / bashGroup.length));
+			for (let j = 0; j < bashGroup.length; j++) {
+				const compHeight =
+					j === bashGroup.length - 1
+						? cardLines.length - avgHeight * (bashGroup.length - 1)
+						: avgHeight;
+				mouseChildren.push({ component: bashGroup[j], height: compHeight });
+			}
+
+			lines.push(...cardLines);
+			continue;
+		}
+
+		// 3. Other components (assistant messages, non-bash tools, notices)
+		const rawLines = child.render(width);
+		const transformed = transformTranscriptLines(rawLines, theme);
+		mouseChildren.push({ component: child, height: transformed.length });
+		lines.push(...transformed);
+		i++;
+	}
+
+	return { lines, mouseChildren };
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export interface CuteColors {
 	userMessage: string;
+	bashMessage: string;
 	gentleCardSuccess: string;
 	gentleCardWarning: string;
 	gentleCardError: string;
@@ -15,6 +16,7 @@ export const CUTE_COLORS_FILENAME = "CinlodevCute.colors.json";
 
 export const DEFAULT_CUTE_COLORS: CuteColors = {
 	userMessage: "heading",
+	bashMessage: "bash",
 	gentleCardSuccess: "success",
 	gentleCardWarning: "warning",
 	gentleCardError: "error",
@@ -77,6 +79,7 @@ function mergeColors(raw: unknown, current: CuteColors): CuteColors {
 	const source = isRecord(raw.colors) ? raw.colors : raw;
 	return {
 		userMessage: typeof source.userMessage === "string" ? source.userMessage : current.userMessage,
+		bashMessage: typeof source.bashMessage === "string" ? source.bashMessage : current.bashMessage,
 		gentleCardSuccess: typeof source.gentleCardSuccess === "string" ? source.gentleCardSuccess : current.gentleCardSuccess,
 		gentleCardWarning: typeof source.gentleCardWarning === "string" ? source.gentleCardWarning : current.gentleCardWarning,
 		gentleCardError: typeof source.gentleCardError === "string" ? source.gentleCardError : current.gentleCardError,
