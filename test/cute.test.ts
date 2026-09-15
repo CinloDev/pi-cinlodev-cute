@@ -653,6 +653,19 @@ test("formatAssistantProse - Dracula highlighting on prose, bold headings, color
 	assert.deepEqual(formatAssistantProse([], mockTheme), []);
 });
 
+test("highlightUncoloredSegments - keeps OSC 133 and APC sequences atomic without corruption", () => {
+	const mockHighlight = (t: string) => `[${t}]`;
+	const OSC133_ZONE_END = "\x1b]133;B\x07";
+	const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+	const line = OSC133_ZONE_END + OSC133_ZONE_FINAL + "¿Me los pasás?";
+
+	const out = highlightUncoloredSegments(line, mockHighlight);
+	// Both OSC sequences must survive completely intact (never parsed as text or 133;C leaking)
+	assert.ok(out.startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL), "OSC 133 markers must remain atomic at start");
+	assert.ok(out.includes("[¿Me los pasás?]"), "text after OSC markers must be highlighted");
+	assert.ok(!out.includes("133;C]"), "133;C must never be treated as visible plain text");
+});
+
 test("isMemoryComponent - matches mem_ tools only", () => {
 	assert.ok(isMemoryComponent({ toolName: "mem_search" } as any));
 	assert.ok(isMemoryComponent({ toolName: "mem_timeline" } as any));

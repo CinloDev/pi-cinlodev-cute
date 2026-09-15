@@ -736,19 +736,19 @@ export function formatBashOutputLines(
 
 /**
  * Highlights plain uncolored text segments inside a line that may already
- * contain ANSI sequences (like markdown bold, links, list markers).
- * Preserves text that is already styled with foreground color, and passes
- * plain text through the highlighter function.
+ * contain ANSI sequences (like markdown bold, links, list markers, OSC 133 semantic zones).
+ * Preserves text that is already styled with foreground color or control escapes,
+ * and passes plain text through the highlighter function.
  */
 export function highlightUncoloredSegments(line: string, highlightFn: (text: string) => string): string {
-	const ANSI_RE = /(\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\)/g;
-	const parts = line.split(ANSI_RE);
+	const ANSI_SPLIT = /(\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*(?:\x1b\\|\x07)|\x1b_[^\x1b]*\x1b\\)/g;
+	const parts = line.split(ANSI_SPLIT);
 	let hasActiveColor = false;
 	let out = "";
 
 	for (const part of parts) {
 		if (!part) continue;
-		if (ANSI_RE.test(part)) {
+		if (ESCAPE_ATOM_SINGLE.test(part)) {
 			if (/\x1b\[38;2;|\x1b\[3[0-7]m/.test(part)) {
 				hasActiveColor = true;
 			} else if (/\x1b\[39m|\x1b\[0m/.test(part)) {
