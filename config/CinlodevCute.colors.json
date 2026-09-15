@@ -6,6 +6,7 @@
 	"readMessage": "read",
 	"writeMessage": "write",
 	"fetchMessage": "pink",
+	"searchMessage": "secondary",
 	"errorMessage": "error",
 	"gentleCardSuccess": "success",
 	"gentleCardWarning": "warning",
