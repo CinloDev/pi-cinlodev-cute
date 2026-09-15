@@ -4,9 +4,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
-import { loadCuteLayout, resetCuteLayoutCache, tuneTuiScroll } from "../src/cute-layout.ts";
+import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 
@@ -189,16 +189,16 @@ test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-lin
 	assert.ok(transformed[1].includes("╔"));
 	assert.ok(transformed[1].includes("═"));
 	assert.ok(transformed[1].includes("╗"));
-	assert.ok(transformed[1].includes("[success]"));
+	assert.ok(transformed[1].includes("[gentle]"));
 
 	assert.ok(transformed[2].includes("║"));
 	assert.ok(transformed[2].includes("2 lines"));
-	assert.ok(transformed[2].includes("[success]"));
+	assert.ok(transformed[2].includes("[gentle]"));
 
 	assert.ok(transformed[3].includes("╚"));
 	assert.ok(transformed[3].includes("═"));
 	assert.ok(transformed[3].includes("╝"));
-	assert.ok(transformed[3].includes("[success]"));
+	assert.ok(transformed[3].includes("[gentle]"));
 });
 
 test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to double-line yellow frame and robot", () => {
@@ -246,7 +246,7 @@ test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot gly
 	assert.ok(!transformed.includes("🌹"));
 	assert.ok(transformed.includes("╔"));
 	assert.ok(transformed.includes("╗"));
-	assert.ok(transformed.includes("[success]"));
+	assert.ok(transformed.includes("[gentle]"));
 });
 
 test("frameCategoryBox - exact width and double-line framing", () => {
@@ -299,10 +299,16 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	class BashExecutionComponent {
 		render() { return ["$ npm test", "# pass 10"]; }
 	}
-	const bashRender = formatTranscriptChild(new BashExecutionComponent() as any, 60, mockTheme);
+	// Wide width: mock syntax tags ([syntaxKeyword]...) count as visible chars,
+	// with real ANSI themes they are zero-width escapes.
+	const bashRender = formatTranscriptChild(new BashExecutionComponent() as any, 100, mockTheme);
 	assert.ok(bashRender[0].includes("╔═ >_ bash"));
-	assert.ok(bashRender[1].includes("$ npm test"));
-	assert.ok(bashRender[2].includes("# pass 10"));
+	assert.ok(bashRender[1].includes("[bashMode]$ [/bashMode]"));
+	assert.ok(bashRender[1].includes("npm test"));
+	// Inside content is Dracula now (number highlighted), no terracotta wash
+	assert.ok(bashRender[2].includes("pass"));
+	assert.ok(bashRender[2].includes("[syntaxNumber]10[/syntaxNumber]"));
+	assert.ok(!bashRender[2].includes("[bashOutput]"));
 	assert.ok(bashRender[3].includes("╚"));
 
 	// 4. ToolExecutionComponent for bash renders in >_ bash card
@@ -312,7 +318,8 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	}
 	const toolBashRender = formatTranscriptChild(new ToolExecutionComponent() as any, 60, mockTheme);
 	assert.ok(toolBashRender[0].includes("╔═ >_ bash"));
-	assert.ok(toolBashRender[1].includes("$ git status"));
+	assert.ok(toolBashRender[1].includes("[bashMode]$ [/bashMode]"));
+	assert.ok(toolBashRender[1].includes("git status"));
 
 	// 5. Gentle AI Tool Call Card adapts to double lines, robot glyph and mint green
 	class GentleAiToolComponent {
@@ -330,7 +337,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(toolRender[0].includes("╔"));
 	assert.ok(toolRender[0].includes("═"));
 	assert.ok(toolRender[0].includes("╗"));
-	assert.ok(toolRender[0].includes("[success]"));
+	assert.ok(toolRender[0].includes("[gentle]"));
 	assert.ok(toolRender[1].includes("║"));
 	assert.ok(toolRender[2].includes("╚"));
 	assert.ok(toolRender[2].includes("╝"));
@@ -345,7 +352,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		const colors = loadCuteColors();
 		assert.equal(colors.userMessage, "heading");
 		assert.equal(colors.bashMessage, "bash");
-		assert.equal(colors.gentleCardSuccess, "success");
+		assert.equal(colors.gentleCardSuccess, "gentle");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
 		assert.equal(colors.readMessage, "read");
@@ -369,7 +376,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		const overridden = loadCuteColors();
 		assert.equal(overridden.userMessage, "accent");
 		assert.equal(overridden.gentleCardWarning, "gold");
-		assert.equal(overridden.gentleCardSuccess, "success");
+		assert.equal(overridden.gentleCardSuccess, "gentle");
 	} finally {
 		if (originalContent !== null) {
 			fs.writeFileSync(userConfigFile, originalContent, "utf8");
@@ -496,7 +503,7 @@ test("tuneTuiScroll - accelerates slow mouse wheel scroll", () => {
 	tuneTuiScroll({});
 });
 
-test("formatBashOutputLines - preserves pink command header and styles output in bashOutput tone", () => {
+test("formatBashOutputLines - command header Dracula with pink $, output Dracula", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
 	} as any;
@@ -508,8 +515,10 @@ test("formatBashOutputLines - preserves pink command header and styles output in
 	];
 
 	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
-	// 1. Pink command line is preserved untouched
-	assert.equal(formatted[0], rawLines[0]);
+	// 1. `$` stays pink, command gets Dracula highlighting (no keyword here, so plain rest)
+	assert.ok(formatted[0].startsWith("[bashMode]$ [/bashMode]"));
+	assert.ok(formatted[0].includes("cat ~/.pi/agent/settings.json"));
+	assert.ok(!formatted[0].includes("240;149;200m$ cat"));
 	// 2. `cat` of a highlightable file (json) gets Dracula highlighting, not terracotta
 	assert.ok(formatted[1].includes("[syntaxString]"));
 	assert.ok(formatted[1].includes('"defaultModel"'));
@@ -704,7 +713,7 @@ test("formatReadLines - highlights plain read code Dracula-style and preserves h
 });
 
 
-test("formatBashOutputLines - plain output stays terracotta, cat-of-code highlights", () => {
+test("formatBashOutputLines - plain output uses Dracula, cat-of-code highlights", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
 	} as any;
@@ -723,8 +732,9 @@ test("formatBashOutputLines - plain output stays terracotta, cat-of-code highlig
 		"const x = 1;",
 	];
 	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
-	// Plain command output keeps the terracotta tone
-	assert.ok(formatted[1].includes("[bashOutput]pass 10[/bashOutput]"));
+	// Plain command output uses Dracula (number highlighted), no terracotta wash
+	assert.ok(formatted[1].includes("[syntaxNumber]10[/syntaxNumber]"));
+	assert.ok(!formatted[1].includes("[bashOutput]"));
 	// Code dump output gets highlighted instead
 	assert.ok(formatted[3].includes("[syntaxKeyword]const[/syntaxKeyword]"));
 	assert.ok(!formatted[3].includes("[bashOutput]"));
@@ -774,15 +784,83 @@ test("formatBashOutputLines - pink python heredoc body highlights Dracula-style"
 	];
 	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
 
-	// Header and terminator stay pink as command echo
-	assert.equal(formatted[0], rawLines[0]);
+	// Header gets Dracula on the command (`$` stays pink), terminator stays pink echo
+	assert.ok(formatted[0].startsWith("[bashMode]$ [/bashMode]"));
+	assert.ok(formatted[0].includes("python3"));
 	assert.equal(formatted[3], rawLines[3]);
 	// Heredoc body is highlighted, not left pink (`open(` becomes a function token)
 	assert.ok(formatted[1].includes("[syntaxFunction]open[/syntaxFunction]"));
 	assert.ok(!formatted[1].includes("240;149;200"));
 	assert.ok(formatted[2].includes("[syntaxKeyword]const[/syntaxKeyword]"));
-	// Post-heredoc output keeps the terracotta tone
-	assert.ok(formatted[4].includes("[bashOutput]OK done[/bashOutput]"));
+	// Post-heredoc output uses Dracula too (type token), no terracotta wash
+	assert.ok(formatted[4].includes("[syntaxType]OK[/syntaxType]"));
+	assert.ok(!formatted[4].includes("[bashOutput]"));
+});
+
+test("formatBashCommandHeader - keeps $ pink and highlights command Dracula-style", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const out = formatBashCommandHeader("$ git fetch origin --prune", mockTheme);
+	assert.ok(out.startsWith("[bashMode]$ [/bashMode]"));
+	assert.ok(out.includes("git fetch"));
+
+	const kw = formatBashCommandHeader("$ const x = 1;", mockTheme);
+	assert.ok(kw.includes("[syntaxKeyword]const[/syntaxKeyword]"));
+
+	// No theme falls back to the original line
+	assert.equal(formatBashCommandHeader("$ echo hi"), "$ echo hi");
+	assert.equal(formatBashCommandHeader("$"), "$");
+});
+
+test("formatBashOutputLines - shell heredoc body highlights Dracula-style", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const pink = (t: string) => `\x1b[38;2;240;149;200m${t}\x1b[39m`;
+
+	const rawLines = [
+		pink("$ bash <<'EOF'"),
+		pink("const x = 1;"),
+		pink("EOF"),
+		"done",
+	];
+	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
+	assert.ok(formatted[0].startsWith("[bashMode]$ [/bashMode]"));
+	assert.ok(formatted[1].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.equal(formatted[2], rawLines[2]);
+	// Trailing plain output stays Dracula-style plain (no terracotta wash)
+	assert.equal(formatted[3], "done");
+	assert.ok(!formatted[3].includes("[bashOutput]"));
+});
+
+test("terminal insets - herdr reserves edge columns, plain env stays full-bleed", () => {
+	const base = { insetLeft: 0, insetRight: 0, herdrInsetLeft: 0, herdrInsetRight: 1 } as any;
+
+	assert.equal(isHerdrSession({ HERDR_ENV: "1" }), true);
+	assert.equal(isHerdrSession({ HERDR_PANE_ID: "w3:p1" }), true);
+	assert.equal(isHerdrSession({}), false);
+
+	// Inside Herdr the right column stays clear for its bar
+	assert.deepEqual(resolveEdgeInsets(base, { HERDR_ENV: "1" }), { left: 0, right: 1 });
+	// Outside Herdr everything renders full-bleed
+	assert.deepEqual(resolveEdgeInsets(base, {}), { left: 0, right: 0 });
+	// Manual insets always apply, negatives clamp to zero
+	assert.deepEqual(
+		resolveEdgeInsets({ insetLeft: 2, insetRight: 0, herdrInsetLeft: 0, herdrInsetRight: 0 } as any, {}),
+		{ left: 2, right: 0 },
+	);
+	assert.deepEqual(
+		resolveEdgeInsets({ insetLeft: -3, insetRight: -1, herdrInsetLeft: 0, herdrInsetRight: 0 } as any, {}),
+		{ left: 0, right: 0 },
+	);
+
+	// Layout defaults carry the terminal section
+	resetCuteLayoutCache();
+	const layout = loadCuteLayout();
+	assert.equal(layout.terminal.insetLeft, 0);
+	assert.equal(layout.terminal.herdrInsetRight, 1);
 });
 
 test("Syntax check across all source files", () => {

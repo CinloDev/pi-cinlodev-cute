@@ -3,7 +3,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
-import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
+import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -343,10 +343,15 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				[NODE]: () => original.call(root),
 			};
 			const replacement = () => {
-				const layout = loadCuteLayout().sidebar;
+				const cute = loadCuteLayout();
+				const layout = cute.sidebar;
 				const columns = tui.terminal.columns;
-				const active = prepare(columns);
-				const hasLeftBorder = columns >= layout.minColumnsWithBorder;
+				// Edge columns eaten by overlay chrome that never resizes the pty
+				// (Herdr's bar) stay empty so borders are never clipped.
+				const { left: insetLeft, right: insetRight } = resolveEdgeInsets(cute.terminal);
+				const availColumns = Math.max(1, columns - insetLeft - insetRight);
+				const active = prepare(availColumns);
+				const hasLeftBorder = availColumns >= layout.minColumnsWithBorder;
 
 				if (active) {
 					// Con el middleDivider visible de arriba a abajo, ocultamos el scrollbar del transcript
@@ -361,11 +366,28 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					}
 				}
 
-				if (!hasLeftBorder && !active) {
+				if (!hasLeftBorder && !active && insetLeft === 0 && insetRight === 0) {
 					return original.call(root);
 				}
 
+				const edgeSpacer = (): Component => ({
+					render(width: number) {
+						const rows = Math.max(1, tui.terminal?.rows ?? layout.fallbackRows);
+						return Array(rows).fill(" ".repeat(Math.max(0, width)));
+					},
+					invalidate() {},
+				});
+
 				const entries: any[] = [];
+				if (insetLeft > 0) {
+					entries.push({
+						component: edgeSpacer(),
+						basis: insetLeft,
+						grow: 0,
+						shrink: 0,
+						minSize: insetLeft,
+					});
+				}
 				if (hasLeftBorder) {
 					entries.push({
 						component: leftBorder,
@@ -396,6 +418,15 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 						grow: 0,
 						shrink: 0,
 						minSize: layout.railWidth,
+					});
+				}
+				if (insetRight > 0) {
+					entries.push({
+						component: edgeSpacer(),
+						basis: insetRight,
+						grow: 0,
+						shrink: 0,
+						minSize: insetRight,
 					});
 				}
 

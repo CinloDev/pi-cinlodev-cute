@@ -40,7 +40,8 @@
     "toolSuccessBg": "#140a28",
     "toolPendingBg": "#1A1218",
     "toolErrorBg": "#361e60",
-    "infoBg": "#1A1218"
+    "infoBg": "#1A1218",
+    "gentle": "#a46db5"
   },
   "glyphs": {
     "frameStyle": "double",
@@ -126,6 +127,7 @@
     "thinkingMedium": "heading",
     "thinkingHigh": "border",
     "thinkingXhigh": "border",
-    "bashMode": "pink"
+    "bashMode": "pink",
+    "gentle": "gentle"
   }
 }

@@ -25,7 +25,7 @@ export const DEFAULT_CUTE_COLORS: CuteColors = {
 	readMessage: "read",
 	writeMessage: "write",
 	errorMessage: "error",
-	gentleCardSuccess: "success",
+	gentleCardSuccess: "gentle",
 	gentleCardWarning: "warning",
 	gentleCardError: "error",
 	sidebarBorder: "border",
