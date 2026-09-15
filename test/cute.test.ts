@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
+import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -291,12 +291,13 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(userFramed[1].includes("echo hello from user"));
 	assert.ok(userFramed[2].includes("╚"));
 
-	// 2. Assistant Message renders naturally without extra bounding box
+	// 2. Assistant Message renders naturally, headings slightly bolder
 	class AssistantMessageComponent {
 		render() { return ["# Title", "Explicación del asistente"]; }
 	}
 	const asstRender = formatTranscriptChild(new AssistantMessageComponent() as any, 60, mockTheme);
-	assert.equal(asstRender[0], "# Title");
+	assert.ok(asstRender[0].includes("\x1b[1m"), "markdown heading gets bolder typeface");
+	assert.ok(asstRender[0].includes("# Title"));
 	assert.equal(asstRender[1], "Explicación del asistente");
 
 	// 3. Bash Execution renders in sunset orange card with >_ bash
@@ -358,6 +359,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		assert.equal(colors.bashMessage, "bash");
 		assert.equal(colors.fetchMessage, "pink");
 		assert.equal(colors.searchMessage, "secondary");
+		assert.equal(colors.memoryMessage, "salmon");
 		assert.equal(colors.gentleCardSuccess, "success");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
@@ -598,6 +600,67 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	// NOTE: class name here is PlainText, not Text, so it stays natural.
 	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
 	assert.equal(plainRender[0], "some note about error handling in docs");
+});
+
+test("isMemoryComponent - matches mem_ tools only", () => {
+	assert.ok(isMemoryComponent({ toolName: "mem_search" } as any));
+	assert.ok(isMemoryComponent({ toolName: "mem_timeline" } as any));
+	assert.ok(isMemoryComponent({ toolName: "mem_doctor" } as any));
+	assert.equal(isMemoryComponent({ toolName: "fetch_content" } as any), false);
+	assert.equal(isMemoryComponent({ toolName: "web_search" } as any), false);
+	assert.equal(isMemoryComponent({ toolName: "read" } as any), false);
+	assert.equal(isMemoryComponent({ render: () => ["some memory note"] } as any), false);
+	assert.equal(isMemoryComponent(null as any), false);
+});
+
+test("formatTranscriptChildren - groups consecutive memory calls into ONE single salmon card", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	class MemTool {
+		toolName: string;
+		msg: string;
+		constructor(toolName: string, msg: string) { this.toolName = toolName; this.msg = msg; }
+		render() { return [this.msg]; }
+	}
+	class AssistantMessageComponent {
+		render() { return ["plain prose stays free"]; }
+	}
+	const children: any[] = [
+		new MemTool("mem_search", "search supabase..."),
+		new MemTool("mem_timeline", "timeline #1624"),
+		new AssistantMessageComponent(),
+		new MemTool("mem_doctor", "doctor ok"),
+	];
+	const { lines, mouseChildren } = formatTranscriptChildren(children, 70, mockTheme);
+	const headers = lines.filter((l) => l.includes("memory"));
+	assert.equal(headers.length, 2, "2 salmon memory cards: 1 grouped (2 calls) + 1 single");
+	assert.ok(headers[0].includes("[salmon]"));
+	const cardSlice = lines.join("\n");
+	assert.ok(cardSlice.includes("search supabase..."));
+	assert.ok(cardSlice.includes("timeline #1624"));
+	assert.ok(cardSlice.includes("plain prose stays free"));
+	assert.equal(mouseChildren.length, children.length, "All children must be mapped in mouseLayout");
+});
+
+test("transformTranscriptLines - bolds markdown headings, leaves code fences alone", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	assert.ok(bolden(mockTheme, "hi").includes("\x1b[1m"));
+	const out = transformTranscriptLines([
+		"### 1. Supabase en Engram",
+		"plain prose",
+		"```python",
+		"# comment inside fence stays plain",
+		"```",
+	], mockTheme);
+	assert.ok(out[0].includes("\x1b[1m"), "heading gets bolder typeface");
+	assert.ok(out[0].includes("### 1. Supabase en Engram"), "heading text intact");
+	assert.equal(out[1], "plain prose");
+	assert.equal(out[2], "```python");
+	assert.equal(out[3], "# comment inside fence stays plain", "no bold inside fences");
+	assert.equal(out[4], "```");
 });
 
 test("isSearchComponent - matches web_search, search alias and search headers, nothing else", () => {

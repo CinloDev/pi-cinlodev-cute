@@ -34,6 +34,22 @@ export function frameFg(theme: Theme, text: string): string {
 }
 
 /**
+ * Bold helper in the safeFg style: prefers the theme's own bold renderer
+ * and falls back to raw ANSI bold so widgets keep rendering on
+ * minimal/mock themes. Used sparingly (markdown headings) for a
+ * slightly heavier typeface without changing any color.
+ */
+export function bolden(theme: Theme | undefined, text: string): string {
+	if (theme) {
+		try {
+			const out = (theme as unknown as { bold?: (s: string) => string }).bold?.(text);
+			if (typeof out === "string" && out.length > 0) return out;
+		} catch {}
+	}
+	return `\x1b[1m${text}\x1b[22m`;
+}
+
+/**
  * Pastel-pink block cursor (#FFB1DD bg over #1A1218 fg) derived from theme keys,
  * so callers hold no hardcoded 38;2/48;2 sequences. The background ANSI is
  * derived from the pinkBright foreground ANSI, keeping the same hex in both
@@ -453,17 +469,21 @@ export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCar
 }
 
 // Stateful processor for transcript & dock lines: transforms Gentle AI cards into double-line
-// themed frames (warning = yellow, success = mauve) with robot 🤖 while leaving other lines intact.
+// themed frames (warning = yellow, success = green) with robot 🤖, bolds markdown headings
+// outside fenced code blocks, and leaves other lines intact.
 export function transformTranscriptLines(rawLines: string[], theme?: Theme): string[] {
 	if (!theme || !rawLines.length) return rawLines;
 	let inGentleCard = false;
 	let currentTone: CuteCardTone = "success";
+	let inFence = false;
 
 	return rawLines.map((line) => {
 		const plain = stripAnsi(line);
 		const hasGentleTitle = plain.includes("Gentle AI");
 		const isTopRule = (plain.includes("╭") || plain.includes("╔")) && hasGentleTitle;
 		const isBottomRule = plain.includes("╰") || plain.includes("╚") || plain.includes("╯") || plain.includes("╝");
+
+		if (/^\s*```/.test(plain)) inFence = !inFence;
 
 		if (isTopRule) {
 			inGentleCard = true;
@@ -488,6 +508,12 @@ export function transformTranscriptLines(rawLines: string[], theme?: Theme): str
 				currentTone = "success";
 			}
 			return transformed;
+		}
+
+		// Markdown headings get a slightly heavier typeface (bold, same color).
+		// Skipped inside fenced code blocks so `#` comments in code never bolden.
+		if (!inFence && /^\s*#{1,6}\s+\S/.test(plain)) {
+			return bolden(theme, line);
 		}
 
 		return line;

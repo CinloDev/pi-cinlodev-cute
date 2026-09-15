@@ -260,6 +260,18 @@ export function looksLikeSearchLines(rawLines: string[]): boolean {
 }
 
 /**
+ * Checks whether a transcript component is a memory (Engram) tool execution.
+ * Engram registers every tool under the `mem_` prefix (mem_search,
+ * mem_save, mem_timeline, mem_doctor, ...), so a prefix match is enough
+ * and no header sniffing is needed.
+ */
+export function isMemoryComponent(child: Component): boolean {
+	if (!child) return false;
+	const toolName = (child as any).toolName;
+	return typeof toolName === "string" && toolName.startsWith("mem_");
+}
+
+/**
  * Detects top-level Pi error lines (showError Text components):
  * lines starting with "Error:" plus known provider failure signatures
  * (auth_unavailable, Retry failed). Strict on purpose so normal assistant
@@ -697,6 +709,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
 	}
 
+	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage).
+	// Single-child fallback; consecutive memory calls are grouped into one
+	// card by formatTranscriptChildren. Inner lines pass through untouched.
+	if (isMemoryComponent(child)) {
+		const rawLines = child.render(width - 4);
+		return frameCategoryBox(rawLines, "🧠 memory", colors.memoryMessage, width, theme);
+	}
+
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
 	if (isErrorTextComponent(child)) {
 		const rawLines = child.render(width - 4);
@@ -717,6 +737,7 @@ export function formatTranscriptChild(
  * - Frames read executions in soft lilac and write/edit in barely-blue.
  * - Frames fetch executions in pink (same tone as fetch title text).
  * - Frames search executions in dusty rose (softer sibling of fetch pink).
+ * - Groups consecutive memory (Engram) calls into ONE single salmon card.
  * - Groups consecutive top-level error Texts into ONE SINGLE coral card.
  * - Passes other components through transformTranscriptLines.
  */
@@ -838,6 +859,54 @@ export function formatTranscriptChildren(
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
 			i++;
+			continue;
+		}
+
+		// 4d. Group consecutive memory (Engram) calls into ONE single salmon card
+		if (isMemoryComponent(child)) {
+			const memGroup: Component[] = [];
+			while (i < children.length) {
+				const curr = children[i];
+				if (isMemoryComponent(curr)) {
+					memGroup.push(curr);
+					i++;
+				} else if (isSpacer(curr) && i + 1 < children.length && isMemoryComponent(children[i + 1])) {
+					// Intervening spacer between memory calls - consume so group stays united
+					mouseChildren.push({ component: curr, height: 0 });
+					i++;
+				} else {
+					break;
+				}
+			}
+
+			const combinedLines: string[] = [];
+			for (const comp of memGroup) {
+				const raw = comp.render(width - 4);
+				if (combinedLines.length > 0) {
+					combinedLines.push(""); // subtle separation between calls
+				}
+				combinedLines.push(...raw);
+			}
+
+			const cardLines = frameCategoryBox(
+				combinedLines.length ? combinedLines : ["memory"],
+				"🧠 memory",
+				colors.memoryMessage,
+				width,
+				theme,
+			);
+
+			// Distribute mouse heights across the grouped children
+			const avgHeight = Math.max(1, Math.floor(cardLines.length / memGroup.length));
+			for (let j = 0; j < memGroup.length; j++) {
+				const compHeight =
+					j === memGroup.length - 1
+						? cardLines.length - avgHeight * (memGroup.length - 1)
+						: avgHeight;
+				mouseChildren.push({ component: memGroup[j], height: compHeight });
+			}
+
+			lines.push(...cardLines);
 			continue;
 		}
 
