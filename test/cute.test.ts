@@ -298,7 +298,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	const asstRender = formatTranscriptChild(new AssistantMessageComponent() as any, 60, mockTheme);
 	assert.ok(asstRender[0].includes("\x1b[1m"), "markdown heading gets bolder typeface");
 	assert.ok(asstRender[0].includes("# Title"));
-	assert.ok(asstRender[1].includes("[write]Explicación del asistente[/write]"), "white body takes celeste");
+	assert.equal(asstRender[1], "Explicación del asistente", "assistant prose body passes through cleanly");
 
 	// 3. Bash Execution renders in sunset orange card with >_ bash
 	class BashExecutionComponent {
@@ -616,7 +616,7 @@ test("formatAssistantProse - celeste body, bold headings, colored and fenced lin
 		"plain code line",
 		"```",
 	], mockTheme);
-	assert.ok(out[0].includes("[write]plain white prose[/write]"), "white body takes celeste");
+	assert.equal(out[0], "plain white prose", "prose text passes through naturally to theme");
 	assert.equal(out[1], "");
 	assert.ok(out[2].includes("\x1b[1m") && out[2].includes("### Heading"));
 	assert.equal(out[3], colored, "already-colored lines untouched");
@@ -657,12 +657,12 @@ test("formatTranscriptChildren - groups consecutive memory calls into ONE single
 		new MemTool("mem_doctor", "doctor ok"),
 	];
 	const { lines, mouseChildren } = formatTranscriptChildren(children, 70, mockTheme);
-	const headers = lines.filter((l) => l.includes("memory"));
-	assert.equal(headers.length, 2, "2 salmon memory cards: 1 grouped (2 calls) + 1 single");
+	const headers = lines.filter((l) => l.includes("engram"));
+	assert.equal(headers.length, 2, "2 salmon engram cards: 1 grouped (2 calls) + 1 single");
 	assert.ok(headers[0].includes("[salmon]"));
 	const cardSlice = lines.join("\n");
 	assert.ok(cardSlice.includes("search supabase..."));
-	assert.ok(cardSlice.includes("timeline #1624"));
+	assert.ok(cardSlice.includes("timeline #") && cardSlice.includes("[syntaxNumber]1624[/syntaxNumber]"));
 	assert.ok(cardSlice.includes("plain prose stays free"));
 	assert.equal(mouseChildren.length, children.length, "All children must be mapped in mouseLayout");
 });
@@ -809,6 +809,10 @@ test("formatWriteDiffLines - highlights diff code, keeps diff tones and headers"
 	assert.ok(!toolFileHighlightable(undefined));
 	assert.equal(toolFilePath({ args: { path: "src/a.ts" } } as any), "src/a.ts");
 	assert.equal(toolFilePath({} as any), undefined);
+	// Fallback detection from header line (tool without args object in component)
+	assert.equal(toolFilePath({} as any, ["edit src/cute-theme.ts", "+1 -0"]), "src/cute-theme.ts");
+	assert.equal(toolFilePath({} as any, ["✎ write src/hud.ts", "+1 -0"]), "src/hud.ts");
+	assert.equal(toolFilePath({} as any, ["read package.json:1-10"]), "package.json");
 
 	const raw = [
 		"edit src/cute-transcript.ts",
