@@ -12,7 +12,7 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
-import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 
 const execAsync = promisify(exec);
@@ -333,6 +333,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		pi.on("tool_execution_end", refreshTodos);
 	}
 	ctx.ui.setFooter((tui, theme, footerData) => {
+		tuneTuiScroll(tui);
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;

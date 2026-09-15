@@ -13,7 +13,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
 import { cuteGlyphs, frameFg, installWelcomeHeaderGuard, safeFg as safeThemeFg } from "./cute-theme";
-import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import {
 	loadCutePaths,
@@ -432,6 +432,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const factory = (tui: any, theme: any) => {
+			tuneTuiScroll(tui);
 			activeTui = tui;
 			currentWidget = new GentlemanWelcomeWidget(
 				() => ctx,

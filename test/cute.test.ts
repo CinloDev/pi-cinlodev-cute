@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
-import { loadCuteLayout, resetCuteLayoutCache } from "../src/cute-layout.ts";
+import { loadCuteLayout, resetCuteLayoutCache, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 
@@ -407,6 +407,19 @@ test("installWelcomeHeaderGuard - protects Welcome Dashboard against late foreig
 	assert.ok(typeof activeHeader === "function");
 	const rendered = activeHeader({}, mockTheme).render(40);
 	assert.ok(Array.isArray(rendered));
+});
+
+test("tuneTuiScroll - accelerates slow mouse wheel scroll", () => {
+	resetAll();
+	const mockTui = {
+		wheelScrollLines: 1, // Pi default
+	};
+	tuneTuiScroll(mockTui);
+	assert.equal(mockTui.wheelScrollLines, 3, "Default wheel scroll lines should be tuned to 3");
+
+	// Ignores non-tui or missing wheelScrollLines gracefully
+	tuneTuiScroll(null);
+	tuneTuiScroll({});
 });
 
 test("Syntax check across all source files", () => {
