@@ -348,12 +348,17 @@ export function cleanBashLines(rawLines: string[]): string[] {
  */
 /**
  * Interpreters whose `<<'EOF'` heredoc body is code worth highlighting.
- * Shells are excluded on purpose: their bodies often mix prose (echo text)
- * that would get sprinkled with keyword colors.
+ * Shells are included per user override (2026-09-15): Cinlo asked for
+ * Dracula in bash too, accepting that echo prose may pick up keyword colors.
  */
 const HEREDOC_CODE_COMMANDS = new Set([
 	"python", "python3", "node", "nodejs", "ruby", "perl", "php",
 	"deno", "bun", "tsx", "ts-node",
+]);
+
+/** Shell interpreters whose heredoc bodies also get Dracula highlighting. */
+const HEREDOC_SHELL_COMMANDS = new Set([
+	"sh", "bash", "zsh", "fish", "shell", "dash", "ksh",
 ]);
 
 export interface BashHeredoc {
@@ -423,12 +428,26 @@ export function extractBashDisplayPath(headerLine: string): string | undefined {
 }
 
 /**
+ * Formats a `$ ...` bash command header: keeps the leading `$` in pink
+ * (`bashMode`) and highlights the command itself Dracula-style.
+ * Falls back to the original line when no theme is available.
+ */
+export function formatBashCommandHeader(line: string, theme?: Theme): string {
+	if (!theme) return line;
+	const plain = stripAnsi(line);
+	const m = /^(\s*\$\s?)(.*)$/.exec(plain);
+	if (!m) return line;
+	const prefix = m[1] ?? "$ ";
+	const cmd = m[2] ?? "";
+	if (!cmd) return line;
+	return safeFg(theme, "bashMode", prefix, "pink") + highlightCodeLine(cmd, theme);
+}
+
+/**
  * Formats the lines inside a bash card:
- * - Keeps the command header line ($ ...) in its original pink styling.
- * - When the command dumps a highlightable code file (`cat src/a.ts`) or runs
- *   a code heredoc (`python3 - <<'EOF'`), its lines get the same Dracula-style
- *   highlighting as read/write cards.
- * - Any other plain output keeps the warm terracotta (#db8c65 / colors.bashOutput).
+ * - Frame (`>_ bash` border) keeps the terracotta/sunset tone via colors.bashMessage.
+ * - Everything inside (command header, code dumps, heredocs, plain output)
+ *   gets the same Dracula-style highlighting as read/write cards.
  * - Preserves lines with real colors (diff green/red, native highlighting, ...).
  *   Bare command-echo pink and white/muted/dim do not count as kept colors.
  */
@@ -457,18 +476,19 @@ export function formatBashOutputLines(
 			return line;
 		}
 
-		// 2. Command header line ($ ...) stays in its original pink, and decides
-		// whether the lines that follow are highlightable code or plain output.
+		// 2. Command header line ($ ...) gets Dracula highlighting on the command,
+		// keeping `$` pink, and decides whether the lines that follow are
+		// highlightable code or plain output.
 		if (trimmed.startsWith("$") || plain.trimStart().startsWith("$ ")) {
 			const heredoc = extractHeredoc(trimmed);
-			if (heredoc && (HEREDOC_CODE_COMMANDS.has(heredoc.interpreter) || toolFileHighlightable(heredoc.target))) {
+			if (heredoc && (HEREDOC_CODE_COMMANDS.has(heredoc.interpreter) || HEREDOC_SHELL_COMMANDS.has(heredoc.interpreter) || toolFileHighlightable(heredoc.target))) {
 				highlightMode = true;
 				heredocEnd = heredoc.delimiter;
 			} else {
 				highlightMode = toolFileHighlightable(extractBashDisplayPath(trimmed));
 				heredocEnd = undefined;
 			}
-			return line;
+			return formatBashCommandHeader(line, theme);
 		}
 
 		// 3. Lines with real colors (diff green/red, native highlighting, ...)
@@ -478,7 +498,7 @@ export function formatBashOutputLines(
 			return line;
 		}
 
-		// 4. Code sections (`cat` dumps, code heredocs) get Dracula highlighting.
+		// 4. Code sections (`cat` dumps, code/shell heredocs) get Dracula highlighting.
 		if (highlightMode && theme) {
 			const leadingSpace = plain.match(/^(\s*)/)?.[1] ?? "";
 			const code = plain.slice(leadingSpace.length);
@@ -486,7 +506,9 @@ export function formatBashOutputLines(
 			return leadingSpace + highlightCodeLine(code, theme);
 		}
 
-		// 5. Style plain output line with bashOutput (#db8c65)
+		// 5. Plain output also gets Dracula highlighting (no terracotta wash inside).
+		// When there is no theme, fall back to the terracotta color.
+		if (theme) return highlightCodeLine(plain, theme);
 		return color(plain);
 	});
 }
