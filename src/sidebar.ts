@@ -1,7 +1,7 @@
 import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
-import { formatTranscriptChild } from "./cute-transcript.ts";
+import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 
@@ -260,15 +260,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			if (chatContainer && !(chatContainer as any).__cuteChatWrapped && Array.isArray(chatContainer.children)) {
 				(chatContainer as any).__cuteChatWrapped = true;
 				chatContainer.render = (width: number) => {
-					const lines: string[] = [];
-					const mouseChildren: any[] = [];
-					for (const child of chatContainer.children) {
-						const childLines = formatTranscriptChild(child, width, theme);
-						mouseChildren.push({ component: child, height: childLines.length });
-						for (const line of childLines) {
-							lines.push(line);
-						}
-					}
+					const { lines, mouseChildren } = formatTranscriptChildren(chatContainer.children, width, theme);
 					chatContainer.mouseLayout = { width, children: mouseChildren };
 					return lines;
 				};
