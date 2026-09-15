@@ -97,6 +97,11 @@ export interface CuteEditorLayout {
 	innerReserve: number;
 }
 
+export interface CuteScrollLayout {
+	/** Number of lines to scroll per mouse wheel tick (was 1 in Pi default, painfully slow). */
+	wheelScrollLines: number;
+}
+
 export interface CuteLayout {
 	sidebar: CuteSidebarLayout;
 	footer: CuteFooterLayout;
@@ -104,6 +109,7 @@ export interface CuteLayout {
 	todos: CuteTodosLayout;
 	welcome: CuteWelcomeLayout;
 	editor: CuteEditorLayout;
+	scroll: CuteScrollLayout;
 }
 
 export const CUTE_LAYOUT_FILENAME = "CinlodevCute.layout.json";
@@ -156,6 +162,9 @@ const DEFAULTS: CuteLayout = {
 		minWidth: 10,
 		innerReserve: 3,
 	},
+	scroll: {
+		wheelScrollLines: 3,
+	},
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,6 +193,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 		todos: { ...baseSource.todos },
 		welcome: { ...baseSource.welcome },
 		editor: { ...baseSource.editor },
+		scroll: { ...baseSource.scroll },
 	};
 	if (!isRecord(raw)) return base;
 	base.sidebar = mergeSection(base.sidebar, raw.sidebar);
@@ -192,6 +202,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 	base.todos = mergeSection(base.todos, raw.todos);
 	base.welcome = mergeSection(base.welcome, raw.welcome);
 	base.editor = mergeSection(base.editor, raw.editor);
+	base.scroll = mergeSection(base.scroll, raw.scroll);
 	return base;
 }
 
@@ -283,4 +294,18 @@ export function loadCuteLayout(): CuteLayout {
 /** Clear the in-memory cache (tests and follow-up slices). */
 export function resetCuteLayoutCache(): void {
 	cached = null;
+}
+
+/**
+ * Tunes the TUI instance wheel scroll speed.
+ * Pi's default wheelScrollLines is 1 (moves only 1 line per notch, which feels terribly slow).
+ * We adjust it to the layout value (default 3 lines per notch).
+ */
+export function tuneTuiScroll(tui: any): void {
+	if (!tui) return;
+	const layout = loadCuteLayout();
+	const lines = Math.max(1, Math.floor(layout.scroll?.wheelScrollLines ?? 3));
+	if (typeof tui.wheelScrollLines === "number") {
+		tui.wheelScrollLines = lines;
+	}
 }

@@ -3,7 +3,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
-import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -118,6 +118,7 @@ export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] 
 
 export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	if (!tui.terminal) return () => {};
+	tuneTuiScroll(tui);
 	const host = tui as Host;
 	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
 	const pink = (s: string): string => (theme ? safeFg(theme, "accent", s) : s);
