@@ -102,6 +102,17 @@ export interface CuteScrollLayout {
 	wheelScrollLines: number;
 }
 
+export interface CuteTerminalLayout {
+	/** Columns always kept clear on the left edge (was 0: full-bleed). */
+	insetLeft: number;
+	/** Columns always kept clear on the right edge (was 0: full-bleed). */
+	insetRight: number;
+	/** Extra left columns kept clear only inside Herdr (HERDR_ENV=1). */
+	herdrInsetLeft: number;
+	/** Extra right columns kept clear only inside Herdr (HERDR_ENV=1). */
+	herdrInsetRight: number;
+}
+
 export interface CuteLayout {
 	sidebar: CuteSidebarLayout;
 	footer: CuteFooterLayout;
@@ -110,6 +121,7 @@ export interface CuteLayout {
 	welcome: CuteWelcomeLayout;
 	editor: CuteEditorLayout;
 	scroll: CuteScrollLayout;
+	terminal: CuteTerminalLayout;
 }
 
 export const CUTE_LAYOUT_FILENAME = "CinlodevCute.layout.json";
@@ -165,6 +177,12 @@ const DEFAULTS: CuteLayout = {
 	scroll: {
 		wheelScrollLines: 3,
 	},
+	terminal: {
+		insetLeft: 0,
+		insetRight: 0,
+		herdrInsetLeft: 0,
+		herdrInsetRight: 1,
+	},
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -194,6 +212,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 		welcome: { ...baseSource.welcome },
 		editor: { ...baseSource.editor },
 		scroll: { ...baseSource.scroll },
+		terminal: { ...baseSource.terminal },
 	};
 	if (!isRecord(raw)) return base;
 	base.sidebar = mergeSection(base.sidebar, raw.sidebar);
@@ -203,6 +222,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 	base.welcome = mergeSection(base.welcome, raw.welcome);
 	base.editor = mergeSection(base.editor, raw.editor);
 	base.scroll = mergeSection(base.scroll, raw.scroll);
+	base.terminal = mergeSection(base.terminal, raw.terminal);
 	return base;
 }
 
@@ -294,6 +314,29 @@ export function loadCuteLayout(): CuteLayout {
 /** Clear the in-memory cache (tests and follow-up slices). */
 export function resetCuteLayoutCache(): void {
 	cached = null;
+}
+
+/**
+ * True when running inside a Herdr-managed pane. Herdr sets HERDR_ENV=1
+ * (plus HERDR_PANE_ID); the pane id alone is accepted as a fallback.
+ */
+export function isHerdrSession(env: Record<string, string | undefined> = process.env): boolean {
+	return env.HERDR_ENV === "1" || typeof env.HERDR_PANE_ID === "string";
+}
+
+/**
+ * Columns to keep clear on each screen edge so overlay chrome that does not
+ * resize the pty (e.g. Herdr's bar) never eats our borders. Herdr-only
+ * reserves apply solely under isHerdrSession; everything clamps to >= 0.
+ */
+export function resolveEdgeInsets(
+	terminal: CuteTerminalLayout,
+	env: Record<string, string | undefined> = process.env,
+): { left: number; right: number } {
+	const inHerdr = isHerdrSession(env);
+	const left = Math.max(0, Math.floor(terminal.insetLeft + (inHerdr ? terminal.herdrInsetLeft : 0)));
+	const right = Math.max(0, Math.floor(terminal.insetRight + (inHerdr ? terminal.herdrInsetRight : 0)));
+	return { left, right };
 }
 
 /**

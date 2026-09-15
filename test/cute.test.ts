@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
-import { loadCuteLayout, resetCuteLayoutCache, tuneTuiScroll } from "../src/cute-layout.ts";
+import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 
@@ -189,16 +189,16 @@ test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-lin
 	assert.ok(transformed[1].includes("╔"));
 	assert.ok(transformed[1].includes("═"));
 	assert.ok(transformed[1].includes("╗"));
-	assert.ok(transformed[1].includes("[success]"));
+	assert.ok(transformed[1].includes("[gentle]"));
 
 	assert.ok(transformed[2].includes("║"));
 	assert.ok(transformed[2].includes("2 lines"));
-	assert.ok(transformed[2].includes("[success]"));
+	assert.ok(transformed[2].includes("[gentle]"));
 
 	assert.ok(transformed[3].includes("╚"));
 	assert.ok(transformed[3].includes("═"));
 	assert.ok(transformed[3].includes("╝"));
-	assert.ok(transformed[3].includes("[success]"));
+	assert.ok(transformed[3].includes("[gentle]"));
 });
 
 test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to double-line yellow frame and robot", () => {
@@ -246,7 +246,7 @@ test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot gly
 	assert.ok(!transformed.includes("🌹"));
 	assert.ok(transformed.includes("╔"));
 	assert.ok(transformed.includes("╗"));
-	assert.ok(transformed.includes("[success]"));
+	assert.ok(transformed.includes("[gentle]"));
 });
 
 test("frameCategoryBox - exact width and double-line framing", () => {
@@ -337,7 +337,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(toolRender[0].includes("╔"));
 	assert.ok(toolRender[0].includes("═"));
 	assert.ok(toolRender[0].includes("╗"));
-	assert.ok(toolRender[0].includes("[success]"));
+	assert.ok(toolRender[0].includes("[gentle]"));
 	assert.ok(toolRender[1].includes("║"));
 	assert.ok(toolRender[2].includes("╚"));
 	assert.ok(toolRender[2].includes("╝"));
@@ -352,7 +352,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		const colors = loadCuteColors();
 		assert.equal(colors.userMessage, "heading");
 		assert.equal(colors.bashMessage, "bash");
-		assert.equal(colors.gentleCardSuccess, "success");
+		assert.equal(colors.gentleCardSuccess, "gentle");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
 		assert.equal(colors.readMessage, "read");
@@ -376,7 +376,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		const overridden = loadCuteColors();
 		assert.equal(overridden.userMessage, "accent");
 		assert.equal(overridden.gentleCardWarning, "gold");
-		assert.equal(overridden.gentleCardSuccess, "success");
+		assert.equal(overridden.gentleCardSuccess, "gentle");
 	} finally {
 		if (originalContent !== null) {
 			fs.writeFileSync(userConfigFile, originalContent, "utf8");
@@ -833,6 +833,34 @@ test("formatBashOutputLines - shell heredoc body highlights Dracula-style", () =
 	// Trailing plain output stays Dracula-style plain (no terracotta wash)
 	assert.equal(formatted[3], "done");
 	assert.ok(!formatted[3].includes("[bashOutput]"));
+});
+
+test("terminal insets - herdr reserves edge columns, plain env stays full-bleed", () => {
+	const base = { insetLeft: 0, insetRight: 0, herdrInsetLeft: 0, herdrInsetRight: 1 } as any;
+
+	assert.equal(isHerdrSession({ HERDR_ENV: "1" }), true);
+	assert.equal(isHerdrSession({ HERDR_PANE_ID: "w3:p1" }), true);
+	assert.equal(isHerdrSession({}), false);
+
+	// Inside Herdr the right column stays clear for its bar
+	assert.deepEqual(resolveEdgeInsets(base, { HERDR_ENV: "1" }), { left: 0, right: 1 });
+	// Outside Herdr everything renders full-bleed
+	assert.deepEqual(resolveEdgeInsets(base, {}), { left: 0, right: 0 });
+	// Manual insets always apply, negatives clamp to zero
+	assert.deepEqual(
+		resolveEdgeInsets({ insetLeft: 2, insetRight: 0, herdrInsetLeft: 0, herdrInsetRight: 0 } as any, {}),
+		{ left: 2, right: 0 },
+	);
+	assert.deepEqual(
+		resolveEdgeInsets({ insetLeft: -3, insetRight: -1, herdrInsetLeft: 0, herdrInsetRight: 0 } as any, {}),
+		{ left: 0, right: 0 },
+	);
+
+	// Layout defaults carry the terminal section
+	resetCuteLayoutCache();
+	const layout = loadCuteLayout();
+	assert.equal(layout.terminal.insetLeft, 0);
+	assert.equal(layout.terminal.herdrInsetRight, 1);
 });
 
 test("Syntax check across all source files", () => {
