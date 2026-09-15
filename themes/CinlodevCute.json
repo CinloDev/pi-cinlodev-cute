@@ -27,6 +27,7 @@
     "syntaxType": "#E0C27A",
     "syntaxPunctuation": "#A78E9B",
     "green": "#78A588",
+    "mint": "#B4E7C7",
     "warning": "#F2B86D",
     "orange": "#E88352",
     "bash": "#E88352",
@@ -41,7 +42,8 @@
     "toolPendingBg": "#1A1218",
     "toolErrorBg": "#361e60",
     "infoBg": "#1A1218",
-    "gentle": "#a46db5"
+    "gentle": "#a46db5",
+    "salmon": "#F0978A"
   },
   "glyphs": {
     "frameStyle": "double",
@@ -100,9 +102,9 @@
     "toolTitle": "pink",
     "toolOutput": "text",
     "mdHeading": "heading",
-    "mdLink": "pink",
+    "mdLink": "pinkBright",
     "mdLinkUrl": "muted",
-    "mdCode": "green",
+    "mdCode": "mint",
     "mdCodeBlock": "text",
     "mdCodeBlockBorder": "borderSubtle",
     "mdQuote": "warning",
@@ -128,6 +130,8 @@
     "thinkingHigh": "border",
     "thinkingXhigh": "border",
     "bashMode": "pink",
-    "gentle": "gentle"
+    "gentle": "gentle",
+    "mint": "mint",
+    "salmon": "salmon"
   }
 }

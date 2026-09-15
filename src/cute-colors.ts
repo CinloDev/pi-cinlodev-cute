@@ -11,6 +11,7 @@ export interface CuteColors {
 	writeMessage: string;
 	fetchMessage: string;
 	searchMessage: string;
+	memoryMessage: string;
 	errorMessage: string;
 	gentleCardSuccess: string;
 	gentleCardWarning: string;
@@ -28,6 +29,7 @@ export const DEFAULT_CUTE_COLORS: CuteColors = {
 	writeMessage: "write",
 	fetchMessage: "pink",
 	searchMessage: "secondary",
+	memoryMessage: "salmon",
 	errorMessage: "error",
 	gentleCardSuccess: "success",
 	gentleCardWarning: "warning",
@@ -97,6 +99,7 @@ function mergeColors(raw: unknown, current: CuteColors): CuteColors {
 		writeMessage: typeof source.writeMessage === "string" ? source.writeMessage : current.writeMessage,
 		fetchMessage: typeof source.fetchMessage === "string" ? source.fetchMessage : current.fetchMessage,
 		searchMessage: typeof source.searchMessage === "string" ? source.searchMessage : current.searchMessage,
+		memoryMessage: typeof source.memoryMessage === "string" ? source.memoryMessage : current.memoryMessage,
 		errorMessage: typeof source.errorMessage === "string" ? source.errorMessage : current.errorMessage,
 		gentleCardSuccess: typeof source.gentleCardSuccess === "string" ? source.gentleCardSuccess : current.gentleCardSuccess,
 		gentleCardWarning: typeof source.gentleCardWarning === "string" ? source.gentleCardWarning : current.gentleCardWarning,
