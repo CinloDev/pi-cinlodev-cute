@@ -2,7 +2,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteColors } from "./cute-colors.ts";
-import { safeFg, stripAnsi, transformTranscriptLines } from "./cute-theme.ts";
+import { safeFg, bolden, stripAnsi, transformTranscriptLines } from "./cute-theme.ts";
 
 export interface CuteFrameOptions {
 	title?: string;
@@ -648,6 +648,31 @@ export function formatBashOutputLines(
 }
 
 /**
+ * Formats assistant prose: headings get a slightly heavier typeface (bold,
+ * same color) and plain uncolored body lines take the celeste `write` tone.
+ * Lines that already carry colors (links, code, quotes, headings) and code
+ * inside fenced blocks pass through untouched, as do empty lines.
+ */
+export function formatAssistantProse(rawLines: string[], theme?: Theme): string[] {
+	if (!theme || !rawLines.length) return rawLines;
+	let inFence = false;
+	return rawLines.map((line) => {
+		const plain = stripAnsi(line);
+		const isFence = /^\s*```/.test(plain);
+		if (isFence) inFence = !inFence;
+		// Fenced code (and its delimiters) stays exactly as Pi rendered it.
+		if (inFence || isFence) return line;
+		if (/^\s*#{1,6}\s+\S/.test(plain)) {
+			return bolden(theme, line);
+		}
+		if (plain.trim() !== "" && !/\x1b\[[0-9;]*[a-zA-Z]/.test(line)) {
+			return safeFg(theme, "write", line, "text");
+		}
+		return line;
+	});
+}
+
+/**
  * Format a transcript child component:
  * Frames user messages in the CUTE golden box with ❀, bash executions
  * in the sunset orange box with >_ bash, while allowing
@@ -723,9 +748,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(rawLines, "\u26A0 error", colors.errorMessage, width, theme);
 	}
 
-	// All other components (Assistant, Tools, Notices) pass through transformTranscriptLines
-	// so Gentle AI cards (review start/consent/completed), warning notices, and tools adopt
-	// double lines, the robot glyph 🤖 and themed tones (mint green / yellow / error).
+	// Assistant prose renders free (no card) with bolder headings and celeste
+	// body text; other components pass through transformTranscriptLines
+	// so Gentle AI cards (review start/consent/completed), warning notices,
+	// and tools adopt double lines, the robot glyph 🤖 and themed tones.
+	if (name === "AssistantMessageComponent") {
+		const rawLines = child.render(width);
+		return formatAssistantProse(rawLines, theme);
+	}
 	const rawLines = child.render(width);
 	return transformTranscriptLines(rawLines, theme);
 }
@@ -959,9 +989,13 @@ export function formatTranscriptChildren(
 			continue;
 		}
 
-		// 6. Other components (assistant messages, remaining tools, notices)
+		// 6. Assistant prose (bolder headings, celeste body) and other
+		// components (remaining tools, notices) via transformTranscriptLines
 		const rawLines = child.render(width);
-		const transformed = transformTranscriptLines(rawLines, theme);
+		const transformed =
+			name === "AssistantMessageComponent"
+				? formatAssistantProse(rawLines, theme)
+				: transformTranscriptLines(rawLines, theme);
 		mouseChildren.push({ component: child, height: transformed.length });
 		lines.push(...transformed);
 		i++;
