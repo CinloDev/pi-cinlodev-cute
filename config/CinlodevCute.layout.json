@@ -49,5 +49,11 @@
 	},
 	"scroll": {
 		"wheelScrollLines": 3
+	},
+	"terminal": {
+		"insetLeft": 0,
+		"insetRight": 0,
+		"herdrInsetLeft": 0,
+		"herdrInsetRight": 1
 	}
 }

@@ -145,9 +145,9 @@ export const PETAL_PRESETS: Record<string, string[]> = {
 	petals: ["✿", "❀", "❁", "✾"],
 	flowers: ["✿", "❀", "❁", "✾"],
 	cats: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
-	kittens: ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"],
+	kittens: ["/×᷅×᷄\\੭", "/-᷅-᷄\\੭", "/^᷅^᷄\\੭", "/o᷅o᷄\\੭"],
 	sparkles: ["✦", "✧", "★", "☆"],
-	stars: ["✦", "✧", "★", "☆"],
+	stars: ["✶", "✷", "✸", "✹"],
 	hearts: ["♡", "♥", "ღ", "❦"],
 	ascii: ["*", "+", "o", "x"],
 };
@@ -356,7 +356,7 @@ export function cutePalette(theme: Theme): CutePalette {
 }
 
 export function stripAnsi(text: string): string {
-	return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x1b]*(?:\x1b\\|\x07)/g, "");
+	return text.replace(/\[[0-9;]*[a-zA-Z]|\][^]*(?:\\|\x07)|_[^]*\\/g, "");
 }
 
 // Sidebar cards (Changes, Agents, Todo) remain uniformly colored in the theme's border
@@ -396,7 +396,7 @@ export function unifySidebarCardFrame(raw: string, theme?: Theme): string {
 export type CuteCardTone = "success" | "warning" | "error" | "border";
 
 // Gentle AI card lines in transcript & dock: double-line frame, appropriate tone
-// (warning = yellow #F2B86D, success = mint green #B4E7C7, error = red #FF718F),
+// (warning = yellow #F2B86D, success = mauve #a46db5, error = red #FF718F),
 // and robot glyph 🤖 replacing rose, tulip, or flower.
 export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCardTone = "success"): string {
 	if (!theme) return raw;
@@ -453,7 +453,7 @@ export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCar
 }
 
 // Stateful processor for transcript & dock lines: transforms Gentle AI cards into double-line
-// themed frames (warning = yellow, success = mint) with robot 🤖 while leaving other lines intact.
+// themed frames (warning = yellow, success = mauve) with robot 🤖 while leaving other lines intact.
 export function transformTranscriptLines(rawLines: string[], theme?: Theme): string[] {
 	if (!theme || !rawLines.length) return rawLines;
 	let inGentleCard = false;

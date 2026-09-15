@@ -6,7 +6,7 @@
 	"readMessage": "read",
 	"writeMessage": "write",
 	"errorMessage": "error",
-	"gentleCardSuccess": "success",
+	"gentleCardSuccess": "gentle",
 	"gentleCardWarning": "warning",
 	"gentleCardError": "error",
 	"sidebarBorder": "border"
