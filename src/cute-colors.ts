@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 export interface CuteColors {
 	userMessage: string;
 	bashMessage: string;
+	bashOutput: string;
+	readMessage: string;
+	writeMessage: string;
+	errorMessage: string;
 	gentleCardSuccess: string;
 	gentleCardWarning: string;
 	gentleCardError: string;
@@ -17,6 +21,10 @@ export const CUTE_COLORS_FILENAME = "CinlodevCute.colors.json";
 export const DEFAULT_CUTE_COLORS: CuteColors = {
 	userMessage: "heading",
 	bashMessage: "bash",
+	bashOutput: "bashOutput",
+	readMessage: "read",
+	writeMessage: "write",
+	errorMessage: "error",
 	gentleCardSuccess: "success",
 	gentleCardWarning: "warning",
 	gentleCardError: "error",
@@ -80,6 +88,10 @@ function mergeColors(raw: unknown, current: CuteColors): CuteColors {
 	return {
 		userMessage: typeof source.userMessage === "string" ? source.userMessage : current.userMessage,
 		bashMessage: typeof source.bashMessage === "string" ? source.bashMessage : current.bashMessage,
+		bashOutput: typeof source.bashOutput === "string" ? source.bashOutput : current.bashOutput,
+		readMessage: typeof source.readMessage === "string" ? source.readMessage : current.readMessage,
+		writeMessage: typeof source.writeMessage === "string" ? source.writeMessage : current.writeMessage,
+		errorMessage: typeof source.errorMessage === "string" ? source.errorMessage : current.errorMessage,
 		gentleCardSuccess: typeof source.gentleCardSuccess === "string" ? source.gentleCardSuccess : current.gentleCardSuccess,
 		gentleCardWarning: typeof source.gentleCardWarning === "string" ? source.gentleCardWarning : current.gentleCardWarning,
 		gentleCardError: typeof source.gentleCardError === "string" ? source.gentleCardError : current.gentleCardError,
