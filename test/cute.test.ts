@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -291,14 +291,14 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(userFramed[1].includes("echo hello from user"));
 	assert.ok(userFramed[2].includes("╚"));
 
-	// 2. Assistant Message renders naturally, headings slightly bolder
+	// 2. Assistant Message renders naturally, headings slightly bolder and text Dracula highlighted
 	class AssistantMessageComponent {
 		render() { return ["# Title", "Explicación del asistente"]; }
 	}
 	const asstRender = formatTranscriptChild(new AssistantMessageComponent() as any, 60, mockTheme);
 	assert.ok(asstRender[0].includes("\x1b[1m"), "markdown heading gets bolder typeface");
 	assert.ok(asstRender[0].includes("# Title"));
-	assert.equal(asstRender[1], "Explicación del asistente", "assistant prose body passes through cleanly");
+	assert.ok(asstRender[1].includes("ón del asistente"), "assistant prose body passes through with Dracula syntax");
 
 	// 3. Bash Execution renders in sunset orange card with >_ bash
 	class BashExecutionComponent {
@@ -602,13 +602,39 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	assert.equal(plainRender[0], "some note about error handling in docs");
 });
 
-test("formatAssistantProse - celeste body, bold headings, colored and fenced lines intact", () => {
+test("isGrepComponent - matches grep tool executions only", () => {
+	assert.ok(isGrepComponent({ toolName: "grep" } as any));
+	assert.equal(isGrepComponent({ toolName: "read" } as any), false);
+	assert.equal(isGrepComponent({ toolName: "bash" } as any), false);
+	assert.equal(isGrepComponent(null as any), false);
+});
+
+test("formatGrepLines - highlights paths, line numbers, and code without extra card bounding box", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const lines = [
+		"grep /user_has_org_access/ in src/",
+		"src/schema.sql:106: CREATE FUNCTION get_user()",
+		"src/schema.sql:107- const x = 42;",
+		"... (5 more lines, to expand)",
+	];
+	const formatted = formatGrepLines(lines, mockTheme);
+	assert.equal(formatted[0], lines[0], "header passes untouched");
+	assert.ok(formatted[1].includes("[read]src/schema.sql[/read]"), "path styled in lilac/read");
+	assert.ok(formatted[1].includes("[syntaxNumber]106[/syntaxNumber]"), "line number styled in number gold");
+	assert.ok(formatted[1].includes("[syntaxType]CREATE[/syntaxType]"), "SQL keywords styled Dracula");
+	assert.ok(formatted[2].includes("[syntaxNumber]107[/syntaxNumber]"), "dash context line number styled");
+	assert.equal(formatted[3], lines[3], "hint line passes untouched");
+});
+
+test("formatAssistantProse - Dracula highlighting on prose, bold headings, colored and fenced lines intact", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
 	} as any;
 	const colored = "\x1b[35mcolored link line\x1b[39m";
 	const out = formatAssistantProse([
-		"plain white prose",
+		'plain prose with "quoted string" and 42 items',
 		"",
 		"### Heading",
 		colored,
@@ -616,7 +642,8 @@ test("formatAssistantProse - celeste body, bold headings, colored and fenced lin
 		"plain code line",
 		"```",
 	], mockTheme);
-	assert.equal(out[0], "plain white prose", "prose text passes through naturally to theme");
+	assert.ok(out[0].includes('[syntaxString]"quoted string"[/syntaxString]'), "quotes get Dracula green");
+	assert.ok(out[0].includes("[syntaxNumber]42[/syntaxNumber]"), "numbers get Dracula orange");
 	assert.equal(out[1], "");
 	assert.ok(out[2].includes("\x1b[1m") && out[2].includes("### Heading"));
 	assert.equal(out[3], colored, "already-colored lines untouched");
