@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -42,7 +42,11 @@ test("Theme Glyphs - default Double line and Petal frames", () => {
 
 test("Animation Presets - cats, sparkles, hearts, ascii", () => {
 	assert.deepEqual(PETAL_PRESETS.cats, ["/•᷅•᷄\\੭", "/◕᷅◕᷄\\੭", "/˘᷅˘᷄\\੭", "/•᷅◕᷄\\੭"]);
+	assert.deepEqual(PETAL_PRESETS.kittens, ["/×᷅×᷄\\੭", "/-᷅-᷄\\੭", "/^᷅^᷄\\੭", "/o᷅o᷄\\੭"]);
+	assert.notDeepEqual(PETAL_PRESETS.kittens, PETAL_PRESETS.cats);
 	assert.deepEqual(PETAL_PRESETS.sparkles, ["✦", "✧", "★", "☆"]);
+	assert.deepEqual(PETAL_PRESETS.stars, ["✶", "✷", "✸", "✹"]);
+	assert.notDeepEqual(PETAL_PRESETS.stars, PETAL_PRESETS.sparkles);
 	assert.deepEqual(PETAL_PRESETS.hearts, ["♡", "♥", "ღ", "❦"]);
 	assert.deepEqual(PETAL_PRESETS.ascii, ["*", "+", "o", "x"]);
 });
@@ -861,6 +865,64 @@ test("terminal insets - herdr reserves edge columns, plain env stays full-bleed"
 	const layout = loadCuteLayout();
 	assert.equal(layout.terminal.insetLeft, 0);
 	assert.equal(layout.terminal.herdrInsetRight, 1);
+});
+
+test("truncateAnsiAware - never severs escapes and resets color on cut", () => {
+	const pink = "\x1b[38;2;240;149;200mhello\x1b[39m";
+	assert.equal(truncateAnsiAware(pink, 10), pink);
+	assert.equal(truncateAnsiAware("plain", 10), "plain");
+
+	const cut = truncateAnsiAware(pink, 3);
+	assert.ok(!cut.endsWith("\x1b[38;2;240;149;200mhel".slice(-1)));
+	assert.ok(cut.endsWith("\x1b[39m"), "reset appended so color cannot bleed");
+	assert.ok(!cut.includes("\x1b[39m\x1b[39m"));
+
+	const plainCut = truncateAnsiAware("abcdef", 3);
+	assert.equal(plainCut, "abc");
+	assert.ok(!plainCut.includes("\x1b"));
+});
+
+test("frameCategoryBox - colored long lines keep border and reset (image read repro)", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const pink = (t: string) => `\x1b[38;2;240;149;200m${t}\x1b[39m`;
+	const file = "read /tmp/pi-clipboard-93da2d4a-1bfc-4922-a0fe-e0f0c9e439e8.png";
+
+	// Fits: content intact, original reset preserved, border in card tone
+	const wide = frameCategoryBox([pink(file)], "✎ read", "read", 100, mockTheme);
+	assert.ok(wide[1].includes(file));
+	assert.ok(wide[1].includes("\x1b[39m"));
+	assert.ok(wide[1].endsWith("[read]║[/read]"));
+
+	// Overflows: clean cut with reset, border intact and never pink-bleed
+	const narrow = frameCategoryBox([pink(file)], "✎ read", "read", 60, mockTheme);
+	assert.ok(narrow[1].endsWith("[read]║[/read]"));
+	assert.ok(narrow[1].includes("\x1b[39m"));
+	assert.ok(!/\x1b\[38;2;240;149;200m[^\x1b]*\[read\]║/.test(narrow[1]));
+});
+
+test("truncateAnsiAware - kitty APC and OSC travel atomic, never counted", () => {
+	const gfx = "_G1,a=T,f=100;AAAA\\";
+	// Pure graphics + short text fits: untouched, no reset appended
+	assert.equal(truncateAnsiAware(gfx + "Hi", 10), gfx + "Hi");
+	// Long text after graphics: graphics preserved whole, text cut, reset appended
+	const cut = truncateAnsiAware(gfx + "Read image file here", 4);
+	assert.ok(cut.startsWith(gfx), "graphics sequence preserved whole");
+	assert.ok(cut.endsWith("[39m"), "reset appended");
+	assert.ok(cut.includes("Read"), "text budget honored");
+	assert.ok(!cut.includes("here"), "overflow text cut");
+});
+
+test("frameCategoryBox - smuggled graphics escapes keep border intact", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const gfx = "_G1,a=T,f=100;AAAA\\";
+	const boxed = frameCategoryBox([gfx + "Read image file [image/png]"], "✎ read", "read", 60, mockTheme);
+	assert.ok(boxed[1].startsWith("[read]║[/read]"), "left border intact");
+	assert.ok(boxed[1].endsWith("[read]║[/read]"), "right border intact");
+	assert.ok(boxed[1].includes(gfx), "graphics sequence not severed");
 });
 
 test("Syntax check across all source files", () => {
