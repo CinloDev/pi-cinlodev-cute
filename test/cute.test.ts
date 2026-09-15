@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -298,7 +298,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	const asstRender = formatTranscriptChild(new AssistantMessageComponent() as any, 60, mockTheme);
 	assert.ok(asstRender[0].includes("\x1b[1m"), "markdown heading gets bolder typeface");
 	assert.ok(asstRender[0].includes("# Title"));
-	assert.equal(asstRender[1], "Explicación del asistente");
+	assert.ok(asstRender[1].includes("[write]Explicación del asistente[/write]"), "white body takes celeste");
 
 	// 3. Bash Execution renders in sunset orange card with >_ bash
 	class BashExecutionComponent {
@@ -600,6 +600,30 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	// NOTE: class name here is PlainText, not Text, so it stays natural.
 	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
 	assert.equal(plainRender[0], "some note about error handling in docs");
+});
+
+test("formatAssistantProse - celeste body, bold headings, colored and fenced lines intact", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const colored = "\x1b[35mcolored link line\x1b[39m";
+	const out = formatAssistantProse([
+		"plain white prose",
+		"",
+		"### Heading",
+		colored,
+		"```python",
+		"plain code line",
+		"```",
+	], mockTheme);
+	assert.ok(out[0].includes("[write]plain white prose[/write]"), "white body takes celeste");
+	assert.equal(out[1], "");
+	assert.ok(out[2].includes("\x1b[1m") && out[2].includes("### Heading"));
+	assert.equal(out[3], colored, "already-colored lines untouched");
+	assert.equal(out[4], "```python");
+	assert.equal(out[5], "plain code line", "fenced code untouched");
+	assert.equal(out[6], "```");
+	assert.deepEqual(formatAssistantProse([], mockTheme), []);
 });
 
 test("isMemoryComponent - matches mem_ tools only", () => {

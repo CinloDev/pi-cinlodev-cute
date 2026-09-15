@@ -94,7 +94,7 @@
     "userMessageBg": "userMessageBg",
     "userMessageText": "userMessageText",
     "customMessageBg": "bgSubtle",
-    "customMessageText": "write",
+    "customMessageText": "text",
     "customMessageLabel": "pink",
     "toolPendingBg": "toolPendingBg",
     "toolSuccessBg": "toolSuccessBg",
