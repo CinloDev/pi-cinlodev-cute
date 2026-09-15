@@ -50,6 +50,32 @@ export function bolden(theme: Theme | undefined, text: string): string {
 }
 
 /**
+ * Installs Dracula-style Markdown styling hooks on the global Theme instance:
+ * - `theme.bold(text)` styles bold text in bright pastel pink (#FFB1DD)
+ *   instead of terminal white, giving markdown emphasis distinctive elegance.
+ */
+export function installCuteMarkdownThemeHook(themeInstance?: unknown): void {
+	const THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
+	const THEME_KEY_OLD = Symbol.for("@mariozechner/pi-coding-agent:theme");
+	const target: any =
+		themeInstance ?? (globalThis as any)[THEME_KEY] ?? (globalThis as any)[THEME_KEY_OLD];
+	if (!target || typeof target !== "object") return;
+	if (target.__cuteBoldHookInstalled) return;
+	target.__cuteBoldHookInstalled = true;
+
+	const origBold = typeof target.bold === "function" ? target.bold.bind(target) : (s: string) => `\x1b[1m${s}\x1b[22m`;
+	target.bold = function (text: string) {
+		const bolded = origBold(text);
+		// If text already contains an explicit color sequence, leave it intact
+		if (/\x1b\[38;2;|\x1b\[3[1-7]m/.test(text)) {
+			return bolded;
+		}
+		const pink = safeFg(target, "pinkBright", text, "accent");
+		return `\x1b[1m${pink}\x1b[22m`;
+	};
+}
+
+/**
  * Pastel-pink block cursor (#FFB1DD bg over #1A1218 fg) derived from theme keys,
  * so callers hold no hardcoded 38;2/48;2 sequences. The background ANSI is
  * derived from the pinkBright foreground ANSI, keeping the same hex in both

@@ -5,7 +5,7 @@ import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromp
 import { installCinlodevFooter } from "./src/footer.js";
 import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
-import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines } from "./src/cute-theme.ts";
+import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import { resetCuteColorsCache } from "./src/cute-colors.ts";
 import * as fs from "node:fs";
@@ -23,6 +23,9 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 		// Install custom prompt editor with double violet frame & pink cursor
 		installCinlodevPrompt(ctx);
+
+		// Install Dracula-style Markdown emphasis hook on global theme
+		installCuteMarkdownThemeHook();
 
 		// Intercept ctx.ui.setHeader to protect la Gentlewoman Welcome Dashboard
 		// from being overwritten by external extensions (e.g. gentle-pi startup-banner deferred timeout)
@@ -101,6 +104,7 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 			resetCutePathsCache();
 			resetCuteColorsCache();
 
+			installCuteMarkdownThemeHook();
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);
 			ctx.ui.notify(loadCuteStrings().commandNotify, "info");
