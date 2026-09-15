@@ -5,8 +5,9 @@
 	"bashOutput": "bashOutput",
 	"readMessage": "read",
 	"writeMessage": "write",
+	"fetchMessage": "pink",
 	"errorMessage": "error",
-	"gentleCardSuccess": "gentle",
+	"gentleCardSuccess": "success",
 	"gentleCardWarning": "warning",
 	"gentleCardError": "error",
 	"sidebarBorder": "border"

@@ -396,7 +396,7 @@ export function unifySidebarCardFrame(raw: string, theme?: Theme): string {
 export type CuteCardTone = "success" | "warning" | "error" | "border";
 
 // Gentle AI card lines in transcript & dock: double-line frame, appropriate tone
-// (warning = yellow #F2B86D, success = mauve #a46db5, error = red #FF718F),
+// (warning = yellow #F2B86D, success = green #78A588, error = coral #FF718F),
 // and robot glyph 🤖 replacing rose, tulip, or flower.
 export function formatGentleAiCardLine(raw: string, theme?: Theme, tone: CuteCardTone = "success"): string {
 	if (!theme) return raw;

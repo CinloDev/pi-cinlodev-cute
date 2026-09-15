@@ -168,7 +168,7 @@ test("unifySidebarCardFrame - sidebar cards keep border tone and never turn gree
 	assert.ok(!bottomTransformed.includes("[success]"));
 });
 
-test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-line mint green frame and robot", () => {
+test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-line green frame and robot", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
 	} as any;
@@ -193,16 +193,16 @@ test("transformTranscriptLines - adapts Gentle AI cards with tulip to double-lin
 	assert.ok(transformed[1].includes("╔"));
 	assert.ok(transformed[1].includes("═"));
 	assert.ok(transformed[1].includes("╗"));
-	assert.ok(transformed[1].includes("[gentle]"));
+	assert.ok(transformed[1].includes("[success]"));
 
 	assert.ok(transformed[2].includes("║"));
 	assert.ok(transformed[2].includes("2 lines"));
-	assert.ok(transformed[2].includes("[gentle]"));
+	assert.ok(transformed[2].includes("[success]"));
 
 	assert.ok(transformed[3].includes("╚"));
 	assert.ok(transformed[3].includes("═"));
 	assert.ok(transformed[3].includes("╝"));
-	assert.ok(transformed[3].includes("[gentle]"));
+	assert.ok(transformed[3].includes("[success]"));
 });
 
 test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to double-line yellow frame and robot", () => {
@@ -250,7 +250,7 @@ test("unifyCardFrame - adapts Gentle AI cards to double-line frame and robot gly
 	assert.ok(!transformed.includes("🌹"));
 	assert.ok(transformed.includes("╔"));
 	assert.ok(transformed.includes("╗"));
-	assert.ok(transformed.includes("[gentle]"));
+	assert.ok(transformed.includes("[success]"));
 });
 
 test("frameCategoryBox - exact width and double-line framing", () => {
@@ -325,7 +325,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(toolBashRender[1].includes("[bashMode]$ [/bashMode]"));
 	assert.ok(toolBashRender[1].includes("git status"));
 
-	// 5. Gentle AI Tool Call Card adapts to double lines, robot glyph and mint green
+	// 5. Gentle AI Tool Call Card adapts to double lines, robot glyph and success green
 	class GentleAiToolComponent {
 		render() {
 			return [
@@ -341,7 +341,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 	assert.ok(toolRender[0].includes("╔"));
 	assert.ok(toolRender[0].includes("═"));
 	assert.ok(toolRender[0].includes("╗"));
-	assert.ok(toolRender[0].includes("[gentle]"));
+	assert.ok(toolRender[0].includes("[success]"));
 	assert.ok(toolRender[1].includes("║"));
 	assert.ok(toolRender[2].includes("╚"));
 	assert.ok(toolRender[2].includes("╝"));
@@ -356,7 +356,8 @@ test("Cute Colors - defaults and user overrides", () => {
 		const colors = loadCuteColors();
 		assert.equal(colors.userMessage, "heading");
 		assert.equal(colors.bashMessage, "bash");
-		assert.equal(colors.gentleCardSuccess, "gentle");
+		assert.equal(colors.fetchMessage, "pink");
+		assert.equal(colors.gentleCardSuccess, "success");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
 		assert.equal(colors.readMessage, "read");
@@ -380,7 +381,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		const overridden = loadCuteColors();
 		assert.equal(overridden.userMessage, "accent");
 		assert.equal(overridden.gentleCardWarning, "gold");
-		assert.equal(overridden.gentleCardSuccess, "gentle");
+		assert.equal(overridden.gentleCardSuccess, "success");
 	} finally {
 		if (originalContent !== null) {
 			fs.writeFileSync(userConfigFile, originalContent, "utf8");
