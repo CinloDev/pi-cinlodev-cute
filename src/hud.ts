@@ -149,11 +149,19 @@ function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 }
 
 class GentlemanHudWidget implements Component {
+	private readonly getContext: () => ExtensionContext | ExtensionCommandContext;
+	private readonly theme: Theme;
+	private readonly getMode: () => HudMode;
+
 	constructor(
-		private readonly getContext: () => ExtensionContext | ExtensionCommandContext,
-		private readonly theme: Theme,
-		private readonly getMode: () => HudMode,
-	) {}
+		getContext: () => ExtensionContext | ExtensionCommandContext,
+		theme: Theme,
+		getMode: () => HudMode,
+	) {
+		this.getContext = getContext;
+		this.theme = theme;
+		this.getMode = getMode;
+	}
 
 	render(width: number): string[] {
 		const theme = this.theme;
