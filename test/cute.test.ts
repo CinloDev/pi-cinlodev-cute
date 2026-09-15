@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent } from "../src/cute-transcript.ts";
+import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg } from "../src/cute-theme.ts";
+import { frameCategoryBox, formatTranscriptChild, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { loadCuteLayout, resetCuteLayoutCache, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
@@ -348,6 +348,9 @@ test("Cute Colors - defaults and user overrides", () => {
 		assert.equal(colors.gentleCardSuccess, "success");
 		assert.equal(colors.gentleCardWarning, "warning");
 		assert.equal(colors.gentleCardError, "error");
+		assert.equal(colors.readMessage, "read");
+		assert.equal(colors.writeMessage, "write");
+		assert.equal(colors.errorMessage, "error");
 		assert.equal(colors.sidebarBorder, "border");
 
 		// Test user override
@@ -491,6 +494,295 @@ test("tuneTuiScroll - accelerates slow mouse wheel scroll", () => {
 	// Ignores non-tui or missing wheelScrollLines gracefully
 	tuneTuiScroll(null);
 	tuneTuiScroll({});
+});
+
+test("formatBashOutputLines - preserves pink command header and styles output in bashOutput tone", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const rawLines = [
+		"\x1b[38;2;240;149;200m$ cat ~/.pi/agent/settings.json\x1b[39m",
+		'  "defaultModel": "kimi-k2.6",',
+		'  "defaultProvider": "opencode-go",',
+	];
+
+	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
+	// 1. Pink command line is preserved untouched
+	assert.equal(formatted[0], rawLines[0]);
+	// 2. `cat` of a highlightable file (json) gets Dracula highlighting, not terracotta
+	assert.ok(formatted[1].includes("[syntaxString]"));
+	assert.ok(formatted[1].includes('"defaultModel"'));
+	assert.ok(!formatted[1].includes("[bashOutput]"));
+
+	// 3. safeFg handles direct hex color codes
+	const hexColored = safeFg(mockTheme, "#db8c65", "hello");
+	assert.ok(hexColored.includes("\x1b[38;2;219;140;101mhello\x1b[39m"));
+});
+
+test("formatTranscriptChild - frames read in lilac, write/edit in light blue, errors in coral", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	// 1. Read tool execution renders in lilac card
+	class ReadToolComponent {
+		toolName = "read";
+		render() { return ["read /tmp/file.txt", "line 1 content"]; }
+	}
+	assert.ok(isReadComponent(new ReadToolComponent() as any));
+	const readRender = formatTranscriptChild(new ReadToolComponent() as any, 60, mockTheme);
+	assert.ok(readRender[0].includes("[read]"));
+	assert.ok(readRender[0].includes("read"));
+	assert.ok(readRender[1].includes("read /tmp/file.txt"));
+
+	// 2. Write tool execution renders in light-blue card
+	class WriteToolComponent {
+		toolName = "write";
+		render() { return ["write /tmp/file.txt", "wrote 10 lines"]; }
+	}
+	assert.ok(isWriteComponent(new WriteToolComponent() as any));
+	const writeRender = formatTranscriptChild(new WriteToolComponent() as any, 60, mockTheme);
+	assert.ok(writeRender[0].includes("[write]"));
+	assert.ok(writeRender[1].includes("write /tmp/file.txt"));
+
+	// 3. Edit counts as write (same celeste card)
+	class EditToolComponent {
+		toolName = "edit";
+		render() { return ["edit /tmp/file.txt", "+1 -0"]; }
+	}
+	assert.ok(isWriteComponent(new EditToolComponent() as any));
+	assert.ok(!isReadComponent(new EditToolComponent() as any));
+	const editRender = formatTranscriptChild(new EditToolComponent() as any, 60, mockTheme);
+	assert.ok(editRender[0].includes("[write]"));
+
+	// 4. Bash is neither read nor write
+	class BashToolComponent {
+		toolName = "bash";
+		render() { return ["$ echo hi"]; }
+	}
+	assert.ok(!isReadComponent(new BashToolComponent() as any));
+	assert.ok(!isWriteComponent(new BashToolComponent() as any));
+
+	// 5. Top-level error Text renders in coral card
+	class Text {
+		render() { return ["Error: 503: auth_unavailable: no auth available"]; }
+	}
+	const errLines = ["Error: 503: auth_unavailable: no auth available"];
+	assert.ok(looksLikeErrorLines(errLines));
+	assert.ok(isErrorTextComponent(new Text() as any, errLines));
+	const errRender = formatTranscriptChild(new Text() as any, 70, mockTheme);
+	assert.ok(errRender[0].includes("[error]"));
+	assert.ok(errRender[0].includes("error"));
+	assert.ok(errRender.slice(1, -1).join("\n").includes("Error: 503"));
+
+	// 6. Normal Text mentioning errors casually stays natural
+	class PlainText {
+		render() { return ["some note about error handling in docs"]; }
+	}
+	// NOTE: class name here is PlainText, not Text, so it stays natural.
+	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
+	assert.equal(plainRender[0], "some note about error handling in docs");
+});
+
+test("formatTranscriptChildren - groups consecutive errors into ONE single coral card", () => {
+	const mockTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+	};
+	class Text {
+		msg: string;
+		constructor(msg: string) { this.msg = msg; }
+		render() { return [this.msg]; }
+	}
+	class Spacer {
+		render() { return [""]; }
+	}
+	const children: any[] = [
+		new Text("Error: 503: auth_unavailable (1)"),
+		new Spacer(),
+		new Text("Error: 503: auth_unavailable (2)"),
+		new Text("Error: Retry failed after 3 attempts: 503"),
+	];
+
+	const { lines, mouseChildren } = formatTranscriptChildren(children, 70, mockTheme);
+	const headers = lines.filter((l) => l.includes("\u26A0 error"));
+	assert.equal(headers.length, 1, "Exactly 1 coral error card for the grouped errors");
+	const cardSlice = lines.join("\n");
+	assert.ok(cardSlice.includes("auth_unavailable (1)"));
+	assert.ok(cardSlice.includes("auth_unavailable (2)"));
+	assert.ok(cardSlice.includes("Retry failed after 3 attempts"));
+	assert.equal(mouseChildren.length, children.length, "All children must be mapped in mouseLayout");
+});
+
+test("highlightCodeLine - Dracula-style tokens via theme syntax roles", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const line = `const styled = format("hi"); // comment 42`;
+	const out = highlightCodeLine(line, mockTheme);
+	assert.ok(out.includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.ok(out.includes("[syntaxFunction]format[/syntaxFunction]"));
+	assert.ok(out.includes('[syntaxString]"hi"[/syntaxString]'));
+	assert.ok(out.includes("[syntaxComment]// comment 42[/syntaxComment]"));
+
+	// Plain code without theme passes through untouched
+	assert.equal(highlightCodeLine(line), line);
+	assert.equal(highlightCodeLine("", mockTheme), "");
+
+	// Capitalized identifiers get the type (gold) tone
+	const typed = highlightCodeLine("class Foo extends Container", mockTheme);
+	assert.ok(typed.includes("[syntaxType]Foo[/syntaxType]"));
+	assert.ok(typed.includes("[syntaxType]Container[/syntaxType]"));
+});
+
+test("formatWriteDiffLines - highlights diff code, keeps diff tones and headers", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	assert.ok(toolFileHighlightable("src/cute-transcript.ts"));
+	assert.ok(!toolFileHighlightable("README.md"));
+	assert.ok(!toolFileHighlightable(undefined));
+	assert.equal(toolFilePath({ args: { path: "src/a.ts" } } as any), "src/a.ts");
+	assert.equal(toolFilePath({} as any), undefined);
+
+	const raw = [
+		"edit src/cute-transcript.ts",
+		"+258 const styled = format(x); // added",
+		"-12 let old = 1;",
+		" 254 const kept = true;",
+		"ctrl+o to expand",
+	];
+	const styled = formatWriteDiffLines(raw, "src/cute-transcript.ts", mockTheme);
+
+	// Header and hint lines pass through untouched
+	assert.equal(styled[0], raw[0]);
+	assert.equal(styled[4], raw[4]);
+
+	// Added line: green prefix + highlighted code
+	assert.ok(styled[1].includes("[toolDiffAdded]+258 [/toolDiffAdded]"));
+	assert.ok(styled[1].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+
+	// Removed line: red prefix + highlighted code
+	assert.ok(styled[2].includes("[toolDiffRemoved]-12 [/toolDiffRemoved]"));
+	assert.ok(styled[2].includes("[syntaxKeyword]let[/syntaxKeyword]"));
+
+	// Context line: muted prefix + highlighted code
+	assert.ok(styled[3].includes("[toolDiffContext] 254 [/toolDiffContext]"));
+
+	// Prose files and missing theme pass through untouched
+	assert.deepEqual(formatWriteDiffLines(raw, "README.md", mockTheme), raw);
+	assert.deepEqual(formatWriteDiffLines(raw, "src/a.ts"), raw);
+});
+
+
+test("formatReadLines - highlights plain read code Dracula-style and preserves headers", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const raw = [
+		"read src/cute-transcript.ts:50-119",
+		"const x: number = 42;",
+		"    return current;",
+		"ctrl+o to expand",
+	];
+	const styled = formatReadLines(raw, "src/cute-transcript.ts", mockTheme);
+
+	// Header and hint untouched
+	assert.equal(styled[0], raw[0]);
+	assert.equal(styled[3], raw[3]);
+
+	// Code lines highlighted Dracula-style
+	assert.ok(styled[1].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.ok(styled[2].includes("[syntaxKeyword]return[/syntaxKeyword]"));
+
+	// Indentation preserved
+	assert.ok(styled[2].startsWith("    "));
+});
+
+
+test("formatBashOutputLines - plain output stays terracotta, cat-of-code highlights", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	assert.equal(extractBashDisplayPath("$ cat src/a.ts"), "src/a.ts");
+	assert.equal(extractBashDisplayPath("$ head -n 20 src/a.ts"), "src/a.ts");
+	assert.equal(extractBashDisplayPath("$ cat 'my file.txt'"), "my file.txt");
+	assert.equal(extractBashDisplayPath("$ git status"), undefined);
+	assert.equal(extractBashDisplayPath("$ npm test"), undefined);
+	assert.equal(extractBashDisplayPath("$ cat"), undefined);
+
+	const rawLines = [
+		"$ npm test",
+		"pass 10",
+		"$ cat src/a.ts",
+		"const x = 1;",
+	];
+	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
+	// Plain command output keeps the terracotta tone
+	assert.ok(formatted[1].includes("[bashOutput]pass 10[/bashOutput]"));
+	// Code dump output gets highlighted instead
+	assert.ok(formatted[3].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.ok(!formatted[3].includes("[bashOutput]"));
+});
+
+
+test("extractHeredoc - detects interpreter heredocs and redirect targets", () => {
+	const h1 = extractHeredoc("$ python3 - <<'EOF'");
+	assert.equal(h1?.delimiter, "EOF");
+	assert.equal(h1?.interpreter, "python3");
+
+	const h2 = extractHeredoc("$ cat > src/a.ts <<'EOF'");
+	assert.equal(h2?.delimiter, "EOF");
+	assert.equal(h2?.target, "src/a.ts");
+
+	assert.equal(extractHeredoc("$ git status"), undefined);
+	assert.equal(extractHeredoc("$ npm test"), undefined);
+});
+
+test("hasKeptColor - pink echo and muted pass, green/red stay", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	// Bare command-echo pink (bashMode #F095C8) is NOT a kept color ...
+	assert.equal(hasKeptColor("\x1b[38;2;240;149;200ms = open(p)\x1b[39m", mockTheme), false);
+	// ... nor are plain / muted lines ...
+	assert.equal(hasKeptColor("plain output", mockTheme), false);
+	assert.equal(hasKeptColor("\x1b[38;2;167;142;155mmuted note\x1b[39m", mockTheme), false);
+	// ... but diff green and error red are preserved.
+	assert.equal(hasKeptColor("\x1b[32m+ added\x1b[39m", mockTheme), true);
+	assert.equal(hasKeptColor("\x1b[38;2;255;113;143mError: boom\x1b[39m", mockTheme), true);
+});
+
+test("formatBashOutputLines - pink python heredoc body highlights Dracula-style", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+	const pink = (t: string) => `\x1b[38;2;240;149;200m${t}\x1b[39m`;
+
+	const rawLines = [
+		pink("$ python3 - <<'EOF'"),
+		pink("s = open(p)"),
+		pink("const x = 1;"),
+		pink("EOF"),
+		"OK done",
+	];
+	const formatted = formatBashOutputLines(rawLines, mockTheme, "bashOutput");
+
+	// Header and terminator stay pink as command echo
+	assert.equal(formatted[0], rawLines[0]);
+	assert.equal(formatted[3], rawLines[3]);
+	// Heredoc body is highlighted, not left pink (`open(` becomes a function token)
+	assert.ok(formatted[1].includes("[syntaxFunction]open[/syntaxFunction]"));
+	assert.ok(!formatted[1].includes("240;149;200"));
+	assert.ok(formatted[2].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	// Post-heredoc output keeps the terracotta tone
+	assert.ok(formatted[4].includes("[bashOutput]OK done[/bashOutput]"));
 });
 
 test("Syntax check across all source files", () => {
