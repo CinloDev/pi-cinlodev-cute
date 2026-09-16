@@ -792,20 +792,15 @@ export function highlightUncoloredSegments(line: string, highlightFn: (text: str
 
 /**
  * Formats assistant prose:
- * - Inserts a subtle horizontal pink rule (`───────`) before non-initial `###` headings
- *   to structure long explanations and avoid walls of text.
  * - Headings get a slightly heavier typeface (bold, gold).
- * - Body text receives Dracula syntax highlighting on plain segments.
+ * - Body text receives celeste `write` tone on uncolored segments,
+ *   preserving markdown bold (pinkBright), inline code (mint), links, and lists intact.
  * - Fenced code inside blocks passes through untouched.
  */
 export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 80): string[] {
 	if (!theme || !rawLines.length) return rawLines;
 	let inFence = false;
-	let headingCount = 0;
 	const out: string[] = [];
-
-	const dividerLen = Math.min(60, Math.max(20, width - 6));
-	const dividerRule = safeFg(theme, "pinkMuted", "─".repeat(dividerLen), "borderSubtle");
 
 	for (const line of rawLines) {
 		const plain = stripAnsi(line);
@@ -824,22 +819,18 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 
 		}
 
 		if (/^\s*#{1,6}\s+\S/.test(plain)) {
-			headingCount++;
-			// If it is not the very first line or heading of the message, add breathing space and divider
-			if (headingCount > 1 || (out.length > 0 && out.some((l) => stripAnsi(l).trim() !== ""))) {
-				if (out.length > 0 && out[out.length - 1] !== "") {
-					out.push("");
-				}
-				out.push(dividerRule);
-				out.push("");
-			}
 			out.push(bolden(theme, line));
 			continue;
 		}
 
-		// Assistant prose lines: let Markdown elements, bold, code, links, and normal text
-		// pass through cleanly as rendered by Pi Markdown & CUTE theme roles.
-		out.push(line);
+		// Style plain uncolored text in celeste `write` tone, while leaving
+		// already-colored markdown elements (bold pink, code mint, links) completely intact.
+		out.push(
+			highlightUncoloredSegments(line, (text) => {
+				if (!text || text.trim() === "") return text;
+				return safeFg(theme, "write", text, "text");
+			}),
+		);
 	}
 
 	return out;
