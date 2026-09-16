@@ -526,9 +526,24 @@ export function formatReadLines(rawLines: string[], filePath?: string, theme?: T
 }
 
 export function formatWriteDiffLines(rawLines: string[], filePath?: string, theme?: Theme): string[] {
-	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
+	if (!theme) return rawLines;
 	return rawLines.map((line) => {
 		const plain = stripAnsi(line);
+		const trimmed = plain.trim();
+
+		// Highlight collapsed summary lines like "✓ +2 / -2" or "+10 / -0"
+		if (/^✓?\s*\+\d+\s*\/\s*-\d+/.test(trimmed)) {
+			return line.replace(/^(\s*✓?\s*)(\+\d+)\s*\/\s*(-\d+)/, (_, check, added, removed) => {
+				const checkStyled = check.includes("✓") ? safeFg(theme, "success", check, "green") : check;
+				const addStyled = safeFg(theme, "toolDiffAdded", added, "green");
+				const slash = safeFg(theme, "syntaxPunctuation", " / ", "muted");
+				const remStyled = safeFg(theme, "toolDiffRemoved", removed, "red");
+				return `${checkStyled}${addStyled}${slash}${remStyled}`;
+			});
+		}
+
+		if (!toolFileHighlightable(filePath)) return line;
+
 		let prefix = "";
 		let code = "";
 		let tone = "";
@@ -823,6 +838,40 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 
 }
 
 /**
+ * Wraps a tool component framed with a box so that mouse clicks anywhere
+ * on the box (including top/bottom borders and inner body) map correctly
+ * to the underlying component's click/expand handlers.
+ */
+class FramedCardMouseProxy implements Component {
+	private target: Component;
+	private boxHeight: number;
+
+	constructor(target: Component, boxHeight: number) {
+		this.target = target;
+		this.boxHeight = boxHeight;
+	}
+
+	render(_width: number): string[] {
+		return [];
+	}
+
+	handleMouse(event: any): any {
+		if (typeof (this.target as any).handleMouse !== "function") return undefined;
+		// Top border (row 0) or bottom border (row boxHeight - 1):
+		// map to row 0 or 1 of child so clicking anywhere on the frame triggers expansion!
+		let mappedY = event.y - 1;
+		if (event.y === 0) mappedY = 0;
+		else if (event.y >= this.boxHeight - 1) mappedY = Math.max(0, this.boxHeight - 3);
+
+		return (this.target as any).handleMouse({
+			...event,
+			y: mappedY,
+			height: Math.max(1, this.boxHeight - 2),
+		});
+	}
+}
+
+/**
  * Format a transcript child component:
  * Frames user messages in the CUTE golden box with ❀, bash executions
  * in the sunset orange box with >_ bash, while allowing
@@ -942,10 +991,13 @@ export function formatTranscriptChildren(
 	const user = strings.welcomePersona.user || "CinloDev";
 
 	// Ensures exactly one blank breathing line before adding a card or block,
-	// preventing adjacent boxes or tool calls from colliding.
+	// maintaining 1-to-1 mouse layout alignment with a dummy non-interactive spacer.
 	const ensureBreathingRoom = () => {
 		if (lines.length > 0 && lines[lines.length - 1] !== "") {
 			lines.push("");
+			// Empty object with no handleMouse absorbs mouse events on the breathing blank line
+			// without forwarding ghost clicks to neighboring components.
+			mouseChildren.push({ component: {} as any, height: 1 });
 		}
 	};
 
@@ -1025,7 +1077,7 @@ export function formatTranscriptChildren(
 			const rawLines = child.render(width - 4);
 			const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
-			mouseChildren.push({ component: child, height: boxed.length });
+			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
 			continue;
@@ -1037,7 +1089,7 @@ export function formatTranscriptChildren(
 			const rawLines = child.render(width - 4);
 			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
-			mouseChildren.push({ component: child, height: boxed.length });
+			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
 			continue;
@@ -1048,7 +1100,7 @@ export function formatTranscriptChildren(
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
-			mouseChildren.push({ component: child, height: boxed.length });
+			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
 			continue;
@@ -1059,7 +1111,7 @@ export function formatTranscriptChildren(
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
-			mouseChildren.push({ component: child, height: boxed.length });
+			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
 			continue;
