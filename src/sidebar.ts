@@ -26,24 +26,36 @@ function findDock(root: unknown): any {
 	return undefined;
 }
 
-function findTranscript(root: unknown): ScrollView | undefined {
-	if (!root || typeof root !== "object") return undefined;
+function findTranscript(root: unknown, depth = 0): ScrollView | undefined {
+	if (!root || typeof root !== "object" || depth > 12) return undefined;
 	if ("scrollbar" in root && typeof (root as any).setScrollbar === "function") {
 		return root as ScrollView;
 	}
 	const entries = (root as any).entries;
 	if (Array.isArray(entries)) {
 		for (const entry of entries) {
-			const found = findTranscript(entry?.component);
+			const found = findTranscript(entry?.component, depth + 1);
 			if (found) return found;
 		}
 	}
 	const children = (root as any).children;
 	if (Array.isArray(children)) {
 		for (const child of children) {
-			const found = findTranscript(child);
+			const found = findTranscript(child, depth + 1);
 			if (found) return found;
 		}
+	}
+	// Descend through custom layout nodes (e.g. gentle-shell wrapping the tree)
+	if (typeof (root as any)[NODE] === "function") {
+		try {
+			const node = (root as any)[NODE]();
+			if (node && Array.isArray(node.entries)) {
+				for (const entry of node.entries) {
+					const found = findTranscript(entry?.component, depth + 1);
+					if (found) return found;
+				}
+			}
+		} catch {}
 	}
 	return undefined;
 }
