@@ -630,7 +630,7 @@ test("formatGrepLines - highlights paths, line numbers, and code without extra c
 	assert.equal(formatted[3], lines[3], "hint line passes untouched");
 });
 
-test("formatAssistantProse - clean prose, bold headings, horizontal dividers and fenced lines intact", () => {
+test("formatAssistantProse - celeste body, bold headings, colored and fenced lines intact", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
 	} as any;
@@ -644,8 +644,7 @@ test("formatAssistantProse - clean prose, bold headings, horizontal dividers and
 		"plain code line",
 		"```",
 	], mockTheme);
-	assert.equal(out[0], 'plain prose with "quoted string" and 42 items', "prose text passes through cleanly without word-splitting");
-	assert.ok(out.some((l) => l.includes("[pinkMuted]")), "horizontal pink divider inserted before heading");
+	assert.ok(out[0].includes('[write]plain prose with "quoted string" and 42 items[/write]'), "entire prose line gets styled with celeste write tone without splitting");
 	assert.ok(out.some((l) => l.includes("\x1b[1m") && l.includes("### Heading")));
 	assert.ok(out.includes(colored), "already-colored lines untouched");
 	assert.ok(out.includes("```python"));
