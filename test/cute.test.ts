@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
@@ -1212,4 +1213,14 @@ test("getContextThreshold - dynamic semáforo based on custom percent brackets",
 	const critical100 = getContextThreshold(100, mockPalette);
 	assert.equal(critical100.label, "● Crítico");
 	assert.equal(critical100.color("test"), "[coral]test[/coral]");
+});
+
+test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet", () => {
+	const themePath = fileURLToPath(new URL("../themes/CinlodevCute.json", import.meta.url));
+	assert.ok(fs.existsSync(themePath), "themes/CinlodevCute.json must exist");
+	const themeJson = JSON.parse(fs.readFileSync(themePath, "utf8"));
+	assert.equal(themeJson.vars.userMessageBg, "#140a28");
+	assert.equal(themeJson.vars.toolSuccessBg, "#140a28");
+	assert.equal(themeJson.vars.userMessageText, "#E0C27A");
+	assert.equal(themeJson.colors.userMessageBg, "userMessageBg");
 });
