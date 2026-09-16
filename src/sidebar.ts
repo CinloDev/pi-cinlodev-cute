@@ -184,11 +184,11 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const sections = ["footer", "changes", "agents", "todo"]
+			const sections = ["footer", "context", "changes", "agents", "todo"]
 				.map((key) => {
 					const lines = [...(state.parts.get(key)?.render(contentWidth - layout.railPadding * 2) ?? [])];
 					while (lines.length && lines[lines.length - 1]?.trim() === "") lines.pop();
-					if (key !== "footer") return lines.map((line) => unifySidebarCardFrame(line, theme));
+					if (key !== "footer" && key !== "context") return lines.map((line) => unifySidebarCardFrame(line, theme));
 					return lines;
 				})
 				.filter((lines) => lines.length > 0);

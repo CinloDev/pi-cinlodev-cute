@@ -9,6 +9,7 @@ import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
+import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -1121,8 +1122,59 @@ test("frameCategoryBox - smuggled graphics escapes keep border intact", () => {
 });
 
 test("Syntax check across all source files", () => {
-	const srcFiles = ["index.ts", "src/cute-theme.ts", "src/cute-strings.ts", "src/cute-layout.ts", "src/cute-paths.ts", "src/cute-colors.ts", "src/hud.ts", "src/footer.ts", "src/sidebar.ts", "src/welcome.ts", "src/editor.ts", "src/todos.ts", "src/cute-transcript.ts"];
+	const srcFiles = [
+		"index.ts",
+		"src/cute-theme.ts",
+		"src/cute-strings.ts",
+		"src/cute-layout.ts",
+		"src/cute-paths.ts",
+		"src/cute-colors.ts",
+		"src/cute-metrics.ts",
+		"src/hud.ts",
+		"src/footer.ts",
+		"src/sidebar.ts",
+		"src/welcome.ts",
+		"src/editor.ts",
+		"src/todos.ts",
+		"src/cute-transcript.ts"
+	];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
 	}
+});
+
+test("formatTokenCount - formats M, k, and plain counts cleanly", () => {
+	assert.equal(formatTokenCount(1_000_000), "1.0M");
+	assert.equal(formatTokenCount(2_500_000), "2.5M");
+	assert.equal(formatTokenCount(10_000_000), "10M");
+	assert.equal(formatTokenCount(128_000), "128k");
+	assert.equal(formatTokenCount(24_520), "24.5k");
+	assert.equal(formatTokenCount(4_400), "4.4k");
+	assert.equal(formatTokenCount(850), "850");
+	assert.equal(formatTokenCount(0), "0");
+});
+
+test("getContextThreshold - dynamic semáforo based on percent", () => {
+	const mockPalette = {
+		mint: (s: string) => `[mint]${s}[/mint]`,
+		gold: (s: string) => `[gold]${s}[/gold]`,
+		orange: (s: string) => `[orange]${s}[/orange]`,
+		coral: (s: string) => `[coral]${s}[/coral]`,
+	} as any;
+
+	const optimal = getContextThreshold(25, mockPalette);
+	assert.equal(optimal.label, "● Óptimo");
+	assert.equal(optimal.color("test"), "[mint]test[/mint]");
+
+	const medium = getContextThreshold(60, mockPalette);
+	assert.equal(medium.label, "● Medio");
+	assert.equal(medium.color("test"), "[gold]test[/gold]");
+
+	const alert = getContextThreshold(80, mockPalette);
+	assert.equal(alert.label, "● Alerta");
+	assert.equal(alert.color("test"), "[orange]test[/orange]");
+
+	const critical = getContextThreshold(95, mockPalette);
+	assert.equal(critical.label, "● Crítico");
+	assert.equal(critical.color("test"), "[coral]test[/coral]");
 });
