@@ -1162,32 +1162,47 @@ test("getContextThreshold - dynamic semáforo based on custom percent brackets",
 		coral: (s: string) => `[coral]${s}[/coral]`,
 	} as any;
 
-	// 0% to 39.9% -> Verde (Óptimo)
+	// 0% to 39% -> Verde (Óptimo)
 	const optimal0 = getContextThreshold(0, mockPalette);
 	assert.equal(optimal0.label, "● Óptimo");
 	assert.equal(optimal0.color("test"), "[mint]test[/mint]");
 
-	const optimal39 = getContextThreshold(39, mockPalette);
+	const optimal39 = getContextThreshold(39.4, mockPalette);
 	assert.equal(optimal39.label, "● Óptimo");
 	assert.equal(optimal39.color("test"), "[mint]test[/mint]");
 
-	// 40% to 64.9% -> Oro/Dorado (Medio)
+	// 39.5% rounds to 40% -> immediately turns Oro/Dorado (Medio)
+	const roundedGold = getContextThreshold(39.5, mockPalette);
+	assert.equal(roundedGold.label, "● Medio");
+	assert.equal(roundedGold.color("test"), "[gold]test[/gold]");
+
+	// 40% to 64% -> Oro/Dorado (Medio)
 	const medium40 = getContextThreshold(40, mockPalette);
 	assert.equal(medium40.label, "● Medio");
 	assert.equal(medium40.color("test"), "[gold]test[/gold]");
 
-	const medium64 = getContextThreshold(64.5, mockPalette);
+	const medium64 = getContextThreshold(64.4, mockPalette);
 	assert.equal(medium64.label, "● Medio");
 	assert.equal(medium64.color("test"), "[gold]test[/gold]");
 
-	// 65% to 79.9% -> Naranja (Alerta)
+	// 64.5% rounds to 65% -> immediately turns Naranja (Alerta)
+	const alert645 = getContextThreshold(64.5, mockPalette);
+	assert.equal(alert645.label, "● Alerta");
+	assert.equal(alert645.color("test"), "[orange]test[/orange]");
+
+	// 65% to 79% -> Naranja (Alerta)
 	const alert65 = getContextThreshold(65, mockPalette);
 	assert.equal(alert65.label, "● Alerta");
 	assert.equal(alert65.color("test"), "[orange]test[/orange]");
 
-	const alert79 = getContextThreshold(79.9, mockPalette);
-	assert.equal(alert79.label, "● Alerta");
-	assert.equal(alert79.color("test"), "[orange]test[/orange]");
+	const alert794 = getContextThreshold(79.4, mockPalette);
+	assert.equal(alert794.label, "● Alerta");
+	assert.equal(alert794.color("test"), "[orange]test[/orange]");
+
+	// 79.5% rounds to 80% -> immediately turns Rojo/Coral (Crítico)
+	const critical795 = getContextThreshold(79.5, mockPalette);
+	assert.equal(critical795.label, "● Crítico");
+	assert.equal(critical795.color("test"), "[coral]test[/coral]");
 
 	// 80% to 100% -> Rojo/Coral (Crítico)
 	const critical80 = getContextThreshold(80, mockPalette);
