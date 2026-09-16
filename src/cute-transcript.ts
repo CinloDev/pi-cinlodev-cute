@@ -413,11 +413,11 @@ export function toolFilePath(child: Component, renderedLines?: string[]): string
 		const p = (args as Record<string, unknown>).path ?? (args as Record<string, unknown>).file_path;
 		if (typeof p === "string" && p.length > 0) return p;
 	}
-	// Fallback: extract path from first rendered header line, e.g. "edit src/cute-theme.ts" or "write foo.ts"
+	// Fallback: extract path from first rendered header line, e.g. "edit src/cute-theme.ts" or "read foo.ts:1-10"
 	const lines = renderedLines ?? tryRender(child, 80);
 	if (lines && lines.length > 0) {
 		const first = stripAnsi(lines[0] ?? "").trim();
-		const m = /^(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(first);
+		const m = /(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(first);
 		if (m && m[1]) {
 			// Strip line ranges like ":1-10" or ":50" from read paths
 			const clean = m[1].replace(/:\d+(?:-\d+)?$/, "");
@@ -496,9 +496,10 @@ const WRITE_DIFF_CONTEXT = /^ (\d+)\s?(.*)$/;
  * through untouched (preserving Pi's native colors exactly).
  */
 /**
- * Formats read tool lines: if the line contains code that is plain text (not yet
- * ANSI-highlighted by Pi or when collapsed/fallback), highlights it Dracula-style
- * using the theme syntax roles. Headers and already-highlighted lines pass through.
+ * Formats read tool lines:
+ * - Formats line numbers (e.g. "   1 │ " or "   1 ") with syntaxNumber (gold/orange) and punctuation.
+ * - Highlights code content Dracula-style using theme syntax roles.
+ * - Headers, hint/truncation lines, and image notes pass through.
  */
 export function formatReadLines(rawLines: string[], filePath?: string, theme?: Theme): string[] {
 	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
@@ -513,18 +514,25 @@ export function formatReadLines(rawLines: string[], filePath?: string, theme?: T
 		}
 
 		// Hint / expansion / status lines
-		if (trimmed.startsWith("ctrl+o") || trimmed.includes("to expand") || trimmed.startsWith("...")) {
+		if (trimmed.startsWith("ctrl+o") || trimmed.includes("to expand") || trimmed.startsWith("...") || trimmed.startsWith("[Truncated")) {
 			return line;
 		}
 
-		// If line already contains non-default ANSI syntax color sequences from Pi highlightCode, preserve it
-		const hasSyntaxAnsi = /\x1b\[38;2;(?!246;239;243|167;142;155|118;97;107)\d+;\d+;\d+m|\x1b\[3[1-6]m/.test(line);
-		if (hasSyntaxAnsi) {
-			return line;
+		// Check for line number prefix formats emitted by Pi:
+		// e.g. "   1 │ code" or "   1 : code" or "   1 code"
+		const m = /^(\s*\d+)(?:\s+([│:])\s*|\s+)(.*)$/.exec(plain);
+		if (m) {
+			const lineNum = m[1];
+			const sep = m[2];
+			const code = m[3] ?? "";
+			const styledNum = safeFg(theme, "syntaxNumber", lineNum, "warning");
+			const styledSep = sep ? ` ${safeFg(theme, "syntaxPunctuation", sep, "muted")} ` : " ";
+			const highlighted = highlightCodeLine(code, theme);
+			return `${styledNum}${styledSep}${highlighted}`;
 		}
 
-		// Otherwise, highlight Dracula-style preserving indentation
-		const leadingSpace = line.match(/^(\s*)/)?.[1] ?? "";
+		// Fallback for lines without line numbers: highlight Dracula preserving indentation
+		const leadingSpace = plain.match(/^(\s*)/)?.[1] ?? "";
 		const code = plain.slice(leadingSpace.length);
 		if (!code) return line;
 		return leadingSpace + highlightCodeLine(code, theme);
