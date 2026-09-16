@@ -210,8 +210,13 @@ export function formatGrepLines(rawLines: string[], theme?: Theme): string[] {
 			return line;
 		}
 
-		// 2. Expand hint or truncation notice
-		if (trimmed.startsWith("... (") || trimmed.startsWith("[Truncated:")) {
+		// 2. Summary line ("→ 13 matches"), expand hint ("ctrl+o to expand"), or truncation notice
+		if (
+			trimmed.includes("matches") ||
+			trimmed.includes("to expand") ||
+			trimmed.startsWith("... (") ||
+			trimmed.startsWith("[Truncated:")
+		) {
 			return line;
 		}
 
@@ -768,28 +773,53 @@ export function highlightUncoloredSegments(line: string, highlightFn: (text: str
 }
 
 /**
- * Formats assistant prose: headings get a slightly heavier typeface (bold,
- * same color) while body text and markdown elements render naturally via
- * Pi's Markdown renderer and CUTE theme roles (bold pink, mint code,
- * gold headings, pinkBright bullets).
- * Fenced code inside blocks passes through untouched.
+ * Formats assistant prose:
+ * - Inserts a subtle horizontal pink rule (`───────`) before non-initial `###` headings
+ *   to structure long explanations and avoid walls of text.
+ * - Headings get a slightly heavier typeface (bold, gold).
+ * - Body text receives Dracula syntax highlighting on plain segments.
+ * - Fenced code inside blocks passes through untouched.
  */
-export function formatAssistantProse(rawLines: string[], theme?: Theme): string[] {
+export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 80): string[] {
 	if (!theme || !rawLines.length) return rawLines;
 	let inFence = false;
-	return rawLines.map((line) => {
+	let headingCount = 0;
+	const out: string[] = [];
+
+	const dividerLen = Math.min(60, Math.max(20, width - 6));
+	const dividerRule = safeFg(theme, "pinkMuted", "─".repeat(dividerLen), "borderSubtle");
+
+	for (const line of rawLines) {
 		const plain = stripAnsi(line);
 		const isFence = /^\s*```/.test(plain);
 		if (isFence) inFence = !inFence;
+
 		// Fenced code (and its delimiters) stays exactly as Pi rendered it.
-		if (inFence || isFence) return line;
-		if (/^\s*#{1,6}\s+\S/.test(plain)) {
-			return bolden(theme, line);
+		if (inFence || isFence) {
+			out.push(line);
+			continue;
 		}
+
+		if (/^\s*#{1,6}\s+\S/.test(plain)) {
+			headingCount++;
+			// If it is not the very first line or heading of the message, add breathing space and divider
+			if (headingCount > 1 || (out.length > 0 && out.some((l) => stripAnsi(l).trim() !== ""))) {
+				if (out.length > 0 && out[out.length - 1] !== "") {
+					out.push("");
+				}
+				out.push(dividerRule);
+				out.push("");
+			}
+			out.push(bolden(theme, line));
+			continue;
+		}
+
 		// Highlight plain uncolored prose segments Dracula-style (quoted strings,
 		// numbers, types/identifiers, keywords) while keeping markdown bold/link/code colors intact.
-		return highlightUncoloredSegments(line, (text) => highlightCodeLine(text, theme));
-	});
+		out.push(highlightUncoloredSegments(line, (text) => highlightCodeLine(text, theme)));
+	}
+
+	return out;
 }
 
 /**
@@ -883,7 +913,7 @@ export function formatTranscriptChild(
 	// and tools adopt double lines, the robot glyph 🤖 and themed tones.
 	if (name === "AssistantMessageComponent") {
 		const rawLines = child.render(width);
-		return formatAssistantProse(rawLines, theme);
+		return formatAssistantProse(rawLines, theme, width);
 	}
 	const rawLines = child.render(width);
 	return transformTranscriptLines(rawLines, theme);
@@ -911,6 +941,14 @@ export function formatTranscriptChildren(
 	const colors = loadCuteColors();
 	const user = strings.welcomePersona.user || "CinloDev";
 
+	// Ensures exactly one blank breathing line before adding a card or block,
+	// preventing adjacent boxes or tool calls from colliding.
+	const ensureBreathingRoom = () => {
+		if (lines.length > 0 && lines[lines.length - 1] !== "") {
+			lines.push("");
+		}
+	};
+
 	let i = 0;
 	while (i < children.length) {
 		const child = children[i];
@@ -918,6 +956,7 @@ export function formatTranscriptChildren(
 
 		// 1. User Message
 		if (name === "UserMessageComponent") {
+			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, `❀ ${user}`, colors.userMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
@@ -928,6 +967,7 @@ export function formatTranscriptChildren(
 
 		// 2. Group consecutive bash executions into ONE single unified card
 		if (isBashComponent(child)) {
+			ensureBreathingRoom();
 			const bashGroup: Component[] = [];
 			while (i < children.length) {
 				const curr = children[i];
@@ -981,6 +1021,7 @@ export function formatTranscriptChildren(
 
 		// 3. Read tool execution in soft lilac card with Dracula highlighting
 		if (isReadComponent(child)) {
+			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
@@ -992,6 +1033,7 @@ export function formatTranscriptChildren(
 
 		// 4. Write / edit tool execution in barely-blue card
 		if (isWriteComponent(child)) {
+			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
@@ -1003,6 +1045,7 @@ export function formatTranscriptChildren(
 
 		// 4b. Fetch tool execution in pink card; inner dark background preserved
 		if (isFetchComponent(child)) {
+			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
@@ -1013,6 +1056,7 @@ export function formatTranscriptChildren(
 
 		// 4c. Search tool execution in dusty-rose card; inner dark background preserved
 		if (isSearchComponent(child)) {
+			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
 			const boxed = frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
@@ -1023,6 +1067,7 @@ export function formatTranscriptChildren(
 
 		// 4d. Group consecutive memory (Engram) calls into ONE single salmon card
 		if (isMemoryComponent(child)) {
+			ensureBreathingRoom();
 			const memGroup: Component[] = [];
 			while (i < children.length) {
 				const curr = children[i];
@@ -1072,6 +1117,7 @@ export function formatTranscriptChildren(
 
 		// 5. Group consecutive top-level error Texts into ONE single coral card
 		if (isErrorTextComponent(child)) {
+			ensureBreathingRoom();
 			const errorGroup: Component[] = [];
 			while (i < children.length) {
 				const curr = children[i];
@@ -1121,6 +1167,7 @@ export function formatTranscriptChildren(
 
 		// 6. Grep tool execution (free, no card, Dracula highlighted)
 		if (isGrepComponent(child)) {
+			ensureBreathingRoom();
 			const rawLines = child.render(width);
 			const styled = formatGrepLines(rawLines, theme);
 			mouseChildren.push({ component: child, height: styled.length });
@@ -1131,10 +1178,11 @@ export function formatTranscriptChildren(
 
 		// 7. Assistant prose (bolder headings, dracula text) and other
 		// components (remaining tools, notices) via transformTranscriptLines
+		ensureBreathingRoom();
 		const rawLines = child.render(width);
 		const transformed =
 			name === "AssistantMessageComponent"
-				? formatAssistantProse(rawLines, theme)
+				? formatAssistantProse(rawLines, theme, width)
 				: transformTranscriptLines(rawLines, theme);
 		mouseChildren.push({ component: child, height: transformed.length });
 		lines.push(...transformed);
