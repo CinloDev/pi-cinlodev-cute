@@ -26,19 +26,19 @@ export interface ContextThreshold {
 
 /**
  * Returns dynamic semáforo styling and status label based on context percent:
- * - < 50%: Mint (Óptimo)
- * - 50% - 74.9%: Gold (Medio)
- * - 75% - 89.9%: Orange (Alerta)
- * - >= 90%: Coral (Crítico)
+ * - 0% - 39.9%: Mint (Óptimo)
+ * - 40% - 64.9%: Gold (Medio)
+ * - 65% - 79.9%: Orange (Alerta)
+ * - 80% - 100%: Coral/Rojo (Crítico)
  */
 export function getContextThreshold(percent: number, palette: CutePalette): ContextThreshold {
-	if (percent >= 90) {
+	if (percent >= 80) {
 		return { color: palette.coral, label: "● Crítico", level: "critical" };
 	}
-	if (percent >= 75) {
+	if (percent >= 65) {
 		return { color: palette.orange, label: "● Alerta", level: "alert" };
 	}
-	if (percent >= 50) {
+	if (percent >= 40) {
 		return { color: palette.gold, label: "● Medio", level: "medium" };
 	}
 	return { color: palette.mint, label: "● Óptimo", level: "optimal" };
