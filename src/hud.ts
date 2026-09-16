@@ -2,10 +2,11 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { cuteGlyphs, frameFg } from "./cute-theme";
+import { cuteGlyphs, frameFg, cutePalette } from "./cute-theme";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatProfileDisplay, loadCuteStrings } from "./cute-strings.ts";
 import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
+import { getContextThreshold } from "./cute-metrics.ts";
 
 type HudMode = "full" | "compact";
 
@@ -148,7 +149,7 @@ function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 	};
 }
 
-class GentlemanHudWidget implements Component {
+export class GentlemanHudWidget implements Component {
 	private readonly getContext: () => ExtensionContext | ExtensionCommandContext;
 	private readonly theme: Theme;
 	private readonly getMode: () => HudMode;
@@ -175,7 +176,9 @@ class GentlemanHudWidget implements Component {
 		const title = theme.fg("accent", strings.hudTitle.replace("{user}", user));
 		const sep = theme.fg("borderMuted", ` ${cuteGlyphs(theme).separator} `);
 
-		const pctColor = stats.contextPercent && stats.contextPercent > 75 ? "warning" : "success";
+		const palette = cutePalette(theme);
+		const rawPercent = stats.contextPercent ?? 0;
+		const threshold = getContextThreshold(rawPercent, palette);
 		const pctStr = formatPercent(stats.contextPercent);
 		const ctxTokensStr = stats.contextTokens ? formatNumber(stats.contextTokens) : "0";
 		const ctxWinStr = stats.contextWindow ? formatNumber(stats.contextWindow) : "n/a";
@@ -207,21 +210,23 @@ class GentlemanHudWidget implements Component {
 			" " +
 			theme.fg("accent", `(${shortThinkingLevel(stats.thinkingLevel)})`);
 
-		// Context variants
+		// Context variants (colored dynamically with the semáforo: mint -> gold -> orange -> coral)
+		const coloredCtxTokens = threshold.color(ctxTokensStr);
+		const coloredPct = threshold.color(`(${pctStr})`);
 		const ctxLabelFull =
 			theme.fg("muted", "Ctx: ") +
-			theme.fg("text", ctxTokensStr) +
+			coloredCtxTokens +
 			theme.fg("dim", `/${ctxWinStr}`) +
 			" " +
-			theme.fg(pctColor, `(${pctStr})`);
+			coloredPct;
 		const ctxLabelCompact =
 			theme.fg("muted", "Ctx: ") +
-			theme.fg("text", ctxTokensStr) +
+			coloredCtxTokens +
 			" " +
-			theme.fg(pctColor, `(${pctStr})`);
+			coloredPct;
 		const ctxLabelMini =
 			theme.fg("muted", "Ctx: ") +
-			theme.fg(pctColor, pctStr);
+			threshold.color(pctStr);
 
 		// Session variants
 		const sessionLabelFull =
