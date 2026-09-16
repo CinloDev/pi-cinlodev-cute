@@ -357,8 +357,12 @@ export class CinlodevCuteContextCard implements Component {
 		const bottom = frameFg(theme, `${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
 		// Metric 1: Tokens / Context Window (Left) and Health + % (Right)
-		const tokensStr = `${c.text(formatTokenCount(tokens))} ${c.muted("/")} ${c.muted(formatTokenCount(contextWindow))} ${c.muted("tokens")}`;
-		const rightStatusAndPercent = `${threshold.color(threshold.label)} ${threshold.color(percentStr)}`;
+		// The active token count is rendered bold in the threshold color (mint -> gold -> orange -> coral)
+		// so it grows and changes visually alongside the gauge bar.
+		const tokenNumFormatted = formatTokenCount(tokens);
+		const boldTokenNum = `\x1b[1m${threshold.color(tokenNumFormatted)}\x1b[22m`;
+		const tokensStr = `${boldTokenNum} ${c.muted("/")} ${c.muted(formatTokenCount(contextWindow))} ${c.muted("tokens")}`;
+		const boldRightStatusAndPercent = `\x1b[1m${threshold.color(`${threshold.label} ${percentStr}`)}\x1b[22m`;
 
 		// Metric 2: Full-width Gauge Bar
 		const cellWidth = Math.max(1, visibleWidth(g.gaugeFilled));
@@ -391,7 +395,7 @@ export class CinlodevCuteContextCard implements Component {
 
 		return [
 			top,
-			boxLine(tokensStr, rightStatusAndPercent),
+			boxLine(tokensStr, boldRightStatusAndPercent),
 			boxLine(barStr),
 			boxLine(leftBreakdown, rightCost),
 			bottom,
