@@ -81,6 +81,8 @@ export interface CuteStrings {
 	};
 	/** Footer sidebar card title, e.g. "✿ Status". */
 	statusTitle: string;
+	/** Context sidebar card title, e.g. "✿ Context". */
+	contextTitle: string;
 	/** Profile display format with "{icon}" and "{name}" placeholders, e.g. "{icon} {name}". */
 	profileFormat: string;
 	/** Welcome persona override (welcome.ts before_agent_start). */
@@ -246,6 +248,7 @@ const DEFAULTS: CuteStrings = {
 		moreFmt: "+{remaining} más",
 	},
 	statusTitle: "✿ Status",
+	contextTitle: "✿ Context",
 	profileFormat: "{icon} {name}",
 	welcomePersona: {
 		name: PERSONA_PRESETS.gentleman.name,
@@ -377,6 +380,7 @@ function mergeStrings(raw: unknown, baseSource: CuteStrings = DEFAULTS): CuteStr
 		}
 	}
 	base.statusTitle = pickString(raw.statusTitle, base.statusTitle);
+	base.contextTitle = pickString(raw.contextTitle, base.contextTitle);
 	base.profileFormat = pickString(raw.profileFormat, base.profileFormat);
 	if (isRecord(raw.welcomePersona)) {
 		base.welcomePersona.name = pickString(raw.welcomePersona.name, base.welcomePersona.name);
