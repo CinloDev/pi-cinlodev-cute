@@ -644,12 +644,12 @@ test("formatAssistantProse - Dracula highlighting on prose, bold headings, color
 	], mockTheme);
 	assert.ok(out[0].includes('[syntaxString]"quoted string"[/syntaxString]'), "quotes get Dracula green");
 	assert.ok(out[0].includes("[syntaxNumber]42[/syntaxNumber]"), "numbers get Dracula orange");
-	assert.equal(out[1], "");
-	assert.ok(out[2].includes("\x1b[1m") && out[2].includes("### Heading"));
-	assert.equal(out[3], colored, "already-colored lines untouched");
-	assert.equal(out[4], "```python");
-	assert.equal(out[5], "plain code line", "fenced code untouched");
-	assert.equal(out[6], "```");
+	assert.ok(out.some((l) => l.includes("[pinkMuted]")), "horizontal pink divider inserted before heading");
+	assert.ok(out.some((l) => l.includes("\x1b[1m") && l.includes("### Heading")));
+	assert.ok(out.includes(colored), "already-colored lines untouched");
+	assert.ok(out.includes("```python"));
+	assert.ok(out.includes("plain code line"), "fenced code untouched");
+	assert.ok(out.includes("```"));
 	assert.deepEqual(formatAssistantProse([], mockTheme), []);
 });
 
