@@ -25,7 +25,7 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		installCinlodevPrompt(ctx);
 
 		// Install Dracula-style Markdown emphasis hook on global theme
-		installCuteMarkdownThemeHook();
+		installCuteMarkdownThemeHook(ctx.ui.theme);
 
 		// Intercept ctx.ui.setHeader to protect la Gentlewoman Welcome Dashboard
 		// from being overwritten by external extensions (e.g. gentle-pi startup-banner deferred timeout)
