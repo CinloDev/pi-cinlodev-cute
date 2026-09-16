@@ -106,6 +106,8 @@ export interface CutePalette {
 	muted(text: string): string;
 	dim(text: string): string;
 	mint(text: string): string;
+	orange(text: string): string;
+	coral(text: string): string;
 }
 
 /** Frame style presets for configurable glyphs. Double is the current visual. */
@@ -393,7 +395,9 @@ export function cutePalette(theme: Theme): CutePalette {
 		text: (s) => safeFg(theme, "text", s),
 		muted: (s) => safeFg(theme, "muted", s),
 		dim: (s) => safeFg(theme, "dim", s),
-		mint: (s) => safeFg(theme, "green", s),
+		mint: (s) => safeFg(theme, "mint", s, "green"),
+		orange: (s) => safeFg(theme, "orange", s, "warning"),
+		coral: (s) => safeFg(theme, "red", s, "error"),
 	};
 }
 

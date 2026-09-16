@@ -49,6 +49,7 @@
 		"moreFmt": "+{remaining} más"
 	},
 	"statusTitle": "✿ Status",
+	"contextTitle": "✿ Context",
 	"profileFormat": "{icon} {name}",
 	"welcomePersona": {
 		"name": "el Gentleman",
