@@ -449,17 +449,23 @@ const CODE_TOKEN =
  * orange, type gold, comment muted) so edit diffs match the native `read`
  * highlighting. Self-contained on purpose: Pi's `highlightCode` is not
  * resolvable from this package at runtime, and the passed `theme` is enough.
+ * When `defaultRole` is supplied (e.g. "write"), uncolored non-token text
+ * is styled with that role, enabling celeste prose with Dracula tokens.
  * Never throws and never corrupts: on any doubt the plain code is returned.
  */
-export function highlightCodeLine(code: string, theme?: Theme): string {
+export function highlightCodeLine(code: string, theme?: Theme, defaultRole?: string): string {
 	if (!theme || !code) return code;
+	const wrap = (s: string): string => {
+		if (!defaultRole || !s || s.trim() === "") return s;
+		return safeFg(theme, defaultRole, s, "text");
+	};
 	let out = "";
 	let last = 0;
 	let m: RegExpExecArray | null;
 	const re = new RegExp(CODE_TOKEN, "g");
 	try {
 		while ((m = re.exec(code)) !== null) {
-			if (m.index > last) out += code.slice(last, m.index);
+			if (m.index > last) out += wrap(code.slice(last, m.index));
 			const [tok, comment, str, kw, num, fn, ty] = m;
 			if (comment) out += safeFg(theme, "syntaxComment", tok, "muted");
 			else if (str) out += safeFg(theme, "syntaxString", tok, "green");
@@ -467,14 +473,14 @@ export function highlightCodeLine(code: string, theme?: Theme): string {
 			else if (num) out += safeFg(theme, "syntaxNumber", tok, "warning");
 			else if (fn) out += safeFg(theme, "syntaxFunction", tok, "text");
 			else if (ty) out += safeFg(theme, "syntaxType", tok, "heading");
-			else out += tok;
+			else out += wrap(tok);
 			last = m.index + tok.length;
 			if (tok.length === 0) break;
 		}
 	} catch {
 		return code;
 	}
-	if (last < code.length) out += code.slice(last);
+	if (last < code.length) out += wrap(code.slice(last));
 	return out;
 }
 
@@ -544,28 +550,25 @@ export function formatWriteDiffLines(rawLines: string[], filePath?: string, them
 
 		if (!toolFileHighlightable(filePath)) return line;
 
-		let prefix = "";
-		let code = "";
-		let tone = "";
-		let m = WRITE_DIFF_ADDED.exec(plain);
+		// Match Pi's diff line patterns:
+		// "+123 content", "+ 123 content", "-123 content", " 123 content", or non-numbered "+ content"
+		const m = /^([+-\s])(\s*\d*)\s(.*)$/.exec(plain);
 		if (m) {
-			prefix = `+${m[1]} `;
-			code = m[2] ?? "";
-			tone = "toolDiffAdded";
-		} else if ((m = WRITE_DIFF_REMOVED.exec(plain))) {
-			prefix = `-${m[1]} `;
-			code = m[2] ?? "";
-			tone = "toolDiffRemoved";
-		} else if ((m = WRITE_DIFF_CONTEXT.exec(plain))) {
-			prefix = ` ${m[1]} `;
-			code = m[2] ?? "";
-			tone = "toolDiffContext";
-		} else {
-			return line;
+			const sym = m[1];
+			const lineNum = m[2];
+			const code = m[3];
+			if (!code) return line;
+
+			let tone = "toolDiffContext";
+			if (sym === "+") tone = "toolDiffAdded";
+			else if (sym === "-") tone = "toolDiffRemoved";
+
+			const prefix = `${sym}${lineNum} `;
+			const highlighted = highlightCodeLine(code, theme);
+			return safeFg(theme, tone, prefix, "muted") + highlighted;
 		}
-		if (!code) return line;
-		const highlighted = highlightCodeLine(code, theme);
-		return safeFg(theme, tone, prefix, "muted") + highlighted;
+
+		return line;
 	});
 }
 
@@ -815,6 +818,11 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 
 			continue;
 		}
 
+		if (plain.trim() === "") {
+			out.push(line);
+			continue;
+		}
+
 		if (/^\s*#{1,6}\s+\S/.test(plain)) {
 			headingCount++;
 			// If it is not the very first line or heading of the message, add breathing space and divider
@@ -829,9 +837,9 @@ export function formatAssistantProse(rawLines: string[], theme?: Theme, width = 
 			continue;
 		}
 
-		// Highlight plain uncolored prose segments Dracula-style (quoted strings,
-		// numbers, types/identifiers, keywords) while keeping markdown bold/link/code colors intact.
-		out.push(highlightUncoloredSegments(line, (text) => highlightCodeLine(text, theme)));
+		// Assistant prose lines: let Markdown elements, bold, code, links, and normal text
+		// pass through cleanly as rendered by Pi Markdown & CUTE theme roles.
+		out.push(line);
 	}
 
 	return out;

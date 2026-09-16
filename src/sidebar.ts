@@ -255,7 +255,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			}
 
 			// Wrap chatContainer to frame each transcript component by category
-			const chatContainer = (doc as any)?.children?.[2];
+			const chatContainer =
+				(doc as any)?.children?.find((c: any) =>
+					Array.isArray(c?.children) && c !== (doc as any)?.children?.[0] && c !== (doc as any)?.children?.[1],
+				) ?? (doc as any)?.children?.[2];
 			const originalChatRender = chatContainer ? chatContainer.render.bind(chatContainer) : undefined;
 			if (chatContainer && !(chatContainer as any).__cuteChatWrapped && Array.isArray(chatContainer.children)) {
 				(chatContainer as any).__cuteChatWrapped = true;
