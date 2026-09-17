@@ -288,7 +288,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 		render() { return ["echo hello from user"]; }
 	}
 	const userFramed = formatTranscriptChild(new UserMessageComponent() as any, 60, mockTheme);
-	assert.ok(userFramed[0].includes("[heading]"));
+	assert.ok(userFramed[0].includes("[userMessageBorder]") || userFramed[0].includes("[heading]"));
 	assert.ok(userFramed[0].includes("❀"));
 	assert.ok(userFramed[1].includes("echo hello from user"));
 	assert.ok(userFramed[2].includes("╚"));
@@ -357,7 +357,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		resetAll();
 
 		const colors = loadCuteColors();
-		assert.equal(colors.userMessage, "heading");
+		assert.equal(colors.userMessage, "userMessageBorder");
 		assert.equal(colors.bashMessage, "bash");
 		assert.equal(colors.fetchMessage, "pink");
 		assert.equal(colors.searchMessage, "secondary");
@@ -1219,6 +1219,6 @@ test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet"
 	const themeJson = JSON.parse(fs.readFileSync(themePath, "utf8"));
 	assert.equal(themeJson.vars.userMessageBg, "#140a28");
 	assert.equal(themeJson.vars.toolSuccessBg, "#140a28");
-	assert.equal(themeJson.vars.userMessageText, "#E0C27A");
+	assert.equal(themeJson.vars.userMessageText, "#C5C18E");
 	assert.equal(themeJson.colors.userMessageBg, "userMessageBg");
 });

@@ -1,0 +1,28 @@
+Quiero crear mi propio paquete de tema visual para Pi Coding Agent.
+
+PERSONALIZACION (completa esto antes de pasarselo al agente):
+- Nombre del tema: [ej: mi-tema-oscuro]
+- Estetica / vibe: [ej: minimalista, oscuro y elegante]
+- Color de fondo: [ej: negro profundo]
+- Color principal / bordes: [ej: violeta]
+- Color de acento / highlights: [ej: rosa pastel]
+- Color para titulos y mensajes importantes: [ej: dorado]
+- Color para exito: [ej: verde menta]
+- Simbolo / icono principal: [ej: una flor, una huella, una estrella, lo que quieras]
+- Estilo de bordes: [double, single, rounded o ascii]
+
+QUE QUIERO QUE ME GENERE EL AGENTE:
+1. Estructura de paquete instalable con "pi install" (package.json con pi.extensions y pi.themes)
+2. Un archivo de tema en themes/ con mi paleta e iconos
+3. Un dashboard de bienvenida (version de Pi, branch de git, modelo activo)
+4. Un HUD persistente sobre el input (modelo, nivel de thinking, uso de contexto, costo, branch)
+5. Un frame lindo alrededor del editor de input, que cambie de color segun el nivel de thinking
+6. Una statusline minimalista de una sola linea que nunca se rompa ni haga wrap en terminales chicas
+7. Barras laterales simetricas que enmarquen la terminal
+8. Comandos /hud y /welcome para mostrar/ocultar componentes, y uno para recargar el tema
+9. Todo configurable por archivos de config, sin colores ni textos hardcodeados en el codigo
+10. Soporte para terminales sin Nerd Font (fallback ASCII), mas test basico y README con comandos
+
+REGLAS:
+- No modificar archivos internos de Pi, todo tiene que vivir dentro de mi paquete y sobrevivir a "pi update".
+- Empeza por la estructura base funcional y despues iteramos los detalles visuales conmigo.
