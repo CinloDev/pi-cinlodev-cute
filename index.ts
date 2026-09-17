@@ -8,15 +8,9 @@ import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import { resetCuteColorsCache } from "./src/cute-colors.ts";
-import { registerCuteLiveBash } from "./src/cute-live-bash.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
-	// Register live streaming bash override early
-	try {
-		registerCuteLiveBash(pi, process.cwd());
-	} catch {}
-
 	// 1. Initialize Welcome Header (Gentlewoman)
 	welcome(pi);
 
@@ -25,13 +19,6 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 	// 3. Hook into session_start to bind Prompt Editor & hygiene
 	pi.on("session_start", async (_event, ctx) => {
-		// Update live bash with session-specific cwd
-		if (ctx.cwd) {
-			try {
-				registerCuteLiveBash(pi, ctx.cwd);
-			} catch {}
-		}
-
 		if (!ctx.hasUI) return;
 
 		// Install custom prompt editor with double violet frame & pink cursor
