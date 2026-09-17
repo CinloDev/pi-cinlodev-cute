@@ -3,6 +3,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { safeFg, bolden, stripAnsi, transformTranscriptLines } from "./cute-theme.ts";
+import { isCuteLiveBashActive } from "./cute-live-bash.ts";
 
 export interface CuteFrameOptions {
 	title?: string;
@@ -709,7 +710,7 @@ export function formatBashOutputLines(
 	colorKey = "bashOutput",
 ): string[] {
 	if (!lines.length) return lines;
-	const color = (s: string): string => (theme ? safeFg(theme, colorKey, s) : `\x1b[38;2;219;140;101m${s}\x1b[39m`);
+	const color = (s: string): string => (theme ? safeFg(theme, colorKey, s) : `\x1b[38;2;142;197;166m${s}\x1b[39m`);
 
 	// Tracks whether the current `$` section is highlightable code (a `cat`-style
 	// file dump or a code-interpreter heredoc) plus the heredoc terminator.
@@ -902,6 +903,9 @@ export function formatTranscriptChild(
 
 	// Bash execution (single child fallback)
 	if (isBashComponent(child)) {
+		if (isCuteLiveBashActive()) {
+			return child.render(width);
+		}
 		const rawLines = child.render(width - 4);
 		const cleaned = cleanBashLines(rawLines);
 		const styled = formatBashOutputLines(cleaned.length ? cleaned : rawLines, theme, colors.bashOutput);
@@ -1026,6 +1030,16 @@ export function formatTranscriptChildren(
 
 		// 2. Group consecutive bash executions into ONE single unified card
 		if (isBashComponent(child)) {
+			// When live bash is active, each bash component handles its own self-render card
+			if (isCuteLiveBashActive()) {
+				ensureBreathingRoom();
+				const rawLines = child.render(width);
+				mouseChildren.push({ component: child, height: rawLines.length });
+				lines.push(...rawLines);
+				i++;
+				continue;
+			}
+
 			ensureBreathingRoom();
 			const bashGroup: Component[] = [];
 			while (i < children.length) {
