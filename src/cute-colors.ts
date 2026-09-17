@@ -22,7 +22,7 @@ export interface CuteColors {
 export const CUTE_COLORS_FILENAME = "CinlodevCute.colors.json";
 
 export const DEFAULT_CUTE_COLORS: CuteColors = {
-	userMessage: "heading",
+	userMessage: "userMessageBorder",
 	bashMessage: "bash",
 	bashOutput: "bashOutput",
 	readMessage: "read",
