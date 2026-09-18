@@ -14,6 +14,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache } from "../src/cute-git-graph.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -22,6 +23,7 @@ function resetAll() {
 	resetCutePathsCache();
 	resetCuteColorsCache();
 	resetActiveProfileCache();
+	resetGitGraphCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -1203,7 +1205,8 @@ test("Syntax check across all source files", () => {
 		"src/cute-transcript.ts",
 		"src/cute-profiles.ts",
 		"src/cute-notify.ts",
-		"src/cute-context-monitor.ts"
+		"src/cute-context-monitor.ts",
+		"src/cute-git-graph.ts",
 	];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
@@ -1464,4 +1467,74 @@ test("cute-context-monitor - progressive 2-level thresholds (orange single notic
 	assert.equal(notifications.length, 3);
 
 	monitor.stop();
+});
+
+test("cute-git-graph - colorizeGitGraphLine styles graph edges, hashes and branch refs in Dracula", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	// 1. Pure graph line
+	const pureGraph = "|\\  ";
+	const coloredGraph = colorizeGitGraphLine(pureGraph, mockTheme);
+	assert.ok(coloredGraph.includes("[syntaxFunction]|\\"), "Pipes and backslashes should be styled with syntaxFunction");
+
+	// 2. Commit line with HEAD branch and message
+	const commitLine = "* 5b0836f (HEAD -> feat/sidebar-git-graph, origin/develop) Merge PR #73";
+	const coloredCommit = colorizeGitGraphLine(commitLine, mockTheme);
+	assert.ok(coloredCommit.includes("[accent]*[/accent]"), "* node should be styled in accent (pink)");
+	assert.ok(coloredCommit.includes("[syntaxNumber]5b0836f[/syntaxNumber]"), "hash should be styled in syntaxNumber (yellow)");
+	assert.ok(coloredCommit.includes("[mint]HEAD -> feat/sidebar-git-graph[/mint]"), "HEAD should be styled in mint");
+	assert.ok(coloredCommit.includes("[secondary]origin/develop[/secondary]"), "origin remote should be styled in secondary");
+	assert.ok(coloredCommit.includes("[syntaxPunctuation]([/syntaxPunctuation]"), "parentheses should be styled in syntaxPunctuation");
+	assert.ok(coloredCommit.includes("[text]Merge PR #73[/text]"), "commit subject should be styled in text");
+});
+
+test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and rendering", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+
+	const mockCtx = {
+		cwd: process.cwd(),
+	} as any;
+
+	const card = new CinlodevGitGraphCard(mockCtx, mockTui, mockTheme);
+
+	// Default expanded is true
+	assert.equal(card.isExpanded(), true);
+
+	// Render expanded
+	const expandedLines = card.render(50);
+	assert.ok(expandedLines.length >= 3, "Expanded graph should have top, body rows, and bottom");
+	assert.ok(expandedLines[0].includes("git graph"), "Top bar should contain title 'git graph'");
+	const bottomHint = expandedLines[expandedLines.length - 2];
+	assert.ok(bottomHint.includes("click to collapse"), "Expanded card should display collapse hint");
+
+	// Click toggles to collapsed
+	const handled = card.handleClick(0);
+	assert.equal(handled, true);
+	assert.equal(card.isExpanded(), false);
+	assert.equal(renderRequested, 1);
+
+	// Render collapsed
+	const collapsedLines = card.render(50);
+	assert.equal(collapsedLines.length, 3, "Collapsed graph should have top, 1-line summary, and bottom");
+	assert.ok(collapsedLines[0].includes("git"), "Top bar should contain title 'git'");
+	assert.ok(collapsedLines[1].includes("click to expand"), "Collapsed card should display expand hint");
+
+	// Click toggles back to expanded
+	card.handleClick(1);
+	assert.equal(card.isExpanded(), true);
+	assert.equal(renderRequested, 2);
+
+	// Invalidate clears cache
+	card.invalidate();
 });

@@ -102,6 +102,19 @@ export interface CuteScrollLayout {
 	wheelScrollLines: number;
 }
 
+export interface CuteGitGraphLayout {
+	/** Whether the Git Graph widget in the sidebar is enabled. */
+	enabled: boolean;
+	/** Whether the Git Graph starts expanded (tree view) or collapsed (1 line). */
+	defaultExpanded: boolean;
+	/** Maximum commits to display in the graph tree view. */
+	maxCommits: number;
+	/** Cache TTL in milliseconds for git log operations. */
+	ttlMs: number;
+	/** Minimum width in cells for the git graph card. */
+	minWidth: number;
+}
+
 export interface CuteTerminalLayout {
 	/** Columns always kept clear on the left edge (was 0: full-bleed). */
 	insetLeft: number;
@@ -121,6 +134,7 @@ export interface CuteLayout {
 	welcome: CuteWelcomeLayout;
 	editor: CuteEditorLayout;
 	scroll: CuteScrollLayout;
+	gitGraph: CuteGitGraphLayout;
 	terminal: CuteTerminalLayout;
 }
 
@@ -177,6 +191,13 @@ const DEFAULTS: CuteLayout = {
 	scroll: {
 		wheelScrollLines: 3,
 	},
+	gitGraph: {
+		enabled: true,
+		defaultExpanded: true,
+		maxCommits: 6,
+		ttlMs: 4000,
+		minWidth: 30,
+	},
 	terminal: {
 		insetLeft: 0,
 		insetRight: 0,
@@ -193,6 +214,10 @@ function pickNumber(source: unknown, fallback: number): number {
 	return typeof source === "number" && Number.isFinite(source) ? source : fallback;
 }
 
+function pickBoolean(source: unknown, fallback: boolean): boolean {
+	return typeof source === "boolean" ? source : fallback;
+}
+
 /** Merge a parsed JSON value over the defaults; unknown keys are ignored. */
 function mergeSection<T extends Record<string, number>>(currentSection: T, raw: unknown): T {
 	const base = { ...currentSection };
@@ -200,6 +225,17 @@ function mergeSection<T extends Record<string, number>>(currentSection: T, raw: 
 	for (const key of Object.keys(currentSection) as (keyof T)[]) {
 		base[key] = pickNumber(raw[key as string], base[key]) as T[keyof T];
 	}
+	return base;
+}
+
+function mergeGitGraphSection(currentSection: CuteGitGraphLayout, raw: unknown): CuteGitGraphLayout {
+	const base = { ...currentSection };
+	if (!isRecord(raw)) return base;
+	base.enabled = pickBoolean(raw.enabled, base.enabled);
+	base.defaultExpanded = pickBoolean(raw.defaultExpanded, base.defaultExpanded);
+	base.maxCommits = pickNumber(raw.maxCommits, base.maxCommits);
+	base.ttlMs = pickNumber(raw.ttlMs, base.ttlMs);
+	base.minWidth = pickNumber(raw.minWidth, base.minWidth);
 	return base;
 }
 
@@ -212,6 +248,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 		welcome: { ...baseSource.welcome },
 		editor: { ...baseSource.editor },
 		scroll: { ...baseSource.scroll },
+		gitGraph: { ...baseSource.gitGraph },
 		terminal: { ...baseSource.terminal },
 	};
 	if (!isRecord(raw)) return base;
@@ -222,6 +259,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 	base.welcome = mergeSection(base.welcome, raw.welcome);
 	base.editor = mergeSection(base.editor, raw.editor);
 	base.scroll = mergeSection(base.scroll, raw.scroll);
+	base.gitGraph = mergeGitGraphSection(base.gitGraph, raw.gitGraph);
 	base.terminal = mergeSection(base.terminal, raw.terminal);
 	return base;
 }
