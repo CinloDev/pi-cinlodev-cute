@@ -12,6 +12,8 @@ import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfi
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
+import { herdrAvailable, notify } from "../src/cute-notify.ts";
+import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -1138,7 +1140,9 @@ test("Syntax check across all source files", () => {
 		"src/editor.ts",
 		"src/todos.ts",
 		"src/cute-transcript.ts",
-		"src/cute-profiles.ts"
+		"src/cute-profiles.ts",
+		"src/cute-notify.ts",
+		"src/cute-context-monitor.ts"
 	];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
@@ -1286,4 +1290,109 @@ test("cute-profiles - switchProfile switches active profile via API and fallback
 	const notFound = await switchProfile("perfil-inexistente-xyz");
 	assert.equal(notFound.success, false);
 	assert.ok(notFound.message.includes("no encontrado"));
+});
+
+test("cute-notify - herdrAvailable and fallback notification dispatch", () => {
+	const origSocket = process.env.HERDR_SOCKET_PATH;
+	const origEnv = process.env.HERDR_ENV;
+
+	try {
+		delete process.env.HERDR_SOCKET_PATH;
+		delete process.env.HERDR_ENV;
+		assert.equal(herdrAvailable(), false);
+
+		// Fallback to ctx.ui.notify when Herdr is absent
+		let notifiedMsg = "";
+		let notifiedType = "";
+		const mockCtx = {
+			hasUI: true,
+			ui: {
+				notify: (msg: string, type: string) => {
+					notifiedMsg = msg;
+					notifiedType = type;
+				},
+			},
+		} as any;
+
+		const res = notify(mockCtx, "Título Test", "Cuerpo Test", "warning");
+		assert.equal(res, false, "should return false indicating it did not go through Herdr");
+		assert.ok(notifiedMsg.includes("Título Test"));
+		assert.ok(notifiedMsg.includes("Cuerpo Test"));
+		assert.equal(notifiedType, "warning");
+	} finally {
+		if (origSocket) process.env.HERDR_SOCKET_PATH = origSocket;
+		if (origEnv) process.env.HERDR_ENV = origEnv;
+	}
+});
+
+test("cute-context-monitor - progressive 2-level thresholds (orange single notice, red 5m recurring, auto-reset)", () => {
+	const notifications: Array<{ title: string; body: string; type: string }> = [];
+	const monitor = new CuteContextMonitor({
+		alertThreshold: 65,
+		criticalThreshold: 80,
+		criticalIntervalMs: 50, // 50ms for unit test speed instead of 5min
+		onNotify: (title, body, type) => {
+			notifications.push({ title, body, type });
+		},
+	});
+
+	const makeCtx = (tokens: number, contextWindow = 100_000) =>
+		({
+			getContextUsage: () => ({
+				tokens,
+				contextWindow,
+				percent: (tokens / contextWindow) * 100,
+			}),
+		}) as any;
+
+	// 1. Context at 50% (Normal/Óptimo): No notification
+	const res50 = monitor.check(makeCtx(50_000));
+	assert.equal(res50.level, "optimal");
+	assert.equal(res50.notified, false);
+	assert.equal(notifications.length, 0);
+
+	// 2. Context reaches 70% (Naranja / Alerta): Fires ONE single notification
+	const res70 = monitor.check(makeCtx(70_000));
+	assert.equal(res70.level, "alert");
+	assert.equal(res70.notified, true);
+	assert.equal(notifications.length, 1);
+	assert.ok(notifications[0].title.includes("70%"));
+	assert.ok(notifications[0].body.includes("/handoff"));
+	assert.equal(notifications[0].type, "info");
+
+	// 3. Context stays in orange at 72%: Does NOT fire again (no spam)
+	const res72 = monitor.check(makeCtx(72_000));
+	assert.equal(res72.level, "alert");
+	assert.equal(res72.notified, false);
+	assert.equal(notifications.length, 1);
+
+	// 4. Context reaches 82% (Rojo / Crítico): Fires immediately
+	const res82 = monitor.check(makeCtx(82_000));
+	assert.equal(res82.level, "critical");
+	assert.equal(res82.notified, true);
+	assert.equal(notifications.length, 2);
+	assert.ok(notifications[1].title.includes("82%"));
+	assert.ok(notifications[1].body.includes("/compact"));
+	assert.equal(notifications[1].type, "warning");
+
+	// 5. Context still at 82% immediately after: Does NOT fire before interval
+	const res82Immediate = monitor.check(makeCtx(82_000));
+	assert.equal(res82Immediate.level, "critical");
+	assert.equal(res82Immediate.notified, false);
+	assert.equal(notifications.length, 2);
+
+	// 6. Context drops to 30% (e.g. after /compact): Monitor auto-resets
+	const res30 = monitor.check(makeCtx(30_000));
+	assert.equal(res30.level, "optimal");
+	assert.equal(res30.notified, false);
+	assert.equal(monitor.isAlertNotified, false);
+	assert.equal(monitor.lastCriticalTime, 0);
+
+	// 7. Context rises back to 70%: Can fire orange alert again!
+	const res70Again = monitor.check(makeCtx(70_000));
+	assert.equal(res70Again.level, "alert");
+	assert.equal(res70Again.notified, true);
+	assert.equal(notifications.length, 3);
+
+	monitor.stop();
 });
