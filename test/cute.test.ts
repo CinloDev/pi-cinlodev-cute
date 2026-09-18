@@ -857,6 +857,8 @@ test("formatWriteDiffLines - highlights diff code, keeps diff tones and headers"
 	assert.equal(toolFilePath({} as any, ["edit src/cute-theme.ts", "+1 -0"]), "src/cute-theme.ts");
 	assert.equal(toolFilePath({} as any, ["✎ write src/hud.ts", "+1 -0"]), "src/hud.ts");
 	assert.equal(toolFilePath({} as any, ["read package.json:1-10"]), "package.json");
+	assert.equal(toolFilePath({ args: { path: "src/foo.ts:20-50" } } as any), "src/foo.ts");
+	assert.equal(toolFilePath({} as any, ["", "   ", "read src/bar.ts"]), "src/bar.ts");
 
 	const raw = [
 		"edit src/cute-transcript.ts",
@@ -889,6 +891,62 @@ test("formatWriteDiffLines - highlights diff code, keeps diff tones and headers"
 	assert.deepEqual(formatWriteDiffLines(raw, "src/a.ts"), raw);
 });
 
+test("formatWriteDiffLines - write tool file content highlights all lines in Dracula", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const writeRaw = [
+		"write src/app.ts",
+		"import * as fs from \"node:fs\";",
+		"",
+		"export function initApp(): void {",
+		"    const active = true;",
+		"    return calculate(10);",
+		"}",
+	];
+
+	const styled = formatWriteDiffLines(writeRaw, "src/app.ts", mockTheme, "write");
+	// Header untouched
+	assert.equal(styled[0], writeRaw[0]);
+	// Unindented import keywords highlighted Dracula-style
+	assert.ok(styled[1].includes("[syntaxKeyword]import[/syntaxKeyword]"));
+	assert.ok(styled[1].includes("[syntaxKeyword]from[/syntaxKeyword]"));
+	assert.ok(styled[1].includes("[syntaxString]\"node:fs\"[/syntaxString]"));
+	// Unindented export function highlighted Dracula-style
+	assert.ok(styled[3].includes("[syntaxKeyword]export[/syntaxKeyword]"));
+	assert.ok(styled[3].includes("[syntaxKeyword]function[/syntaxKeyword]"));
+	assert.ok(styled[3].includes("[syntaxFunction]initApp[/syntaxFunction]"));
+	// Indented lines preserve spaces and highlight keywords and numbers
+	assert.ok(styled[4].startsWith("    "));
+	assert.ok(styled[4].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.ok(styled[5].includes("[syntaxKeyword]return[/syntaxKeyword]"));
+	assert.ok(styled[5].includes("[syntaxNumber]10[/syntaxNumber]"));
+	// Closing brace untouched
+	assert.equal(styled[6], "}");
+});
+
+test("formatWriteDiffLines - edit compact diff lines (+code / -code) highlight properly", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const editCompact = [
+		"edit src/calc.ts",
+		"+const sum = a + b;",
+		"-let sum = 0;",
+	];
+
+	const styled = formatWriteDiffLines(editCompact, "src/calc.ts", mockTheme, "edit");
+	assert.equal(styled[0], editCompact[0]);
+	// Compact added line has green prefix + Dracula keyword
+	assert.ok(styled[1].includes("[toolDiffAdded]+ [/toolDiffAdded]"));
+	assert.ok(styled[1].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	// Compact removed line has red prefix + Dracula keyword
+	assert.ok(styled[2].includes("[toolDiffRemoved]- [/toolDiffRemoved]"));
+	assert.ok(styled[2].includes("[syntaxKeyword]let[/syntaxKeyword]"));
+});
+
 
 test("formatReadLines - highlights plain read code Dracula-style and preserves headers", () => {
 	const mockTheme = {
@@ -896,6 +954,8 @@ test("formatReadLines - highlights plain read code Dracula-style and preserves h
 	} as any;
 
 	const raw = [
+		"",
+		"   ",
 		"read src/cute-transcript.ts:50-119",
 		"const x: number = 42;",
 		"    return current;",
@@ -903,16 +963,17 @@ test("formatReadLines - highlights plain read code Dracula-style and preserves h
 	];
 	const styled = formatReadLines(raw, "src/cute-transcript.ts", mockTheme);
 
-	// Header and hint untouched
-	assert.equal(styled[0], raw[0]);
-	assert.equal(styled[3], raw[3]);
+	// Header and hint untouched even with leading empty spacer lines
+	assert.equal(styled[2], raw[2]);
+	assert.equal(styled[5], raw[5]);
 
 	// Code lines highlighted Dracula-style
-	assert.ok(styled[1].includes("[syntaxKeyword]const[/syntaxKeyword]"));
-	assert.ok(styled[2].includes("[syntaxKeyword]return[/syntaxKeyword]"));
+	assert.ok(styled[3].includes("[syntaxKeyword]const[/syntaxKeyword]"));
+	assert.ok(styled[3].includes("[syntaxNumber]42[/syntaxNumber]"));
+	assert.ok(styled[4].includes("[syntaxKeyword]return[/syntaxKeyword]"));
 
 	// Indentation preserved
-	assert.ok(styled[2].startsWith("    "));
+	assert.ok(styled[4].startsWith("    "));
 });
 
 
@@ -1222,9 +1283,17 @@ test("getContextThreshold - dynamic semáforo based on custom percent brackets",
 
 test("cute-paths - readActiveProfile prioritizes project scope over global scope", () => {
 	resetActiveProfileCache();
-	// Since .pi/profiles/.active exists in this repo with Cinlodev02
-	const active = readActiveProfile(process.cwd());
-	assert.equal(active, "Cinlodev02", "should read project-local .active first");
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profile-test-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "Cinlodev02", "utf8");
+		const active = readActiveProfile(tmpDir);
+		assert.equal(active, "Cinlodev02", "should read project-local .active first");
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetActiveProfileCache();
+	}
 });
 
 test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet", () => {

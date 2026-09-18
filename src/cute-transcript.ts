@@ -396,13 +396,15 @@ const HIGHLIGHTABLE_EXTENSIONS = new Set([
 	"py", "rb", "rs", "go", "java", "kt", "swift",
 	"c", "h", "cpp", "hpp", "cc", "cs", "php",
 	"css", "scss", "less", "html", "xml", "vue", "svelte",
-	"sh", "bash", "zsh", "fish", "sql", "json", "jsonc", "yaml", "yml", "toml",
+	"sh", "bash", "zsh", "fish", "sql", "json", "jsonc", "json5", "yaml", "yml", "toml",
+	"graphql", "gql", "prisma", "env", "ini", "lua", "zig", "dart",
 ]);
 
 /** True when the tool file path points to a highlightable code format. */
 export function toolFileHighlightable(filePath: unknown): boolean {
 	if (typeof filePath !== "string" || filePath.length === 0) return false;
-	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	const clean = filePath.replace(/:\d+(?:-\d+)?$/, "");
+	const ext = clean.split(".").pop()?.toLowerCase() ?? "";
 	return HIGHLIGHTABLE_EXTENSIONS.has(ext);
 }
 
@@ -411,17 +413,21 @@ export function toolFilePath(child: Component, renderedLines?: string[]): string
 	const args = (child as unknown as { args?: Record<string, unknown> })?.args;
 	if (args && typeof args === "object") {
 		const p = (args as Record<string, unknown>).path ?? (args as Record<string, unknown>).file_path;
-		if (typeof p === "string" && p.length > 0) return p;
+		if (typeof p === "string" && p.length > 0) {
+			return p.replace(/:\d+(?:-\d+)?$/, "");
+		}
 	}
-	// Fallback: extract path from first rendered header line, e.g. "edit src/cute-theme.ts" or "read foo.ts:1-10"
+	// Fallback: extract path from rendered header lines, e.g. "edit src/cute-theme.ts" or "read foo.ts:1-10"
 	const lines = renderedLines ?? tryRender(child, 80);
 	if (lines && lines.length > 0) {
-		const first = stripAnsi(lines[0] ?? "").trim();
-		const m = /(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(first);
-		if (m && m[1]) {
-			// Strip line ranges like ":1-10" or ":50" from read paths
-			const clean = m[1].replace(/:\d+(?:-\d+)?$/, "");
-			return clean;
+		for (const line of lines) {
+			const plain = stripAnsi(line ?? "").trim();
+			const m = /(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(plain);
+			if (m && m[1]) {
+				// Strip line ranges like ":1-10" or ":50" from read paths
+				const clean = m[1].replace(/:\d+(?:-\d+)?$/, "");
+				return clean;
+			}
 		}
 	}
 	return undefined;
@@ -503,22 +509,29 @@ const WRITE_DIFF_CONTEXT = /^ (\d+)\s?(.*)$/;
  */
 export function formatReadLines(rawLines: string[], filePath?: string, theme?: Theme): string[] {
 	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
-	return rawLines.map((line, idx) => {
+	let headerHandled = false;
+	return rawLines.map((line) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
-		if (!trimmed) return line;
+		if (!trimmed) return "";
 
-		// The very first line is usually the tool call header: `read path/to/file`
-		if (idx === 0 && (trimmed.startsWith("read ") || trimmed.startsWith("✎ read"))) {
+		// 1. Tool call header: `read path/to/file` or `✎ read path/to/file`
+		if (!headerHandled && /^(?:✎\s*)?read\s+\S+/i.test(trimmed)) {
+			headerHandled = true;
 			return line;
 		}
 
-		// Hint / expansion / status lines
-		if (trimmed.startsWith("ctrl+o") || trimmed.includes("to expand") || trimmed.startsWith("...") || trimmed.startsWith("[Truncated")) {
+		// 2. Hint / expansion / status lines
+		if (
+			trimmed.startsWith("ctrl+o") ||
+			trimmed.includes("to expand") ||
+			trimmed.startsWith("...") ||
+			trimmed.startsWith("[Truncated")
+		) {
 			return line;
 		}
 
-		// Check for line number prefix formats emitted by Pi:
+		// 3. Check for line number prefix formats emitted by Pi or tools:
 		// e.g. "   1 │ code" or "   1 : code" or "   1 code"
 		const m = /^(\s*\d+)(?:\s+([│:])\s*|\s+)(.*)$/.exec(plain);
 		if (m) {
@@ -531,7 +544,7 @@ export function formatReadLines(rawLines: string[], filePath?: string, theme?: T
 			return `${styledNum}${styledSep}${highlighted}`;
 		}
 
-		// Fallback for lines without line numbers: highlight Dracula preserving indentation
+		// 4. Normal code lines without line numbers: highlight Dracula preserving indentation
 		const leadingSpace = plain.match(/^(\s*)/)?.[1] ?? "";
 		const code = plain.slice(leadingSpace.length);
 		if (!code) return line;
@@ -539,13 +552,29 @@ export function formatReadLines(rawLines: string[], filePath?: string, theme?: T
 	});
 }
 
-export function formatWriteDiffLines(rawLines: string[], filePath?: string, theme?: Theme): string[] {
-	if (!theme) return rawLines;
+export function formatWriteDiffLines(
+	rawLines: string[],
+	filePath?: string,
+	theme?: Theme,
+	toolName?: string,
+): string[] {
+	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
+
+	const isEditTool = toolName === "edit";
+	let headerHandled = false;
+
 	return rawLines.map((line) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
+		if (!trimmed) return "";
 
-		// Highlight collapsed summary lines like "✓ +2 / -2" or "+10 / -0"
+		// 1. Tool call header: `write path/to/file` or `edit path/to/file`
+		if (!headerHandled && /^(?:✎\s*)?(?:write|edit)\s+\S+/i.test(trimmed)) {
+			headerHandled = true;
+			return line;
+		}
+
+		// 2. Highlight collapsed summary lines like "✓ +2 / -2" or "+10 / -0"
 		if (/^✓?\s*\+\d+\s*\/\s*-\d+/.test(trimmed)) {
 			return line.replace(/^(\s*✓?\s*)(\+\d+)\s*\/\s*(-\d+)/, (_, check, added, removed) => {
 				const checkStyled = check.includes("✓") ? safeFg(theme, "success", check, "green") : check;
@@ -556,27 +585,47 @@ export function formatWriteDiffLines(rawLines: string[], filePath?: string, them
 			});
 		}
 
-		if (!toolFileHighlightable(filePath)) return line;
-
-		// Match Pi's diff line patterns:
-		// "+123 content", "+ 123 content", "-123 content", " 123 content", or non-numbered "+ content"
-		const m = /^([+-\s])(\s*\d*)\s(.*)$/.exec(plain);
-		if (m) {
-			const sym = m[1];
-			const lineNum = m[2];
-			const code = m[3];
-			if (!code) return line;
-
-			let tone = "toolDiffContext";
-			if (sym === "+") tone = "toolDiffAdded";
-			else if (sym === "-") tone = "toolDiffRemoved";
-
-			const prefix = `${sym}${lineNum} `;
-			const highlighted = highlightCodeLine(code, theme);
-			return safeFg(theme, tone, prefix, "muted") + highlighted;
+		// 3. Hint / expansion / status lines
+		if (
+			trimmed.startsWith("ctrl+o") ||
+			trimmed.includes("to expand") ||
+			trimmed.startsWith("...") ||
+			trimmed.startsWith("[Truncated")
+		) {
+			return line;
 		}
 
-		return line;
+		// 4. In edit mode (or when diff prefixes are present):
+		// Match diff added (+...), removed (-...), or diff context with line number ( 123 ...)
+		if (isEditTool || toolName !== "write") {
+			const diffLineMatch = /^([+-])(?:\s*(\d+))?\s?(.*)$/.exec(plain);
+			if (diffLineMatch) {
+				const sym = diffLineMatch[1];
+				const lineNum = diffLineMatch[2];
+				const code = diffLineMatch[3] ?? "";
+				const tone = sym === "+" ? "toolDiffAdded" : "toolDiffRemoved";
+				const prefix = lineNum ? `${sym}${lineNum} ` : `${sym} `;
+				const highlighted = highlightCodeLine(code, theme);
+				return safeFg(theme, tone, prefix, "muted") + highlighted;
+			}
+
+			const contextMatch = /^(\s+)(\d+)\s(.*)$/.exec(plain);
+			if (contextMatch) {
+				const spaces = contextMatch[1];
+				const lineNum = contextMatch[2];
+				const code = contextMatch[3] ?? "";
+				const prefix = `${spaces}${lineNum} `;
+				const highlighted = highlightCodeLine(code, theme);
+				return safeFg(theme, "toolDiffContext", prefix, "muted") + highlighted;
+			}
+		}
+
+		// 5. Normal code lines (for write tool, or non-diff lines in edit):
+		// Preserve leading whitespace and highlight code Dracula-style
+		const leadingSpace = plain.match(/^(\s*)/)?.[1] ?? "";
+		const code = plain.slice(leadingSpace.length);
+		if (!code) return line;
+		return leadingSpace + highlightCodeLine(code, theme);
 	});
 }
 
@@ -920,7 +969,7 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting inside diff lines.
 	if (isWriteComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
+		const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
 		return frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 	}
 
@@ -1094,7 +1143,7 @@ export function formatTranscriptChildren(
 		if (isWriteComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme);
+			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
