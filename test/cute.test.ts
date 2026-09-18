@@ -8,7 +8,7 @@ import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifyS
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
-import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache } from "../src/cute-paths.ts";
+import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
@@ -1515,8 +1515,7 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 	const expandedLines = card.render(50);
 	assert.ok(expandedLines.length >= 3, "Expanded graph should have top, body rows, and bottom");
 	assert.ok(expandedLines[0].includes("git graph"), "Top bar should contain title 'git graph'");
-	const bottomHint = expandedLines[expandedLines.length - 2];
-	assert.ok(bottomHint.includes("click to collapse"), "Expanded card should display collapse hint");
+	assert.ok(expandedLines[expandedLines.length - 1].includes("╝"), "Bottom border should close the card");
 
 	// Click toggles to collapsed
 	const handled = card.handleClick(0);
@@ -1528,7 +1527,7 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 	const collapsedLines = card.render(50);
 	assert.equal(collapsedLines.length, 3, "Collapsed graph should have top, 1-line summary, and bottom");
 	assert.ok(collapsedLines[0].includes("git"), "Top bar should contain title 'git'");
-	assert.ok(collapsedLines[1].includes("click to expand"), "Collapsed card should display expand hint");
+	assert.ok(collapsedLines[1].includes(readGitBranch(process.cwd())), "Collapsed card should display current branch");
 
 	// Click toggles back to expanded
 	card.handleClick(1);
