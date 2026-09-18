@@ -50,6 +50,13 @@
 	"scroll": {
 		"wheelScrollLines": 3
 	},
+	"gitGraph": {
+		"enabled": true,
+		"defaultExpanded": true,
+		"maxCommits": 6,
+		"ttlMs": 4000,
+		"minWidth": 30
+	},
 	"terminal": {
 		"insetLeft": 0,
 		"insetRight": 0,
