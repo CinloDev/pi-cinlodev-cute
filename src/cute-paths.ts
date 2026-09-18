@@ -192,14 +192,85 @@ export function resolveDevBinaryPath(): string {
 	return path.join(os.homedir(), ".pi", "gentle-ai", "dev-binary.json");
 }
 
-/** Read the active profile marker; undefined when missing or unreadable. */
-export function readActiveProfile(paths: CutePaths = loadCutePaths()): string | undefined {
+let cachedActiveProfile: string | undefined = undefined;
+let lastProfileRead = 0;
+
+export function resetActiveProfileCache(): void {
+	cachedActiveProfile = undefined;
+	lastProfileRead = 0;
+}
+
+/**
+ * Read the active profile marker:
+ * 1. Checks SddProfilesRuntimeApi on globalThis if present
+ * 2. Checks project-local .pi/profiles/.active (project scope takes precedence)
+ * 3. Falls back to global ~/.pi/agent/profiles/.active
+ */
+export function readActiveProfile(
+	cwdOrPaths?: string | CutePaths,
+	pathsParam?: CutePaths,
+): string | undefined {
+	const now = Date.now();
+	if (now - lastProfileRead < 1000 && cachedActiveProfile !== undefined) {
+		return cachedActiveProfile;
+	}
+
+	let cwd: string | undefined;
+	let paths: CutePaths;
+
+	if (typeof cwdOrPaths === "string") {
+		cwd = cwdOrPaths;
+		paths = pathsParam ?? loadCutePaths();
+	} else if (cwdOrPaths && typeof cwdOrPaths === "object") {
+		paths = cwdOrPaths;
+		cwd = undefined;
+	} else {
+		paths = loadCutePaths();
+		cwd = undefined;
+	}
+
+	const workingDir = cwd ?? process.cwd();
+
+	// 1. Check if SddProfilesRuntimeApi is exposed on globalThis
+	const apiSymbol = Symbol.for("cinlodev.sdd-profiles.api");
+	const globalApi = (globalThis as any)[apiSymbol];
+	if (globalApi && typeof globalApi.getActiveProfile === "function") {
+		try {
+			const active = globalApi.getActiveProfile();
+			if (active) {
+				cachedActiveProfile = active;
+				lastProfileRead = now;
+				return active;
+			}
+		} catch {}
+	}
+
+	// 2. Check project-local .pi/profiles/.active (project scope wins over global)
+	try {
+		const projectActivePath = path.join(workingDir, ".pi", "profiles", ".active");
+		if (fs.existsSync(projectActivePath)) {
+			const content = fs.readFileSync(projectActivePath, "utf-8").trim();
+			if (content.length > 0) {
+				cachedActiveProfile = content;
+				lastProfileRead = now;
+				return content;
+			}
+		}
+	} catch {}
+
+	// 3. Fall back to global ~/.pi/agent/profiles/.active
 	try {
 		const activePath = resolveProfileActivePath(paths);
 		if (fs.existsSync(activePath)) {
-			return fs.readFileSync(activePath, "utf-8").trim() || undefined;
+			const content = fs.readFileSync(activePath, "utf-8").trim() || undefined;
+			cachedActiveProfile = content;
+			lastProfileRead = now;
+			return content;
 		}
 	} catch {}
+
+	cachedActiveProfile = undefined;
+	lastProfileRead = now;
 	return undefined;
 }
 
