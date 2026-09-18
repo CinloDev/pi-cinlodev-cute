@@ -8,9 +8,13 @@ import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import { resetCuteColorsCache } from "./src/cute-colors.ts";
+import { CuteContextMonitor } from "./src/cute-context-monitor.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
+	// 0. Context Threshold Notifications Monitor (Herdr + Pi toast)
+	const contextMonitor = new CuteContextMonitor();
+
 	// 1. Initialize Welcome Header (Gentlewoman)
 	welcome(pi);
 
@@ -62,6 +66,10 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		// Install custom CUTE statusline footer
 		installCinlodevFooter(ctx, pi);
 
+		// Initialize context threshold monitoring for active session
+		contextMonitor.reset();
+		contextMonitor.check(ctx);
+
 		// Optional hygiene for the foreign gentle-ai dev-binary override file.
 		// Disabled by default (devBinaryHygiene: false in
 		// config/CinlodevCute.paths.json): this theme never deletes files it
@@ -83,6 +91,25 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 	pi.on("agent_end", () => {
 		setCinlodevPromptWorking(false);
+	});
+
+	// Monitor context threshold transitions on turn completion
+	pi.on("turn_end", async (_event, ctx) => {
+		if (ctx?.hasUI) {
+			contextMonitor.check(ctx);
+		}
+	});
+
+	// Reset / re-evaluate monitor on compaction
+	pi.on("session_compact", async (_event, ctx) => {
+		if (ctx?.hasUI) {
+			contextMonitor.reset();
+			contextMonitor.check(ctx);
+		}
+	});
+
+	pi.on("session_shutdown", () => {
+		contextMonitor.stop();
 	});
 
 	// 4b. Repintar el marco del input cuando cambia el esfuerzo (thinking level)
