@@ -116,6 +116,7 @@ function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 	const model = ctx?.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
 	const contextWindow = ctx?.model?.contextWindow;
 	const contextPercent = context?.tokens && contextWindow ? (context.tokens / contextWindow) * 100 : undefined;
+	const cwd = ctx?.cwd ?? process.cwd();
 	const activeProfile = readActiveProfile(cwd);
 
 	return {
