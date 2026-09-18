@@ -175,7 +175,6 @@ export class CinlodevGitGraphCard implements Component {
 		const theme = this.theme;
 
 		const frame = (s: string): string => (theme ? safeFg(theme, colors.sidebarBorder, s) : s);
-		const dimText = (s: string): string => (theme ? safeFg(theme, "dim", s, "muted") : s);
 
 		const boxLine = (left: string, right = ""): string => {
 			const rightWidth = calcVisibleWidth(right);
@@ -206,8 +205,7 @@ export class CinlodevGitGraphCard implements Component {
 			const commitText = hash ? (subject ? `${hash} ${subject}` : hash) : "latest";
 
 			const summaryLeft = `${branch} · ${commitText}`;
-			const summaryRight = dimText("[click to expand]");
-			return [top, boxLine(summaryLeft, summaryRight), bottom];
+			return [top, boxLine(summaryLeft), bottom];
 		}
 
 		// 2. Expanded mode: full tree with Dracula highlighting
@@ -224,8 +222,6 @@ export class CinlodevGitGraphCard implements Component {
 			lines.push(boxLine(colorized));
 		}
 
-		// Bottom hint row
-		lines.push(boxLine("", dimText("[click to collapse]")));
 		lines.push(bottom);
 
 		return lines;
