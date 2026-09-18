@@ -9,6 +9,7 @@
     "src",
     "themes",
     "config",
+    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -18,6 +19,9 @@
     ],
     "themes": [
       "./themes"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "scripts": {
