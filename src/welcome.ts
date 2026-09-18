@@ -91,7 +91,7 @@ function loadStats(ctx: ExtensionContext | ExtensionCommandContext, pi: Extensio
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
 	const thinkingLevel = ctx.thinkingLevel ?? "default";
 
-	const activeProfile = readActiveProfile(paths);
+	const activeProfile = readActiveProfile(cwd, paths);
 
 	// 3. Context files
 	const contextFiles: string[] = [];

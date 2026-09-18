@@ -82,18 +82,6 @@ function getCachedGitBranch(cwd: string): string {
 	return cachedGitBranch;
 }
 
-let cachedActiveProfile: string | undefined = undefined;
-let lastProfileRead = 0;
-
-function getCachedActiveProfile(): string | undefined {
-	const now = Date.now();
-	if (now - lastProfileRead > loadCuteLayout().hud.activeProfileTtlMs) {
-		lastProfileRead = now;
-		cachedActiveProfile = readActiveProfile();
-	}
-	return cachedActiveProfile;
-}
-
 function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 	let assistantMessages = 0;
 	let userMessages = 0;
@@ -128,7 +116,7 @@ function collectStats(ctx: ExtensionContext | ExtensionCommandContext | any) {
 	const model = ctx?.model ? `${ctx.model.provider}/${ctx.model.id}` : "no model";
 	const contextWindow = ctx?.model?.contextWindow;
 	const contextPercent = context?.tokens && contextWindow ? (context.tokens / contextWindow) * 100 : undefined;
-	const activeProfile = getCachedActiveProfile();
+	const activeProfile = readActiveProfile(cwd);
 
 	return {
 		assistantMessages,

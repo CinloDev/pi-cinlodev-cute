@@ -8,9 +8,10 @@ import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifyS
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
-import { loadCutePaths, resetCutePathsCache } from "../src/cute-paths.ts";
+import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
+import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -18,6 +19,7 @@ function resetAll() {
 	resetCuteLayoutCache();
 	resetCutePathsCache();
 	resetCuteColorsCache();
+	resetActiveProfileCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -1135,7 +1137,8 @@ test("Syntax check across all source files", () => {
 		"src/welcome.ts",
 		"src/editor.ts",
 		"src/todos.ts",
-		"src/cute-transcript.ts"
+		"src/cute-transcript.ts",
+		"src/cute-profiles.ts"
 	];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
@@ -1213,6 +1216,13 @@ test("getContextThreshold - dynamic semáforo based on custom percent brackets",
 	assert.equal(critical100.color("test"), "[coral]test[/coral]");
 });
 
+test("cute-paths - readActiveProfile prioritizes project scope over global scope", () => {
+	resetActiveProfileCache();
+	// Since .pi/profiles/.active exists in this repo with Cinlodev02
+	const active = readActiveProfile(process.cwd());
+	assert.equal(active, "Cinlodev02", "should read project-local .active first");
+});
+
 test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet", () => {
 	const themePath = fileURLToPath(new URL("../themes/CinlodevCute.json", import.meta.url));
 	assert.ok(fs.existsSync(themePath), "themes/CinlodevCute.json must exist");
@@ -1221,4 +1231,59 @@ test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet"
 	assert.equal(themeJson.vars.toolSuccessBg, "#140a28");
 	assert.equal(themeJson.vars.userMessageText, "#C5C18E");
 	assert.equal(themeJson.colors.userMessageBg, "userMessageBg");
+});
+
+test("cute-profiles - listAvailableProfiles and SDD_PROFILES_API_SYMBOL integration", () => {
+	// 1. Filesystem discovery
+	const profiles = listAvailableProfiles(process.cwd());
+	assert.ok(Array.isArray(profiles), "profiles should be an array");
+	assert.ok(profiles.length > 0, "should find profiles on system/builtin");
+
+	// 2. Global API override
+	const mockApi = {
+		listProfiles: () => [
+			{ name: "mock-one", description: "Mock 1", active: true },
+			{ name: "mock-two", description: "Mock 2", active: false },
+		],
+		getActiveProfile: () => "mock-one",
+		activateProfile: async (name: string) => ({ success: true, message: `Activated ${name}` }),
+	};
+
+	(globalThis as any)[SDD_PROFILES_API_SYMBOL] = mockApi;
+	try {
+		const apiProfiles = listAvailableProfiles();
+		assert.equal(apiProfiles.length, 2);
+		assert.equal(apiProfiles[0].name, "mock-one");
+		assert.equal(apiProfiles[0].active, true);
+		assert.equal(apiProfiles[1].name, "mock-two");
+		assert.equal(apiProfiles[1].active, false);
+	} finally {
+		delete (globalThis as any)[SDD_PROFILES_API_SYMBOL];
+	}
+});
+
+test("cute-profiles - switchProfile switches active profile via API and fallback", async () => {
+	// 1. With API
+	let activatedWith: string | null = null;
+	(globalThis as any)[SDD_PROFILES_API_SYMBOL] = {
+		listProfiles: () => [{ name: "mock-one", active: true }],
+		getActiveProfile: () => "mock-one",
+		activateProfile: async (name: string) => {
+			activatedWith = name;
+			return { success: true, message: `Perfil "${name}" activado correctamente.` };
+		},
+	};
+
+	try {
+		const res = await switchProfile("mock-one");
+		assert.equal(res.success, true);
+		assert.equal(activatedWith, "mock-one");
+	} finally {
+		delete (globalThis as any)[SDD_PROFILES_API_SYMBOL];
+	}
+
+	// 2. Fallback error when profile does not exist
+	const notFound = await switchProfile("perfil-inexistente-xyz");
+	assert.equal(notFound.success, false);
+	assert.ok(notFound.message.includes("no encontrado"));
 });

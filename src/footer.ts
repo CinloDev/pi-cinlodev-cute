@@ -15,6 +15,7 @@ import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cu
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
+import { listAvailableProfiles, switchProfile, type ProfileItem } from "./cute-profiles.ts";
 
 export { formatTokenCount, getContextThreshold };
 
@@ -92,6 +93,8 @@ export class CinlodevCuteFooter implements Component {
 	private dirtyCount: number | undefined;
 	private lastDirtyCheck = 0;
 	private unsubscribeBranch: (() => void) | undefined;
+	private isProfileExpanded = false;
+	private clickTargets: Array<{ lineIndex: number; action: () => void | Promise<void> }> = [];
 
 	constructor(
 		pi: ExtensionAPI,
@@ -279,15 +282,35 @@ export class CinlodevCuteFooter implements Component {
 
 		const cost = formatCost(sessionCost(this.ctx));
 
-		const extraStatuses: string[] = [];
+		this.clickTargets = [];
+		const availableProfiles = listAvailableProfiles(this.ctx.cwd);
+		const activeProfileFromList = availableProfiles.find((p) => p.active);
+
+		let profileStatusRaw: string | null = null;
+		const otherStatuses: string[] = [];
 		try {
 			const statusesMap = this.footerData.getExtensionStatuses?.();
 			if (statusesMap) {
-				for (const [, text] of statusesMap) {
-					if (text && text.trim().length > 0) extraStatuses.push(prettifyExtraStatus(text, this.theme));
+				for (const [key, text] of statusesMap) {
+					if (!text || text.trim().length === 0) continue;
+					const pretty = prettifyExtraStatus(text, this.theme);
+					if (
+						key === "sdd-profile" ||
+						text.includes("🤖") ||
+						matchBracketProfile(text) !== null
+					) {
+						profileStatusRaw = pretty;
+					} else {
+						otherStatuses.push(pretty);
+					}
 				}
 			}
 		} catch {}
+
+		const hasProfiles = availableProfiles.length > 0 || profileStatusRaw !== null;
+		const activeName =
+			activeProfileFromList?.name ||
+			(profileStatusRaw ? profileStatusRaw.replace(/^[🤖\s]+/, "").trim() : "default");
 
 		const lines: string[] = [
 			top,
@@ -296,15 +319,79 @@ export class CinlodevCuteFooter implements Component {
 			boxLine(cLabel("Model"), `${cAccent(displayModel)}${thinkingStr}`),
 		];
 
-		if (extraStatuses.length > 0) {
+		if (otherStatuses.length > 0 || hasProfiles) {
 			lines.push(frameFg(theme, `${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
-			for (const status of extraStatuses.slice(0, loadCuteLayout().footer.extraMax)) {
+			for (const status of otherStatuses.slice(0, loadCuteLayout().footer.extraMax)) {
 				lines.push(boxLine(cMuted(status)));
+			}
+
+			if (hasProfiles) {
+				const arrow = this.isProfileExpanded ? "▾" : "▸";
+				const profileGlyph = cuteGlyphs(theme).profileIcon || "🤖";
+				const profileHeaderLeft = `${profileGlyph} ${cMuted(activeName)}`;
+				const profileHeaderRight = cAccent(arrow);
+
+				this.clickTargets.push({
+					lineIndex: lines.length,
+					action: () => {
+						this.isProfileExpanded = !this.isProfileExpanded;
+						this.tui.requestRender();
+					},
+				});
+				lines.push(boxLine(profileHeaderLeft, profileHeaderRight));
+
+				if (this.isProfileExpanded && availableProfiles.length > 0) {
+					for (const p of availableProfiles) {
+						this.clickTargets.push({
+							lineIndex: lines.length,
+							action: async () => {
+								await this.selectProfile(p.name);
+							},
+						});
+
+						if (p.active) {
+							lines.push(boxLine(cAccent(`  ● ${p.name}`), cAccent("(activo)")));
+						} else {
+							lines.push(boxLine(cMuted(`  ○ ${p.name}`)));
+						}
+					}
+				}
 			}
 		}
 
 		lines.push(bottom);
 		return lines;
+	}
+
+	isProfileDropdownOpen(): boolean {
+		return this.isProfileExpanded;
+	}
+
+	closeProfileDropdown(): void {
+		if (this.isProfileExpanded) {
+			this.isProfileExpanded = false;
+			this.tui.requestRender();
+		}
+	}
+
+	private async selectProfile(name: string): Promise<void> {
+		this.isProfileExpanded = false;
+		await switchProfile(name, this.ctx, this.pi, this.ctx.cwd);
+		this.tui.requestRender();
+	}
+
+	handleCardClick(localLineIndex: number): boolean {
+		const target = this.clickTargets.find((t) => t.lineIndex === localLineIndex);
+		if (target) {
+			const res = target.action();
+			if (res && typeof (res as any).then === "function") {
+				(res as Promise<void>).then(() => {
+					this.tui.requestRender();
+				});
+			}
+			return true;
+		}
+		return false;
 	}
 
 	invalidate(): void {}
@@ -427,6 +514,9 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
+			handleRailClick: (lineIndex: number) => bottom.handleCardClick(lineIndex),
+			isProfileDropdownOpen: () => bottom.isProfileDropdownOpen(),
+			closeProfileDropdown: () => bottom.closeProfileDropdown(),
 		};
 		const contextRail = {
 			render: (width: number) => contextCard.render(width),
