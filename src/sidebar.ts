@@ -142,6 +142,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	let stopped = false;
 	let failed = false;
 	let railLines: string[] = [];
+	interface SectionMapping {
+		key: string;
+		component: any;
+		startLine: number;
+		lineCount: number;
+	}
+	let sectionMappings: SectionMapping[] = [];
 	state.active = false;
 	state.ownsHost = () => !stopped && host.mode === "fullscreen" && !!host.layoutRoot && roots.has(host.layoutRoot);
 
@@ -175,19 +182,47 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 	const nativeMouse = scroll.handleMouse.bind(scroll);
 	scroll.handleMouse = (event) => {
-		if (event.type !== "wheel") return nativeMouse(event);
-		scroll.scrollBy(event.wheelDelta ?? 0);
-		return {
-			handled: true,
-			render: true,
-			target: {
-				component: scroll,
-				originX: event.screenX - event.x,
-				originY: event.screenY - event.y,
-				width: event.width,
-				height: event.height,
-			},
-		};
+		if (event.type === "wheel") {
+			scroll.scrollBy(event.wheelDelta ?? 0);
+			return {
+				handled: true,
+				render: true,
+				target: {
+					component: scroll,
+					originX: event.screenX - event.x,
+					originY: event.screenY - event.y,
+					width: event.width,
+					height: event.height,
+				},
+			};
+		}
+
+		if (event.type === "click" && (event.button === "left" || event.button === undefined)) {
+			const scrollTop = (scroll as any).currentScrollTop ?? 0;
+			const clickedLine = event.y + scrollTop;
+			for (const mapping of sectionMappings) {
+				if (clickedLine >= mapping.startLine && clickedLine < mapping.startLine + mapping.lineCount) {
+					const localIndex = clickedLine - mapping.startLine;
+					if (typeof mapping.component?.handleRailClick === "function") {
+						const handled = mapping.component.handleRailClick(localIndex);
+						if (handled) {
+							tui.requestRender();
+							return { handled: true, render: true };
+						}
+					}
+				}
+			}
+
+			// If click was outside any interactive card element, check if dropdown should close
+			const footerComp = state.parts.get("footer") as any;
+			if (typeof footerComp?.isProfileDropdownOpen === "function" && footerComp.isProfileDropdownOpen()) {
+				footerComp.closeProfileDropdown();
+				tui.requestRender();
+				return { handled: true, render: true };
+			}
+		}
+
+		return nativeMouse(event);
 	};
 
 	const prepare = (width: number): boolean => {
@@ -196,25 +231,45 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const sections = ["footer", "context", "changes", "agents", "todo"]
+			const sectionData = ["footer", "context", "changes", "agents", "todo"]
 				.map((key) => {
-					const lines = [...(state.parts.get(key)?.render(contentWidth - layout.railPadding * 2) ?? [])];
-					while (lines.length && lines[lines.length - 1]?.trim() === "") lines.pop();
-					if (key !== "footer" && key !== "context") return lines.map((line) => unifySidebarCardFrame(line, theme));
-					return lines;
+					const component = state.parts.get(key);
+					const rawLines = [...(component?.render(contentWidth - layout.railPadding * 2) ?? [])];
+					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
+					const lines =
+						key !== "footer" && key !== "context"
+							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
+							: rawLines;
+					return { key, component, lines };
 				})
-				.filter((lines) => lines.length > 0);
+				.filter((s) => s.lines.length > 0);
 
 			const branding = renderCUTESidebarBanner(contentWidth - layout.railPadding * 2, theme);
-			if (sections.length && branding.length) sections.unshift(branding);
 
-			railLines = [
-				"",
-				...sections.flatMap((lines, index) => [
-					...(index === 0 ? [] : [""]),
-					...lines.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)),
-				]),
-			];
+			railLines = [""];
+			sectionMappings = [];
+
+			if (sectionData.length && branding.length) {
+				railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
+				railLines.push("");
+			}
+
+			for (let i = 0; i < sectionData.length; i++) {
+				if (i > 0) {
+					railLines.push("");
+				}
+				const s = sectionData[i];
+				const startLine = railLines.length;
+				for (const line of s.lines) {
+					railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
+				}
+				sectionMappings.push({
+					key: s.key,
+					component: s.component,
+					startLine,
+					lineCount: s.lines.length,
+				});
+			}
 
 			if (!railLines.length || railLines.some((line) => visibleWidth(line) > contentWidth)) return false;
 			state.active = true;
