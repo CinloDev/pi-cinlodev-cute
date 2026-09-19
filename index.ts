@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
 import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
-import { installCinlodevFooter } from "./src/footer.js";
+import { installCinlodevFooter, toggleUsageCard } from "./src/footer.js";
 import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
@@ -135,6 +135,28 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 			installCinlodevPrompt(ctx);
 			installCinlodevFooter(ctx, pi);
 			ctx.ui.notify(loadCuteStrings().commandNotify, "info");
+		},
+	});
+
+	// 6. Shortcut Alt+U to toggle Quotas & Usage card in the CUTE sidebar rail
+	pi.registerShortcut("alt+u", {
+		description: "Toggle Quotas & Usage card in the CUTE sidebar rail",
+		handler: async (ctx) => {
+			const visible = toggleUsageCard();
+			if (ctx.hasUI) {
+				ctx.ui.notify(visible ? "✿ Quotas abiertas en la sidebar" : "✿ Quotas ocultas", "info");
+			}
+		},
+	});
+
+	// 7. Command /usage-card to toggle or inspect Quotas card in sidebar
+	pi.registerCommand("usage-card", {
+		description: "Toggle Quotas & Usage card in the CUTE sidebar rail",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const visible = toggleUsageCard();
+			if (ctx.hasUI) {
+				ctx.ui.notify(visible ? "✿ Quotas abiertas en la sidebar" : "✿ Quotas ocultas", "info");
+			}
 		},
 	});
 }
