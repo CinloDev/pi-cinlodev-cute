@@ -15,6 +15,7 @@ import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from ".
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
+import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -1208,6 +1209,7 @@ test("Syntax check across all source files", () => {
 		"src/cute-notify.ts",
 		"src/cute-context-monitor.ts",
 		"src/cute-git-graph.ts",
+		"src/cute-tools.ts",
 	];
 	for (const f of srcFiles) {
 		assert.ok(fs.existsSync(f), `File exists: ${f}`);
@@ -1576,4 +1578,138 @@ UU conflicted-file.ts
 	assert.ok(dirtyBadge.includes("[mint]+2 staged[/mint]"));
 	assert.ok(dirtyBadge.includes("[secondary]?1 untracked[/secondary]"));
 	assert.ok(dirtyBadge.includes("[error]✖ 1 conflict[/error]"));
+});
+
+test("cute-tools - recordToolCall and collectToolCounts categorizes session tools", () => {
+	const counts = createEmptyToolCounts();
+	recordToolCall(counts, "read");
+	recordToolCall(counts, "write");
+	recordToolCall(counts, "edit");
+	recordToolCall(counts, "bash");
+	recordToolCall(counts, "mem_save");
+	recordToolCall(counts, "mem_search");
+	recordToolCall(counts, "grep");
+	recordToolCall(counts, "fetch_content");
+	recordToolCall(counts, "web_search");
+	recordToolCall(counts, "custom_tool");
+
+	assert.equal(counts.read, 1);
+	assert.equal(counts.write, 2, "write and edit should be grouped under write");
+	assert.equal(counts.bash, 1);
+	assert.equal(counts.engram, 2, "mem_* should be grouped under engram");
+	assert.equal(counts.grep, 1);
+	assert.equal(counts.fetch, 1);
+	assert.equal(counts.search, 1);
+	assert.equal(counts.other, 1);
+	assert.equal(counts.total, 10);
+
+	// Context with mock branch
+	const mockCtx = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "toolCall", name: "read" },
+							{ type: "toolCall", name: "bash" },
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "user",
+						content: "hello",
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "toolCall", name: "write" },
+							{ type: "toolCall", name: "mem_save" },
+						],
+					},
+				},
+			],
+		},
+	};
+
+	const sessionCounts = collectToolCounts(mockCtx as any);
+	assert.equal(sessionCounts.read, 1);
+	assert.equal(sessionCounts.bash, 1);
+	assert.equal(sessionCounts.write, 1);
+	assert.equal(sessionCounts.engram, 1);
+	assert.equal(sessionCounts.total, 4);
+});
+
+test("cute-tools - formatToolPill and wrapToolPills", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const readPill = formatToolPill("read", 5, mockTheme);
+	assert.ok(readPill.includes("[read]✎ 5 read[/read]"));
+
+	const writePill = formatToolPill("write", 3, mockTheme);
+	assert.ok(writePill.includes("[write]✎ 3 write[/write]"));
+
+	const bashPill = formatToolPill("bash", 2, mockTheme);
+	assert.ok(bashPill.includes("[bash]>_ 2 bash[/bash]"));
+
+	const engramPill = formatToolPill("engram", 4, mockTheme);
+	assert.ok(engramPill.includes("[salmon]🧠 4 engram[/salmon]"));
+
+	// 0 count returns empty string
+	assert.equal(formatToolPill("grep", 0, mockTheme), "");
+
+	// Wrap pills into rows
+	const pills = ["pillA", "pillB", "pillC", "pillD"];
+	const rows = wrapToolPills(pills, 16);
+	assert.ok(rows.length >= 2, "Should wrap into multiple lines when width is small");
+});
+
+test("cute-tools - CinlodevToolsCard hides when empty and renders when tools present", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const mockTui = { requestRender: () => {} } as any;
+
+	// 1. Empty session: card stays hidden
+	const emptyCtx = {
+		sessionManager: { getBranch: () => [] },
+	} as any;
+	const emptyCard = new CinlodevToolsCard(emptyCtx, mockTui, mockTheme);
+	assert.deepEqual(emptyCard.render(50), [], "Card must return [] when total tool calls is 0");
+
+	// 2. Active session: card renders
+	const activeCtx = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "toolCall", name: "read" },
+							{ type: "toolCall", name: "read" },
+							{ type: "toolCall", name: "write" },
+						],
+					},
+				},
+			],
+		},
+	} as any;
+	const activeCard = new CinlodevToolsCard(activeCtx, mockTui, mockTheme);
+	const rendered = activeCard.render(50);
+	assert.ok(rendered.length >= 3, "Rendered card must have top, content rows, and bottom");
+	assert.ok(rendered[0].includes("tools"), "Top header must contain 'tools'");
+	assert.ok(rendered[0].includes("3 calls"), "Top header must indicate '3 calls'");
+	const joined = rendered.join("\n");
+	assert.ok(joined.includes("2 read"));
+	assert.ok(joined.includes("1 write"));
 });

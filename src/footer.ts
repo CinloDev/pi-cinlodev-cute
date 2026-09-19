@@ -12,6 +12,7 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard } from "./cute-git-graph.ts";
+import { CinlodevToolsCard } from "./cute-tools.ts";
 import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
@@ -28,6 +29,7 @@ const execAsync = promisify(exec);
 let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
+let latestToolsCard: CinlodevToolsCard | undefined;
 
 function separator(theme: Theme): string {
 	return frameFg(theme, cuteGlyphs(theme).separator);
@@ -501,6 +503,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const refreshTodos = () => {
 			try {
 				latestGitGraph?.invalidate();
+				latestToolsCard?.invalidate();
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -513,9 +516,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const contextCard = new CinlodevCuteContextCard(ctx, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
+		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
 		latestGitGraph = gitGraph;
+		latestToolsCard = toolsCard;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
@@ -532,9 +537,14 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			invalidate: () => gitGraph.invalidate(),
 			handleRailClick: (lineIndex: number) => gitGraph.handleClick(lineIndex),
 		};
+		const toolsRail = {
+			render: (width: number) => toolsCard.render(width),
+			invalidate: () => toolsCard.invalidate(),
+		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
+		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const todoBottom: Component & { dispose?(): void } = {
 			render: (width: number) => todos.renderBottom(width),
 			invalidate: () => todos.invalidate(),
@@ -552,6 +562,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				part.dispose?.();
 				contextPart.dispose?.();
 				gitGraphPart.dispose?.();
+				toolsPart.dispose?.();
 				todoPart.dispose?.();
 			},
 		};
