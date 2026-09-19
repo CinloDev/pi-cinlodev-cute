@@ -182,7 +182,23 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 
 	const nativeMouse = scroll.handleMouse.bind(scroll);
 	scroll.handleMouse = (event) => {
+		const scrollTop = (scroll as any).currentScrollTop ?? 0;
+		const targetLine = event.y + scrollTop;
+
+		// 1. Wheel scroll over interactive rail cards (fast account switcher)
 		if (event.type === "wheel") {
+			for (const mapping of sectionMappings) {
+				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
+					if (typeof mapping.component?.handleRailWheel === "function") {
+						const handled = mapping.component.handleRailWheel(event.wheelDelta ?? 0);
+						if (handled) {
+							tui.requestRender();
+							return { handled: true, render: true };
+						}
+					}
+				}
+			}
+
 			scroll.scrollBy(event.wheelDelta ?? 0);
 			return {
 				handled: true,
@@ -197,14 +213,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			};
 		}
 
-		if (event.type === "click" && (event.button === "left" || event.button === undefined)) {
-			const scrollTop = (scroll as any).currentScrollTop ?? 0;
-			const clickedLine = event.y + scrollTop;
+		// 2. Click on rail cards (left click / right click)
+		if (event.type === "click") {
 			for (const mapping of sectionMappings) {
-				if (clickedLine >= mapping.startLine && clickedLine < mapping.startLine + mapping.lineCount) {
-					const localIndex = clickedLine - mapping.startLine;
+				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
+					const localIndex = targetLine - mapping.startLine;
 					if (typeof mapping.component?.handleRailClick === "function") {
-						const handled = mapping.component.handleRailClick(localIndex);
+						const handled = mapping.component.handleRailClick(localIndex, event.button);
 						if (handled) {
 							tui.requestRender();
 							return { handled: true, render: true };
@@ -231,13 +246,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const sectionData = ["footer", "context", "gitGraph", "tools", "agents", "todo"]
+			const sectionData = ["footer", "context", "usage", "gitGraph", "tools", "agents", "todo"]
 				.map((key) => {
 					const component = state.parts.get(key);
 					const rawLines = [...(component?.render(contentWidth - layout.railPadding * 2) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
 					const lines =
-						key !== "footer" && key !== "context" && key !== "gitGraph" && key !== "tools"
+						key !== "footer" && key !== "context" && key !== "usage" && key !== "gitGraph" && key !== "tools"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
 							: rawLines;
 					return { key, component, lines };

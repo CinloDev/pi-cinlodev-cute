@@ -13,6 +13,7 @@ import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme
 import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
+import { CinlodevUsageCard } from "./cute-usage.ts";
 import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
@@ -30,6 +31,19 @@ let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
 let latestToolsCard: CinlodevToolsCard | undefined;
+let latestUsageCard: CinlodevUsageCard | undefined;
+
+export function toggleUsageCard(): boolean {
+	return latestUsageCard?.toggle() ?? false;
+}
+
+export function isUsageCardVisible(): boolean {
+	return latestUsageCard?.isVisible() ?? false;
+}
+
+export function getLatestUsageCard(): CinlodevUsageCard | undefined {
+	return latestUsageCard;
+}
 
 function separator(theme: Theme): string {
 	return frameFg(theme, cuteGlyphs(theme).separator);
@@ -504,6 +518,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			try {
 				latestGitGraph?.invalidate();
 				latestToolsCard?.invalidate();
+				latestUsageCard?.invalidate();
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -515,12 +530,14 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		tuneTuiScroll(tui);
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const contextCard = new CinlodevCuteContextCard(ctx, theme);
+		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
 		latestGitGraph = gitGraph;
 		latestToolsCard = toolsCard;
+		latestUsageCard = usageCard;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
@@ -531,6 +548,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const contextRail = {
 			render: (width: number) => contextCard.render(width),
 			invalidate: () => contextCard.invalidate(),
+		};
+		const usageRail = {
+			render: (width: number) => usageCard.render(width),
+			invalidate: () => usageCard.invalidate(),
+			handleRailClick: (lineIndex: number, button?: string) => usageCard.handleClick(lineIndex, button),
+			handleRailWheel: (delta: number) => usageCard.handleWheel(delta),
 		};
 		const gitGraphRail = {
 			render: (width: number) => gitGraph.render(width),
@@ -543,6 +566,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
+		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const todoBottom: Component & { dispose?(): void } = {
@@ -561,6 +585,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				uninstall();
 				part.dispose?.();
 				contextPart.dispose?.();
+				usagePart.dispose?.();
 				gitGraphPart.dispose?.();
 				toolsPart.dispose?.();
 				todoPart.dispose?.();
