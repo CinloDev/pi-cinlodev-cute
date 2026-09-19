@@ -7,6 +7,8 @@ import { loadCuteLayout } from "./cute-layout.ts";
 import { readGitBranch } from "./cute-paths.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 
+const SIDEBAR_STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
+
 /**
  * Colorizes a single line from `git log --graph --oneline --decorate`
  * with Dracula syntax roles:
@@ -160,17 +162,6 @@ export function formatGitStatusBadges(counts: GitStatusCounts, theme?: Theme): s
 		items.push(safeFg(theme, "secondary", `?${counts.untracked} untracked`, "magenta"));
 	}
 
-	if (counts.linesAdded > 0 || counts.linesDeleted > 0) {
-		const diffParts: string[] = [];
-		if (counts.linesAdded > 0) {
-			diffParts.push(safeFg(theme, "mint", `+${counts.linesAdded}`, "green"));
-		}
-		if (counts.linesDeleted > 0) {
-			diffParts.push(safeFg(theme, "red", `−${counts.linesDeleted}`, "red"));
-		}
-		items.push(diffParts.join(" "));
-	}
-
 	const dot = safeFg(theme, "syntaxPunctuation", " · ", "muted");
 	return items.join(dot);
 }
@@ -316,6 +307,35 @@ export class CinlodevGitGraphCard implements Component {
 		}
 	}
 
+	private getChangesRow(status: GitStatusCounts, innerWidth: number): string | undefined {
+		// 1. Try reading the active SessionChanges from gentle-shell (via shared sidebar state symbol)
+		try {
+			const terminal = this.tui?.terminal as unknown as Record<symbol, any> | undefined;
+			const state = terminal?.[SIDEBAR_STATE];
+			const changesComp = state?.parts?.get("changes");
+			if (changesComp && typeof changesComp.render === "function") {
+				const rendered = changesComp.render(innerWidth);
+				if (Array.isArray(rendered) && rendered.length > 0) {
+					const first = rendered[0].trim();
+					if (first) return first;
+				}
+			}
+		} catch {}
+
+		// 2. Fallback to repository git diff lines
+		if (status.linesAdded > 0 || status.linesDeleted > 0) {
+			const theme = this.theme;
+			const pen = theme ? safeFg(theme, "accent", "✎", "pink") : "✎";
+			const addStr = theme ? safeFg(theme, "mint", `+${status.linesAdded}`, "green") : `+${status.linesAdded}`;
+			const delStr = theme ? safeFg(theme, "red", `−${status.linesDeleted}`, "red") : `−${status.linesDeleted}`;
+			const fileCount = status.modified + status.staged;
+			const noun = fileCount === 1 ? "file" : "files";
+			return `${pen} ${fileCount} ${noun} · ${addStr} ${delStr}`;
+		}
+
+		return undefined;
+	}
+
 	handleClick(_localIndex?: number): boolean {
 		this.toggleExpanded();
 		return true;
@@ -385,12 +405,25 @@ export class CinlodevGitGraphCard implements Component {
 
 		const lines: string[] = [top];
 
+		// Spacing between top border and branch row
+		lines.push(boxLine(""));
+
 		// Live branch and status badge row
 		lines.push(boxLine(branch, statusBadge));
+
+		// Spacing between branch row and git graph tree
+		lines.push(boxLine(""));
 
 		for (const line of rawLines) {
 			const colorized = colorizeGitGraphLine(line, theme);
 			lines.push(boxLine(colorized));
+		}
+
+		// Changes row placed cleanly BELOW the branches with spacing from tree
+		const changesRow = this.getChangesRow(status, innerWidth);
+		if (changesRow) {
+			lines.push(boxLine(""));
+			lines.push(boxLine(changesRow));
 		}
 
 		lines.push(bottom);
