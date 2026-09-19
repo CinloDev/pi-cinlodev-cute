@@ -16,7 +16,7 @@ import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
-import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting } from "../src/cute-usage.ts";
+import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -1768,6 +1768,67 @@ test("cute-tools - CinlodevToolsCard hides when empty and renders when tools pre
 	assert.ok(joined.includes("1 write"));
 });
 
+test("cute-usage - getQuotaThreshold 4-tier semáforo dynamic colors", () => {
+	const mockPalette = {
+		mint: (s: string) => `[mint]${s}[/mint]`,
+		gold: (s: string) => `[gold]${s}[/gold]`,
+		orange: (s: string) => `[orange]${s}[/orange]`,
+		coral: (s: string) => `[coral]${s}[/coral]`,
+	} as any;
+
+	// >= 65% -> Mint (Óptimo / Holgado)
+	const optimal100 = getQuotaThreshold(100, mockPalette);
+	assert.equal(optimal100.level, "optimal");
+	assert.equal(optimal100.label, "Óptimo");
+	assert.equal(optimal100.color("●"), "[mint]●[/mint]");
+
+	const optimal65 = getQuotaThreshold(65, mockPalette);
+	assert.equal(optimal65.level, "optimal");
+	assert.equal(optimal65.color("●"), "[mint]●[/mint]");
+
+	// 64.5% rounds to 65% -> mint
+	const roundedMint = getQuotaThreshold(64.5, mockPalette);
+	assert.equal(roundedMint.level, "optimal");
+
+	// 40% to 64% -> Gold (Medio / Moderado)
+	const medium64 = getQuotaThreshold(64.4, mockPalette);
+	assert.equal(medium64.level, "medium");
+	assert.equal(medium64.label, "Medio");
+	assert.equal(medium64.color("●"), "[gold]●[/gold]");
+
+	const medium40 = getQuotaThreshold(40, mockPalette);
+	assert.equal(medium40.level, "medium");
+	assert.equal(medium40.color("●"), "[gold]●[/gold]");
+
+	// 39.5% rounds to 40% -> gold
+	const roundedGold = getQuotaThreshold(39.5, mockPalette);
+	assert.equal(roundedGold.level, "medium");
+
+	// 20% to 39% -> Orange (Alerta)
+	const alert39 = getQuotaThreshold(39.4, mockPalette);
+	assert.equal(alert39.level, "alert");
+	assert.equal(alert39.label, "Alerta");
+	assert.equal(alert39.color("●"), "[orange]●[/orange]");
+
+	const alert20 = getQuotaThreshold(20, mockPalette);
+	assert.equal(alert20.level, "alert");
+	assert.equal(alert20.color("●"), "[orange]●[/orange]");
+
+	// 19.5% rounds to 20% -> orange
+	const roundedOrange = getQuotaThreshold(19.5, mockPalette);
+	assert.equal(roundedOrange.level, "alert");
+
+	// < 20% -> Coral (Crítico)
+	const critical19 = getQuotaThreshold(19.4, mockPalette);
+	assert.equal(critical19.level, "critical");
+	assert.equal(critical19.label, "Crítico");
+	assert.equal(critical19.color("●"), "[coral]●[/coral]");
+
+	const critical0 = getQuotaThreshold(0, mockPalette);
+	assert.equal(critical0.level, "critical");
+	assert.equal(critical0.color("●"), "[coral]●[/coral]");
+});
+
 test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	// 1. Relative reset formatting
 	const now = 1726700000000;
@@ -1867,17 +1928,44 @@ test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge r
 	assert.equal(renderRequested, 2);
 	assert.deepEqual(card.render(50), [], "Hidden card must return [] after toggle off");
 
-	// 5. Mouse wheel and bidirectional click navigation (with cached accounts)
+	// 5. Render pools at different quota levels with dynamic 4-tier semáforo colors
+	setCachedAccountsForTesting([
+		{
+			provider: "antigravity",
+			prefix: "cin82",
+			pools: [
+				{ label: "Optimal Pool", availablePercent: 90, used: 10, total: 100, unlimited: false, resetAt: null },
+				{ label: "Medium Pool", availablePercent: 50, used: 50, total: 100, unlimited: false, resetAt: null },
+				{ label: "Alert Pool", availablePercent: 30, used: 70, total: 100, unlimited: false, resetAt: null },
+				{ label: "Critical Pool", availablePercent: 10, used: 90, total: 100, unlimited: false, resetAt: null },
+			],
+		},
+	]);
+	card.toggle(); // turn on
+	const coloredLines = card.render(220);
+	const renderedText = coloredLines.join("\n");
+	assert.ok(renderedText.includes("[mint]●[/mint]"), "90% pool bullet must be mint");
+	assert.ok(renderedText.includes("[mint]90%[/mint]"), "90% pool percentage must be mint");
+	assert.ok(renderedText.includes("[heading]●[/heading]"), "50% pool bullet must be gold/heading");
+	assert.ok(renderedText.includes("[heading]50%[/heading]"), "50% pool percentage must be gold/heading");
+	assert.ok(renderedText.includes("[orange]●[/orange]"), "30% pool bullet must be orange");
+	assert.ok(renderedText.includes("[orange]30%[/orange]"), "30% pool percentage must be orange");
+	assert.ok(renderedText.includes("[red]●[/red]"), "10% pool bullet must be red/coral");
+	assert.ok(renderedText.includes("[red]10%[/red]"), "10% pool percentage must be red/coral");
+	card.toggle(); // turn off
+
+	// 6. Mouse wheel and bidirectional click navigation (with cached accounts)
+	renderRequested = 0;
 	setCachedAccountsForTesting([
 		{ provider: "antigravity", prefix: "cin82", pools: [] },
 		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
 	]);
 	card.handleClick(0, "left"); // forward
-	assert.equal(renderRequested, 3);
+	assert.equal(renderRequested, 1);
 	card.handleClick(0, "right"); // backward
-	assert.equal(renderRequested, 4);
+	assert.equal(renderRequested, 2);
 	card.handleWheel(-1); // wheel up
-	assert.equal(renderRequested, 5);
+	assert.equal(renderRequested, 3);
 	card.handleWheel(1); // wheel down
-	assert.equal(renderRequested, 6);
+	assert.equal(renderRequested, 4);
 });

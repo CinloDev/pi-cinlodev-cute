@@ -3,7 +3,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cuteGlyphs, safeFg } from "./cute-theme.ts";
+import { cuteGlyphs, cutePalette, safeFg, type CutePalette } from "./cute-theme.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { readActiveProfile } from "./cute-paths.ts";
@@ -21,6 +21,34 @@ export interface QuotaAccountDisplay {
 	provider: string;
 	prefix: string;
 	pools: QuotaPoolDisplay[];
+}
+
+export interface QuotaThreshold {
+	color: (text: string) => string;
+	level: "optimal" | "medium" | "alert" | "critical";
+	label: string;
+}
+
+/**
+ * Returns dynamic semáforo styling and status level based on available quota percent:
+ * Evaluates against the rounded percentage (Math.round) in lockstep with visible text:
+ * - >= 65%: Mint (Óptimo / Holgado)
+ * - 40% - 64%: Gold (Medio / Moderado)
+ * - 20% - 39%: Orange (Alerta)
+ * - < 20%: Coral (Crítico)
+ */
+export function getQuotaThreshold(availablePercent: number, palette: CutePalette): QuotaThreshold {
+	const rounded = Math.round(availablePercent);
+	if (rounded < 20) {
+		return { color: palette.coral, level: "critical", label: "Crítico" };
+	}
+	if (rounded < 40) {
+		return { color: palette.orange, level: "alert", label: "Alerta" };
+	}
+	if (rounded < 65) {
+		return { color: palette.gold, level: "medium", label: "Medio" };
+	}
+	return { color: palette.mint, level: "optimal", label: "Óptimo" };
 }
 
 export function cleanPoolLabel(label: string): string {
@@ -441,15 +469,11 @@ export class CinlodevUsageCard implements Component {
 		const innerWidth = safeWidth - 4; // ║ + space + content + space + ║
 
 		const frame = (s: string): string => (theme ? safeFg(theme, colors.sidebarBorder, s) : s);
+		const palette = cutePalette(this.theme);
 		const c = {
-			pink: (s: string): string => (theme ? safeFg(theme, "accent", s, "pink") : s),
-			gold: (s: string): string => (theme ? safeFg(theme, "heading", s, "yellow") : s),
-			mint: (s: string): string => (theme ? safeFg(theme, "mint", s, "green") : s),
-			coral: (s: string): string => (theme ? safeFg(theme, "red", s, "red") : s),
+			...palette,
+			pink: (s: string): string => palette.pinkAccent(s),
 			warning: (s: string): string => (theme ? safeFg(theme, "warning", s, "yellow") : s),
-			text: (s: string): string => (theme ? safeFg(theme, "text", s) : s),
-			dim: (s: string): string => (theme ? safeFg(theme, "dim", s) : s),
-			muted: (s: string): string => (theme ? safeFg(theme, "muted", s) : s),
 		};
 
 		// Standard boxLine: strictly guarantees total visible width = safeWidth
@@ -515,21 +539,16 @@ export class CinlodevUsageCard implements Component {
 		for (let i = 0; i < currentAccount.pools.length; i++) {
 			const p = currentAccount.pools[i];
 
-			// Format color by remaining percentage
+			// Format color by remaining percentage using 4-tier dynamic semáforo
 			const pct = Math.round(p.availablePercent);
-			let thresholdColor = c.mint;
-			if (pct <= 20) {
-				thresholdColor = c.coral;
-			} else if (pct <= 50) {
-				thresholdColor = c.warning;
-			}
+			const threshold = getQuotaThreshold(p.availablePercent, c);
 
 			// Clean label for models (e.g. "Gemini 5h", "Claude/GPT Weekly")
 			const cleanLabel = cleanPoolLabel(p.label);
-			const poolHeaderLeft = `${c.pink("●")} ${c.text(cleanLabel)}`;
+			const poolHeaderLeft = `${threshold.color("●")} ${c.text(cleanLabel)}`;
 
 			const resetStr = formatRelativeReset(p.resetAt);
-			const pctFormatted = `\x1b[1m${thresholdColor(`${pct}%`)}\x1b[22m`;
+			const pctFormatted = `\x1b[1m${threshold.color(`${pct}%`)}\x1b[22m`;
 			const poolHeaderRight = resetStr ? `${pctFormatted} ${c.muted("·")} ${c.dim(resetStr)}` : pctFormatted;
 
 			lines.push(boxLine(poolHeaderLeft, poolHeaderRight));
@@ -539,7 +558,7 @@ export class CinlodevUsageCard implements Component {
 			const barCells = Math.max(4, Math.floor(innerWidth / cellWidth));
 			const filledCount = Math.round((pct / 100) * barCells);
 			const emptyCount = Math.max(0, barCells - filledCount);
-			const barStr = `${thresholdColor(g.gaugeFilled.repeat(filledCount))}${c.dim(g.gaugeEmpty.repeat(emptyCount))}`;
+			const barStr = `${threshold.color(g.gaugeFilled.repeat(filledCount))}${c.dim(g.gaugeEmpty.repeat(emptyCount))}`;
 
 			lines.push(boxLine(barStr));
 		}
