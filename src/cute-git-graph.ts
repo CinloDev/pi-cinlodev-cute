@@ -405,17 +405,24 @@ export class CinlodevGitGraphCard implements Component {
 
 		const lines: string[] = [top];
 
+		// Spacing between top border and branch row
+		lines.push(boxLine(""));
+
 		// Live branch and status badge row
 		lines.push(boxLine(branch, statusBadge));
+
+		// Spacing between branch row and git graph tree
+		lines.push(boxLine(""));
 
 		for (const line of rawLines) {
 			const colorized = colorizeGitGraphLine(line, theme);
 			lines.push(boxLine(colorized));
 		}
 
-		// Changes row placed cleanly BELOW the branches
+		// Changes row placed cleanly BELOW the branches with spacing from tree
 		const changesRow = this.getChangesRow(status, innerWidth);
 		if (changesRow) {
+			lines.push(boxLine(""));
 			lines.push(boxLine(changesRow));
 		}
 

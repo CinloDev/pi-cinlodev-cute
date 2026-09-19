@@ -1516,8 +1516,15 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 
 	// Render expanded
 	const expandedLines = card.render(50);
-	assert.ok(expandedLines.length >= 3, "Expanded graph should have top, body rows, and bottom");
+	assert.ok(expandedLines.length >= 5, "Expanded graph should have top, spacers, branch, tree, and bottom");
 	assert.ok(expandedLines[0].includes("git graph"), "Top bar should contain title 'git graph'");
+	// Spacing above branch
+	assert.equal(expandedLines[1].replace(/\[\/?border\]|[║\s]/g, "").trim(), "", "Line below top bar should be an empty spacer");
+	// Branch row
+	const expectedBranchPrefix = readGitBranch(process.cwd()).slice(0, 8);
+	assert.ok(expandedLines[2].includes(expectedBranchPrefix), `Line 2 should display branch starting with '${expectedBranchPrefix}'`);
+	// Spacing below branch / above tree
+	assert.equal(expandedLines[3].replace(/\[\/?border\]|[║\s]/g, "").trim(), "", "Line below branch should be an empty spacer");
 	assert.ok(expandedLines[expandedLines.length - 1].includes("╝"), "Bottom border should close the card");
 
 	// Click toggles to collapsed
@@ -1568,6 +1575,8 @@ test("cute-git-graph - renders session changes below branches when present on si
 	const lines = card.render(50);
 	const joined = lines.join("\n");
 	assert.ok(joined.includes("16 files · +990 −42"), "Card should render session changes row below branches");
+	// Spacer between commit tree and changes row
+	assert.equal(lines[lines.length - 3].replace(/\[\/?border\]|[║\s]/g, "").trim(), "", "Line above changes row should be an empty spacer");
 	// The changes row should be right above the bottom border
 	assert.ok(lines[lines.length - 2].includes("16 files · +990 −42"));
 	assert.ok(lines[lines.length - 1].includes("╝"));
