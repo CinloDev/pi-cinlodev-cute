@@ -394,7 +394,7 @@ export function triggerUsageRefresh(ctx?: ExtensionContext, tui?: TUI, ttlMs = 1
 /**
  * Sidebar Quota / Usage Card for pi-cinlodev-cute.
  * - Non-blocking ambient component.
- * - Toggled via Alt+U shortcut or /usage-card command.
+ * - Toggled via Alt+Q shortcut or /usage-card command.
  * - Focuses on ONE account at a time by its Prefix (no email displayed).
  * - Renders the account's 4 quota bars with Context-style gauges (▰▰▰▱▱).
  * - Clicking the card or scrolling the mouse wheel cycles through accounts.
@@ -490,7 +490,7 @@ export class CinlodevUsageCard implements Component {
 		// If no cached data yet and fetching
 		if (!cachedAccounts) {
 			const titleGlyph = g.brand || "✿";
-			const titleStr = `${c.pink(titleGlyph)} ${c.gold("Quotas")} ${c.dim("Alt+U")}`;
+			const titleStr = `${c.pink(titleGlyph)} ${c.gold("Quotas")} ${c.dim("Alt+Q")}`;
 			const titleLen = calcVisibleWidth(titleStr);
 			const fillTop = Math.max(0, safeWidth - 5 - titleLen);
 			const top = `${frame(`${g.tl}${g.h} `)}${titleStr}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;
@@ -509,7 +509,7 @@ export class CinlodevUsageCard implements Component {
 
 		if (!cachedAccounts.length) {
 			const titleGlyph = g.brand || "✿";
-			const titleStr = `${c.pink(titleGlyph)} ${c.gold("Quotas")} ${c.dim("Alt+U")}`;
+			const titleStr = `${c.pink(titleGlyph)} ${c.gold("Quotas")} ${c.dim("Alt+Q")}`;
 			const titleLen = calcVisibleWidth(titleStr);
 			const fillTop = Math.max(0, safeWidth - 5 - titleLen);
 			const top = `${frame(`${g.tl}${g.h} `)}${titleStr}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;
@@ -526,8 +526,8 @@ export class CinlodevUsageCard implements Component {
 		const currentAccount = cachedAccounts[this.selectedIndex];
 		const titleGlyph = g.brand || "✿";
 
-		// Title shows provider and prefix: "✿ antigravity · cin82 ▾ Alt+U" (NO EMAIL!)
-		const titleStr = `${c.pink(titleGlyph)} ${c.gold(currentAccount.provider)} ${c.mint(`· ${currentAccount.prefix}`)} ${c.dim("▾")} ${c.dim("Alt+U")}`;
+		// Title shows provider and prefix: "✿ antigravity · cin82 ▾ Alt+Q" (NO EMAIL!)
+		const titleStr = `${c.pink(titleGlyph)} ${c.gold(currentAccount.provider)} ${c.mint(`· ${currentAccount.prefix}`)} ${c.dim("▾")} ${c.dim("Alt+Q")}`;
 		const titleLen = calcVisibleWidth(titleStr);
 		const fillTop = Math.max(0, safeWidth - 5 - titleLen);
 		const top = `${frame(`${g.tl}${g.h} `)}${titleStr}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;

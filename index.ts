@@ -138,8 +138,8 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	// 6. Shortcut Alt+U to toggle Quotas & Usage card in the CUTE sidebar rail
-	pi.registerShortcut("alt+u", {
+	// 6. Shortcut Alt+Q to toggle Quotas & Usage card in the CUTE sidebar rail
+	pi.registerShortcut("alt+q", {
 		description: "Toggle Quotas & Usage card in the CUTE sidebar rail",
 		handler: async (ctx) => {
 			const visible = toggleUsageCard();
