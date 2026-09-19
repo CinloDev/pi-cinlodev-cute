@@ -72,6 +72,112 @@ export function colorizeGitGraphLine(line: string, theme?: Theme): string {
 	return `${coloredGraph} ${coloredHash}${coloredRefs}${coloredSubject}`;
 }
 
+export interface GitStatusCounts {
+	staged: number;
+	modified: number;
+	untracked: number;
+	conflicts: number;
+	isClean: boolean;
+}
+
+export function parseGitStatusPorcelain(output: string): GitStatusCounts {
+	let staged = 0;
+	let modified = 0;
+	let untracked = 0;
+	let conflicts = 0;
+
+	const lines = output
+		.replace(/\r\n/g, "\n")
+		.split("\n")
+		.filter((l) => l.length >= 2);
+
+	for (const line of lines) {
+		const x = line[0];
+		const y = line[1];
+
+		if (x === "?" && y === "?") {
+			untracked++;
+			continue;
+		}
+		if (x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D")) {
+			conflicts++;
+			continue;
+		}
+		if (x !== " " && x !== "?") {
+			staged++;
+		}
+		if (y !== " " && y !== "?") {
+			modified++;
+		}
+	}
+
+	const isClean = staged === 0 && modified === 0 && untracked === 0 && conflicts === 0;
+	return { staged, modified, untracked, conflicts, isClean };
+}
+
+export function formatGitStatusBadges(counts: GitStatusCounts, theme?: Theme): string {
+	if (!theme) {
+		return counts.isClean ? "clean" : "modified";
+	}
+
+	if (counts.isClean) {
+		return safeFg(theme, "mint", "✔ clean", "green");
+	}
+
+	const items: string[] = [];
+	if (counts.conflicts > 0) {
+		items.push(safeFg(theme, "error", `✖ ${counts.conflicts} conflict`, "red"));
+	}
+	if (counts.modified > 0) {
+		items.push(safeFg(theme, "warning", `● ${counts.modified} mod`, "yellow"));
+	}
+	if (counts.staged > 0) {
+		items.push(safeFg(theme, "mint", `+${counts.staged} staged`, "green"));
+	}
+	if (counts.untracked > 0) {
+		items.push(safeFg(theme, "secondary", `?${counts.untracked} untracked`, "magenta"));
+	}
+
+	const dot = safeFg(theme, "syntaxPunctuation", " · ", "muted");
+	return items.join(dot);
+}
+
+export interface GitStatusCache {
+	counts: GitStatusCounts;
+	readAt: number;
+	cwd: string;
+}
+
+let cachedStatus: GitStatusCache | undefined;
+
+export function fetchGitStatus(cwd: string, ttlMs = 4000): GitStatusCounts {
+	const now = Date.now();
+	if (cachedStatus && cachedStatus.cwd === cwd && now - cachedStatus.readAt < ttlMs) {
+		return cachedStatus.counts;
+	}
+
+	try {
+		const output = cp.execFileSync("git", ["status", "--porcelain=v1"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 1500,
+		});
+
+		const counts = parseGitStatusPorcelain(output);
+		cachedStatus = { counts, readAt: now, cwd };
+		return counts;
+	} catch {
+		const fallback: GitStatusCounts = { staged: 0, modified: 0, untracked: 0, conflicts: 0, isClean: true };
+		cachedStatus = { counts: fallback, readAt: now, cwd };
+		return fallback;
+	}
+}
+
+export function resetGitStatusCache(): void {
+	cachedStatus = undefined;
+}
+
 export interface GitGraphCache {
 	rawLines: string[];
 	readAt: number;
@@ -158,6 +264,7 @@ export class CinlodevGitGraphCard implements Component {
 
 	invalidate(): void {
 		resetGitGraphCache();
+		resetGitStatusCache();
 	}
 
 	render(width: number): string[] {
@@ -188,8 +295,10 @@ export class CinlodevGitGraphCard implements Component {
 
 		const branch = readGitBranch(cwd);
 		const branchGlyph = g.branch || "";
+		const status = fetchGitStatus(cwd, cfg.ttlMs);
+		const statusBadge = formatGitStatusBadges(status, theme);
 
-		// 1. Collapsed mode: single line summary inside card
+		// 1. Collapsed mode: single line summary with branch and status badge
 		if (!this.expanded) {
 			const titleText = `${branchGlyph} git`;
 			const styledTitle = `${theme ? safeFg(theme, "accent", branchGlyph, "pink") : branchGlyph} ${theme ? safeFg(theme, "heading", "git") : "git"}`;
@@ -205,10 +314,10 @@ export class CinlodevGitGraphCard implements Component {
 			const commitText = hash ? (subject ? `${hash} ${subject}` : hash) : "latest";
 
 			const summaryLeft = `${branch} · ${commitText}`;
-			return [top, boxLine(summaryLeft), bottom];
+			return [top, boxLine(summaryLeft, statusBadge), bottom];
 		}
 
-		// 2. Expanded mode: full tree with Dracula highlighting
+		// 2. Expanded mode: full tree with top status badge row and Dracula highlighting
 		const titleText = `${branchGlyph} git graph`;
 		const styledTitle = `${theme ? safeFg(theme, "accent", branchGlyph, "pink") : branchGlyph} ${theme ? safeFg(theme, "heading", "git graph") : "git graph"}`;
 		const fillTop = Math.max(0, safeWidth - 4 - calcVisibleWidth(titleText) - 1);
@@ -216,6 +325,9 @@ export class CinlodevGitGraphCard implements Component {
 		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
 		const lines: string[] = [top];
+
+		// Live branch and status badge row
+		lines.push(boxLine(branch, statusBadge));
 
 		for (const line of rawLines) {
 			const colorized = colorizeGitGraphLine(line, theme);
