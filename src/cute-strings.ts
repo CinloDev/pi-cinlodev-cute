@@ -236,11 +236,11 @@ const DEFAULTS: CuteStrings = {
 		toolsFmt: "tools {tools}",
 	},
 	sidebarBanner: {
-		full: "✿ Cinlodev CUTE · Gentle-Pi ✿",
+		full: "✿ Cinlodev CUTE · Gentle-Shell ✿",
 		short: "✿ Cinlodev CUTE ✿",
 		glyph: "✿",
 		brand: "Cinlodev CUTE",
-		partner: "Gentle-Pi",
+		partner: "Gentle-Shell",
 	},
 	todos: {
 		glyph: "✿",
