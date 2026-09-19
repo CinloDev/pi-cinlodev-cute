@@ -115,6 +115,13 @@ export interface CuteGitGraphLayout {
 	minWidth: number;
 }
 
+export interface CuteToolsLayout {
+	/** Whether the Tools Telemetry widget in the sidebar is enabled. */
+	enabled: boolean;
+	/** Minimum width in cells for the tools telemetry card. */
+	minWidth: number;
+}
+
 export interface CuteTerminalLayout {
 	/** Columns always kept clear on the left edge (was 0: full-bleed). */
 	insetLeft: number;
@@ -135,6 +142,7 @@ export interface CuteLayout {
 	editor: CuteEditorLayout;
 	scroll: CuteScrollLayout;
 	gitGraph: CuteGitGraphLayout;
+	tools: CuteToolsLayout;
 	terminal: CuteTerminalLayout;
 }
 
@@ -198,6 +206,10 @@ const DEFAULTS: CuteLayout = {
 		ttlMs: 4000,
 		minWidth: 30,
 	},
+	tools: {
+		enabled: true,
+		minWidth: 30,
+	},
 	terminal: {
 		insetLeft: 0,
 		insetRight: 0,
@@ -239,6 +251,14 @@ function mergeGitGraphSection(currentSection: CuteGitGraphLayout, raw: unknown):
 	return base;
 }
 
+function mergeToolsSection(currentSection: CuteToolsLayout, raw: unknown): CuteToolsLayout {
+	const base = { ...currentSection };
+	if (!isRecord(raw)) return base;
+	base.enabled = pickBoolean(raw.enabled, base.enabled);
+	base.minWidth = pickNumber(raw.minWidth, base.minWidth);
+	return base;
+}
+
 function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayout {
 	const base: CuteLayout = {
 		sidebar: { ...baseSource.sidebar },
@@ -249,6 +269,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 		editor: { ...baseSource.editor },
 		scroll: { ...baseSource.scroll },
 		gitGraph: { ...baseSource.gitGraph },
+		tools: { ...baseSource.tools },
 		terminal: { ...baseSource.terminal },
 	};
 	if (!isRecord(raw)) return base;
@@ -260,6 +281,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 	base.editor = mergeSection(base.editor, raw.editor);
 	base.scroll = mergeSection(base.scroll, raw.scroll);
 	base.gitGraph = mergeGitGraphSection(base.gitGraph, raw.gitGraph);
+	base.tools = mergeToolsSection(base.tools, raw.tools);
 	base.terminal = mergeSection(base.terminal, raw.terminal);
 	return base;
 }

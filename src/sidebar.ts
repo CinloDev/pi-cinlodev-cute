@@ -231,13 +231,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const sectionData = ["footer", "context", "gitGraph", "changes", "agents", "todo"]
+			const sectionData = ["footer", "context", "gitGraph", "tools", "changes", "agents", "todo"]
 				.map((key) => {
 					const component = state.parts.get(key);
 					const rawLines = [...(component?.render(contentWidth - layout.railPadding * 2) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
 					const lines =
-						key !== "footer" && key !== "context" && key !== "gitGraph"
+						key !== "footer" && key !== "context" && key !== "gitGraph" && key !== "tools"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
 							: rawLines;
 					return { key, component, lines };
