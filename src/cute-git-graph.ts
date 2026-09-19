@@ -77,10 +77,32 @@ export interface GitStatusCounts {
 	modified: number;
 	untracked: number;
 	conflicts: number;
+	linesAdded: number;
+	linesDeleted: number;
 	isClean: boolean;
 }
 
-export function parseGitStatusPorcelain(output: string): GitStatusCounts {
+export function parseGitNumstat(output: string): { linesAdded: number; linesDeleted: number } {
+	let linesAdded = 0;
+	let linesDeleted = 0;
+	const lines = output
+		.replace(/\r\n/g, "\n")
+		.split("\n")
+		.filter((l) => l.trim().length > 0);
+
+	for (const line of lines) {
+		const parts = line.split("\t");
+		if (parts.length >= 2) {
+			const a = parseInt(parts[0], 10);
+			const d = parseInt(parts[1], 10);
+			if (!isNaN(a)) linesAdded += a;
+			if (!isNaN(d)) linesDeleted += d;
+		}
+	}
+	return { linesAdded, linesDeleted };
+}
+
+export function parseGitStatusPorcelain(output: string): Omit<GitStatusCounts, "linesAdded" | "linesDeleted"> {
 	let staged = 0;
 	let modified = 0;
 	let untracked = 0;
@@ -138,6 +160,17 @@ export function formatGitStatusBadges(counts: GitStatusCounts, theme?: Theme): s
 		items.push(safeFg(theme, "secondary", `?${counts.untracked} untracked`, "magenta"));
 	}
 
+	if (counts.linesAdded > 0 || counts.linesDeleted > 0) {
+		const diffParts: string[] = [];
+		if (counts.linesAdded > 0) {
+			diffParts.push(safeFg(theme, "mint", `+${counts.linesAdded}`, "green"));
+		}
+		if (counts.linesDeleted > 0) {
+			diffParts.push(safeFg(theme, "red", `−${counts.linesDeleted}`, "red"));
+		}
+		items.push(diffParts.join(" "));
+	}
+
 	const dot = safeFg(theme, "syntaxPunctuation", " · ", "muted");
 	return items.join(dot);
 }
@@ -164,11 +197,37 @@ export function fetchGitStatus(cwd: string, ttlMs = 4000): GitStatusCounts {
 			timeout: 1500,
 		});
 
-		const counts = parseGitStatusPorcelain(output);
+		let linesAdded = 0;
+		let linesDeleted = 0;
+		try {
+			const numstatOut = cp.execFileSync("git", ["diff", "HEAD", "--numstat"], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 1500,
+			});
+			const numstat = parseGitNumstat(numstatOut);
+			linesAdded = numstat.linesAdded;
+			linesDeleted = numstat.linesDeleted;
+		} catch {}
+
+		const counts: GitStatusCounts = {
+			...parseGitStatusPorcelain(output),
+			linesAdded,
+			linesDeleted,
+		};
 		cachedStatus = { counts, readAt: now, cwd };
 		return counts;
 	} catch {
-		const fallback: GitStatusCounts = { staged: 0, modified: 0, untracked: 0, conflicts: 0, isClean: true };
+		const fallback: GitStatusCounts = {
+			staged: 0,
+			modified: 0,
+			untracked: 0,
+			conflicts: 0,
+			linesAdded: 0,
+			linesDeleted: 0,
+			isClean: true,
+		};
 		cachedStatus = { counts: fallback, readAt: now, cwd };
 		return fallback;
 	}
