@@ -1542,6 +1542,37 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 	card.invalidate();
 });
 
+test("cute-git-graph - renders session changes below branches when present on sidebarState", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const SIDEBAR_STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
+	const mockTui = {
+		requestRender: () => {},
+		terminal: {
+			[SIDEBAR_STATE]: {
+				parts: new Map([
+					["changes", {
+						render: () => ["✎ 16 files · +990 −42 · partial counts"],
+					}],
+				]),
+			},
+		},
+	} as any;
+
+	const mockCtx = { cwd: process.cwd() } as any;
+	const card = new CinlodevGitGraphCard(mockCtx, mockTui, mockTheme);
+	card.setExpanded(true);
+
+	const lines = card.render(50);
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("16 files · +990 −42"), "Card should render session changes row below branches");
+	// The changes row should be right above the bottom border
+	assert.ok(lines[lines.length - 2].includes("16 files · +990 −42"));
+	assert.ok(lines[lines.length - 1].includes("╝"));
+});
+
 test("cute-git-graph - parseGitStatusPorcelain and formatGitStatusBadges", () => {
 	const mockTheme = {
 		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
@@ -1584,8 +1615,6 @@ UU conflicted-file.ts
 	assert.ok(dirtyBadge.includes("[mint]+2 staged[/mint]"));
 	assert.ok(dirtyBadge.includes("[secondary]?1 untracked[/secondary]"));
 	assert.ok(dirtyBadge.includes("[error]✖ 1 conflict[/error]"));
-	assert.ok(dirtyBadge.includes("[mint]+15[/mint]"));
-	assert.ok(dirtyBadge.includes("[red]−3[/red]"));
 
 	// 3. Test parseGitNumstat with normal lines and binaries
 	const numstatOutput = "12\t4\tsrc/a.ts\n50\t0\tsrc/b.ts\n-\t-\timage.png\n";
