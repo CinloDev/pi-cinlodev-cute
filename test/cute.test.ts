@@ -14,7 +14,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 
 function resetAll() {
@@ -1528,7 +1528,7 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 
 	// Render collapsed
 	// Wide width: mock syntax tags ([warning]...) count as visible chars in mockTheme
-	const collapsedLines = card.render(150);
+	const collapsedLines = card.render(220);
 	assert.equal(collapsedLines.length, 3, "Collapsed graph should have top, 1-line summary, and bottom");
 	assert.ok(collapsedLines[0].includes("git"), "Top bar should contain title 'git'");
 	assert.ok(collapsedLines[1].includes(readGitBranch(process.cwd())), "Collapsed card should display current branch");
@@ -1566,18 +1566,32 @@ A  src/new-staged.ts
 UU conflicted-file.ts
 `.trim();
 
-	const dirtyCounts = parseGitStatusPorcelain(porcelainSample);
+	const dirtyCounts = {
+		...parseGitStatusPorcelain(porcelainSample),
+		linesAdded: 15,
+		linesDeleted: 3,
+	};
 	assert.equal(dirtyCounts.isClean, false);
 	assert.equal(dirtyCounts.staged, 2); // 'M ' and 'A '
 	assert.equal(dirtyCounts.modified, 1); // ' M'
 	assert.equal(dirtyCounts.untracked, 1); // '??'
 	assert.equal(dirtyCounts.conflicts, 1); // 'UU'
+	assert.equal(dirtyCounts.linesAdded, 15);
+	assert.equal(dirtyCounts.linesDeleted, 3);
 
 	const dirtyBadge = formatGitStatusBadges(dirtyCounts, mockTheme);
 	assert.ok(dirtyBadge.includes("[warning]● 1 mod[/warning]"));
 	assert.ok(dirtyBadge.includes("[mint]+2 staged[/mint]"));
 	assert.ok(dirtyBadge.includes("[secondary]?1 untracked[/secondary]"));
 	assert.ok(dirtyBadge.includes("[error]✖ 1 conflict[/error]"));
+	assert.ok(dirtyBadge.includes("[mint]+15[/mint]"));
+	assert.ok(dirtyBadge.includes("[red]−3[/red]"));
+
+	// 3. Test parseGitNumstat with normal lines and binaries
+	const numstatOutput = "12\t4\tsrc/a.ts\n50\t0\tsrc/b.ts\n-\t-\timage.png\n";
+	const parsedStats = parseGitNumstat(numstatOutput);
+	assert.equal(parsedStats.linesAdded, 62);
+	assert.equal(parsedStats.linesDeleted, 4);
 });
 
 test("cute-tools - recordToolCall and collectToolCounts categorizes session tools", () => {
