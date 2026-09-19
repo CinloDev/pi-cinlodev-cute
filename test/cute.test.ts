@@ -14,7 +14,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -24,6 +24,7 @@ function resetAll() {
 	resetCuteColorsCache();
 	resetActiveProfileCache();
 	resetGitGraphCache();
+	resetGitStatusCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -1524,7 +1525,8 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 	assert.equal(renderRequested, 1);
 
 	// Render collapsed
-	const collapsedLines = card.render(50);
+	// Wide width: mock syntax tags ([warning]...) count as visible chars in mockTheme
+	const collapsedLines = card.render(150);
 	assert.equal(collapsedLines.length, 3, "Collapsed graph should have top, 1-line summary, and bottom");
 	assert.ok(collapsedLines[0].includes("git"), "Top bar should contain title 'git'");
 	assert.ok(collapsedLines[1].includes(readGitBranch(process.cwd())), "Collapsed card should display current branch");
@@ -1536,4 +1538,42 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 
 	// Invalidate clears cache
 	card.invalidate();
+});
+
+test("cute-git-graph - parseGitStatusPorcelain and formatGitStatusBadges", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	// 1. Clean status
+	const cleanCounts = parseGitStatusPorcelain("");
+	assert.equal(cleanCounts.isClean, true);
+	assert.equal(cleanCounts.staged, 0);
+	assert.equal(cleanCounts.modified, 0);
+	assert.equal(cleanCounts.untracked, 0);
+
+	const cleanBadge = formatGitStatusBadges(cleanCounts, mockTheme);
+	assert.ok(cleanBadge.includes("[mint]✔ clean[/mint]"));
+
+	// 2. Dirty porcelain sample
+	const porcelainSample = `
+M  src/staged-mod.ts
+ M src/unstaged-mod.ts
+A  src/new-staged.ts
+?? untracked-file.txt
+UU conflicted-file.ts
+`.trim();
+
+	const dirtyCounts = parseGitStatusPorcelain(porcelainSample);
+	assert.equal(dirtyCounts.isClean, false);
+	assert.equal(dirtyCounts.staged, 2); // 'M ' and 'A '
+	assert.equal(dirtyCounts.modified, 1); // ' M'
+	assert.equal(dirtyCounts.untracked, 1); // '??'
+	assert.equal(dirtyCounts.conflicts, 1); // 'UU'
+
+	const dirtyBadge = formatGitStatusBadges(dirtyCounts, mockTheme);
+	assert.ok(dirtyBadge.includes("[warning]● 1 mod[/warning]"));
+	assert.ok(dirtyBadge.includes("[mint]+2 staged[/mint]"));
+	assert.ok(dirtyBadge.includes("[secondary]?1 untracked[/secondary]"));
+	assert.ok(dirtyBadge.includes("[error]✖ 1 conflict[/error]"));
 });
