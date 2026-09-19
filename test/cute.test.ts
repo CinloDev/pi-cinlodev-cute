@@ -1918,7 +1918,7 @@ test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge r
 	const lines = card.render(220);
 	assert.ok(lines.length >= 3, "Rendered card must have top, body rows, and bottom");
 	assert.ok(lines[0].includes("Quotas"), "Top header must contain 'Quotas'");
-	assert.ok(lines[0].includes("Alt+U"), "Top header must indicate shortcut 'Alt+U'");
+	assert.ok(lines[0].includes("Alt+Q"), "Top header must indicate shortcut 'Alt+Q'");
 	assert.ok(lines[lines.length - 1].includes("╝"), "Bottom border must close the card");
 
 	// 4. Toggle back to hidden
