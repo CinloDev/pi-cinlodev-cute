@@ -16,6 +16,7 @@ import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
+import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting } from "../src/cute-usage.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -26,6 +27,7 @@ function resetAll() {
 	resetActiveProfileCache();
 	resetGitGraphCache();
 	resetGitStatusCache();
+	resetUsageCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -1514,8 +1516,8 @@ test("cute-git-graph - CinlodevGitGraphCard interactive expansion toggle and ren
 	// Default expanded is true
 	assert.equal(card.isExpanded(), true);
 
-	// Render expanded
-	const expandedLines = card.render(50);
+	// Render expanded (wide width for mock theme tags)
+	const expandedLines = card.render(220);
 	assert.ok(expandedLines.length >= 5, "Expanded graph should have top, spacers, branch, tree, and bottom");
 	assert.ok(expandedLines[0].includes("git graph"), "Top bar should contain title 'git graph'");
 	// Spacing above branch
@@ -1764,4 +1766,118 @@ test("cute-tools - CinlodevToolsCard hides when empty and renders when tools pre
 	const joined = rendered.join("\n");
 	assert.ok(joined.includes("2 read"));
 	assert.ok(joined.includes("1 write"));
+});
+
+test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
+	// 1. Relative reset formatting
+	const now = 1726700000000;
+	assert.equal(formatRelativeReset(null, now), "");
+	assert.equal(formatRelativeReset("invalid-date", now), "");
+	// 25 minutes ahead
+	const in25m = new Date(now + 25 * 60 * 1000).toISOString();
+	assert.equal(formatRelativeReset(in25m, now), "en 25m");
+	// 3 hours ahead
+	const in3h = new Date(now + 3 * 3600 * 1000).toISOString();
+	assert.equal(formatRelativeReset(in3h, now), "en 3h");
+	// 2 days and 4 hours ahead
+	const in2d4h = new Date(now + (2 * 24 + 4) * 3600 * 1000).toISOString();
+	assert.equal(formatRelativeReset(in2d4h, now), "en 2d 4h");
+	// In the past
+	const past = new Date(now - 10000).toISOString();
+	assert.equal(formatRelativeReset(past, now), "reseteando…");
+
+	// 2. cleanPoolLabel
+	assert.equal(cleanPoolLabel("Gemini Models · Weekly Limit Remaining"), "Gemini Weekly");
+	assert.equal(cleanPoolLabel("Claude and GPT models · Five Hour Limit Remaining"), "Claude/GPT 5h");
+
+	// 3. Parse raw usage to accounts with prefixes
+	const prefixMap = new Map([
+		["cinlodigital@gmail.com", "cinlo_dig"],
+	]);
+	const rawGroups = [
+		{
+			provider: "antigravity",
+			accounts: [
+				{
+					account: "cinlodigital@gmail.com",
+					pools: [
+						{ label: "Gemini Models (weekly)", availablePercentage: 84, resetAt: in3h },
+						{ label: "Gemini Models (5h)", availablePercentage: 100, resetAt: in3h },
+						{ label: "Claude and GPT models (weekly)", availablePercentage: 100, resetAt: in3h },
+						{ label: "Claude and GPT models (5h)", availablePercentage: 100, resetAt: in3h },
+					],
+				},
+			],
+		},
+	];
+
+	const accounts = parseRawUsageToAccounts(rawGroups, prefixMap);
+	assert.equal(accounts.length, 1);
+	assert.equal(accounts[0].provider, "antigravity");
+	assert.equal(accounts[0].prefix, "cinlo_dig", "Must use prefix instead of email");
+	assert.equal(accounts[0].pools.length, 4, "Must hold all 4 quota pools");
+	assert.equal(accounts[0].pools[0].availablePercent, 84);
+
+	// 4. prioritizeActiveAccount puts active prefix at index 0
+	const mockAccounts = [
+		{ provider: "codex", prefix: "codex", pools: [] },
+		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
+		{ provider: "antigravity", prefix: "cin82", pools: [] },
+	];
+	const prioritized = prioritizeActiveAccount(mockAccounts, "cin82");
+	assert.equal(prioritized[0].prefix, "cin82", "Active orchestrator prefix must be at index 0");
+});
+
+test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge rendering", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+
+	const mockCtx = {} as any;
+	const card = new CinlodevUsageCard(mockCtx, mockTui, mockTheme);
+
+	// 1. Initially hidden: renders []
+	assert.equal(card.isVisible(), false);
+	assert.deepEqual(card.render(50), [], "Hidden card must return []");
+
+	// 2. Toggle to visible
+	const state1 = card.toggle();
+	assert.equal(state1, true);
+	assert.equal(card.isVisible(), true);
+	assert.equal(renderRequested, 1);
+
+	// 3. Render when visible (wide width for mock tags)
+	const lines = card.render(220);
+	assert.ok(lines.length >= 3, "Rendered card must have top, body rows, and bottom");
+	assert.ok(lines[0].includes("Quotas"), "Top header must contain 'Quotas'");
+	assert.ok(lines[0].includes("Alt+U"), "Top header must indicate shortcut 'Alt+U'");
+	assert.ok(lines[lines.length - 1].includes("╝"), "Bottom border must close the card");
+
+	// 4. Toggle back to hidden
+	const state2 = card.toggle();
+	assert.equal(state2, false);
+	assert.equal(card.isVisible(), false);
+	assert.equal(renderRequested, 2);
+	assert.deepEqual(card.render(50), [], "Hidden card must return [] after toggle off");
+
+	// 5. Mouse wheel and bidirectional click navigation (with cached accounts)
+	setCachedAccountsForTesting([
+		{ provider: "antigravity", prefix: "cin82", pools: [] },
+		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
+	]);
+	card.handleClick(0, "left"); // forward
+	assert.equal(renderRequested, 3);
+	card.handleClick(0, "right"); // backward
+	assert.equal(renderRequested, 4);
+	card.handleWheel(-1); // wheel up
+	assert.equal(renderRequested, 5);
+	card.handleWheel(1); // wheel down
+	assert.equal(renderRequested, 6);
 });
