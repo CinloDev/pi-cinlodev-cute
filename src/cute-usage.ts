@@ -232,9 +232,20 @@ export async function fetchPrefixMap(baseUrl: string, key: string, signal?: Abor
 						const c = await dl.json() as any;
 						const pfx = (c?.prefix || "").trim();
 						const email = (c?.email || f?.email || f?.name || "").trim();
-						if (pfx && email) {
-							prefixMap.set(email, pfx);
-							prefixMap.set(f.name, pfx);
+						const provider = String(f?.provider || f?.type || "").trim().toLowerCase();
+						if (pfx) {
+							if (provider && email) {
+								prefixMap.set(`${provider}:${email}`, pfx);
+							}
+							if (provider && f?.name) {
+								prefixMap.set(`${provider}:${f.name}`, pfx);
+							}
+							if (email) {
+								prefixMap.set(email, pfx);
+							}
+							if (f?.name) {
+								prefixMap.set(f.name, pfx);
+							}
 						}
 					}
 				} catch {}
@@ -258,7 +269,13 @@ export function parseRawUsageToAccounts(groups: any[], prefixMap?: Map<string, s
 
 		for (const acc of rawAccounts) {
 			const email = String(acc?.account || acc?.id || "");
-			const rawPrefix = prefixMap?.get(email) || prefixMap?.get(acc?.id) || "";
+			const accId = String(acc?.id || "");
+			const rawPrefix =
+				prefixMap?.get(`${provider}:${email}`) ||
+				prefixMap?.get(`${provider}:${accId}`) ||
+				prefixMap?.get(email) ||
+				prefixMap?.get(accId) ||
+				"";
 			// If no prefix configured, fallback to username without @domain
 			const prefix = rawPrefix || (email.includes("@") ? email.split("@")[0] : email);
 
