@@ -1879,7 +1879,27 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	assert.equal(accounts[0].pools.length, 4, "Must hold all 4 quota pools");
 	assert.equal(accounts[0].pools[0].availablePercent, 84);
 
-	// 4. prioritizeActiveAccount puts active prefix at index 0
+	// 4. Provider-isolated prefix mapping without collisions
+	const collidingPrefixMap = new Map([
+		["antigravity:cinlodev@gmail.com", "cinlodev"],
+		["codex:cinlodev@gmail.com", "codex_cinlodev"],
+		["cinlodev@gmail.com", "fallback_should_not_be_used"],
+	]);
+	const multiProviderGroups = [
+		{
+			provider: "antigravity",
+			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Gemini", availablePercentage: 100 }] }],
+		},
+		{
+			provider: "codex",
+			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Codex", availablePercentage: 50 }] }],
+		},
+	];
+	const multiAccounts = parseRawUsageToAccounts(multiProviderGroups, collidingPrefixMap);
+	assert.equal(multiAccounts[0].prefix, "cinlodev", "Antigravity account must get provider-scoped prefix");
+	assert.equal(multiAccounts[1].prefix, "codex_cinlodev", "Codex account must get provider-scoped prefix");
+
+	// 5. prioritizeActiveAccount puts active prefix at index 0
 	const mockAccounts = [
 		{ provider: "codex", prefix: "codex", pools: [] },
 		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
