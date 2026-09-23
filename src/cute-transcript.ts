@@ -19,6 +19,10 @@ export function calcVisibleWidth(text: string): number {
 	let width = 0;
 	for (const char of plain) {
 		const cp = char.codePointAt(0) ?? 0;
+		if (cp >= 0xfe00 && cp <= 0xfe0f) {
+			// Unicode Variation Selectors (e.g. \uFE0F in 🖥️) are 0-width in terminals
+			continue;
+		}
 		if (
 			(cp >= 0x1100 && cp <= 0x11ff) || // Hangul Jamo
 			(cp >= 0x2e80 && cp <= 0xa4cf) || // CJK Radicals, Kangxi, CJK Unified Ideographs

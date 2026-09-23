@@ -346,6 +346,8 @@ export class CinlodevEngramCard implements Component {
 	private clickTargets: ActionTarget[] = [];
 	private statusNotice: string | null = null;
 	private statusNoticeTimer: any = null;
+	private confirmingAction: "enroll" | "unenroll" | null = null;
+	private confirmTimer: any = null;
 
 	constructor(ctx: ExtensionContext, tui: TUI, theme?: Theme) {
 		this.ctx = ctx;
@@ -360,8 +362,27 @@ export class CinlodevEngramCard implements Component {
 
 	toggleExpanded(): boolean {
 		this.expanded = !this.expanded;
+		this.resetConfirmation();
 		this.tui.requestRender();
 		return this.expanded;
+	}
+
+	private setConfirmTimer(durationMs = 6000): void {
+		if (this.confirmTimer) clearTimeout(this.confirmTimer);
+		this.confirmTimer = setTimeout(() => {
+			if (this.confirmingAction) {
+				this.confirmingAction = null;
+				this.tui.requestRender();
+			}
+		}, durationMs);
+	}
+
+	private resetConfirmation(): void {
+		if (this.confirmTimer) {
+			clearTimeout(this.confirmTimer);
+			this.confirmTimer = null;
+		}
+		this.confirmingAction = null;
 	}
 
 	handleClick(lineIndex?: number): boolean {
@@ -369,6 +390,7 @@ export class CinlodevEngramCard implements Component {
 
 		// 1. Header click (line 0) toggles expand/collapse
 		if (lineIndex === 0) {
+			this.resetConfirmation();
 			this.toggleExpanded();
 			return true;
 		}
@@ -377,6 +399,13 @@ export class CinlodevEngramCard implements Component {
 		const target = this.clickTargets.find((t) => t.lineIndex === lineIndex);
 		if (target) {
 			Promise.resolve(target.action()).catch(() => {});
+			return true;
+		}
+
+		// Click outside target cancels confirmation if active
+		if (this.confirmingAction) {
+			this.resetConfirmation();
+			this.tui.requestRender();
 			return true;
 		}
 
@@ -466,7 +495,7 @@ export class CinlodevEngramCard implements Component {
 		lines.push(boxLine(`🖥️ ${c.text("Local (7437)")}`, `${localStatusDot} · ${c.cyan(obsText)}`));
 
 		// Section 2: Divider
-		lines.push(frame(`${g.v}${g.h.repeat(safeWidth - 2)}${g.v}`));
+		lines.push(frame(`${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
 
 		// Section 3: Cloud & Dashboard
 		const cloudServerUrl = snapshot?.cloudConfig?.serverUrl || DEFAULT_ENGRAM_DASHBOARD;
@@ -475,13 +504,14 @@ export class CinlodevEngramCard implements Component {
 			serverHost = new URL(cloudServerUrl).hostname;
 		} catch {}
 
-		const dashboardBtn = c.cyan("[dashboard ↗]");
+		const dashboardBtn = c.cyan("dashboard ↗");
 		const cloudTitleLeft = `☁️ ${c.text("Cloud:")} ${c.dim(serverHost)}`;
 
 		// Click target for dashboard button
 		this.clickTargets.push({
 			lineIndex: lines.length,
 			action: async () => {
+				this.resetConfirmation();
 				const opened = await openEngramDashboard(resolveDashboardUrl(snapshot?.cloudConfig));
 				if (opened) {
 					this.setFlashNotice("Abriendo dashboard en el navegador…");
@@ -505,11 +535,23 @@ export class CinlodevEngramCard implements Component {
 
 			lines.push(boxLine(`   ${c.dim("Sync:")}`, syncStatusText));
 
-			// Action button: Unenroll
-			const unenrollBtn = c.coral("[desincronizar ✕]");
+			// Action button: Unenroll with confirmation
+			const isConfirming = this.confirmingAction === "unenroll";
+			const unenrollBtn = isConfirming
+				? c.coral("¿Desincronizar? [click = Sí]")
+				: c.coral("desincronizar ✕");
+
 			this.clickTargets.push({
 				lineIndex: lines.length,
 				action: async () => {
+					if (!isConfirming) {
+						this.confirmingAction = "unenroll";
+						this.setConfirmTimer();
+						this.tui.requestRender();
+						return;
+					}
+
+					this.resetConfirmation();
 					this.setFlashNotice(`Desincronizando ${projectName}…`);
 					const res = await unenrollProject(projectName);
 					if (res.success) {
@@ -525,11 +567,23 @@ export class CinlodevEngramCard implements Component {
 		} else {
 			lines.push(boxLine(`   ${c.dim("Estado:")}`, c.dim("○ No sincronizado")));
 
-			// Action button: Enroll
-			const enrollBtn = c.mint("[+ enrolar repo]");
+			// Action button: Enroll with confirmation
+			const isConfirming = this.confirmingAction === "enroll";
+			const enrollBtn = isConfirming
+				? c.mint("¿Enrolar repo? [click = Sí]")
+				: c.mint("+ enrolar repo");
+
 			this.clickTargets.push({
 				lineIndex: lines.length,
 				action: async () => {
+					if (!isConfirming) {
+						this.confirmingAction = "enroll";
+						this.setConfirmTimer();
+						this.tui.requestRender();
+						return;
+					}
+
+					this.resetConfirmation();
 					this.setFlashNotice(`Enrolando ${projectName} en la nube…`);
 					const res = await enrollProject(projectName);
 					if (res.success) {

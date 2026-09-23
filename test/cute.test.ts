@@ -2033,7 +2033,7 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	assert.ok(joined.includes("Engram:"), "Card must include Engram header");
 	assert.ok(joined.includes("Local (7437)"), "Card must include Local port");
 	assert.ok(joined.includes("Cloud:"), "Card must include Cloud section");
-	assert.ok(joined.includes("[dashboard ↗]"), "Card must have dashboard button");
+	assert.ok(joined.includes("dashboard ↗"), "Card must have dashboard button without brackets");
 
 	// Header click toggles collapse
 	card.handleClick(0);
