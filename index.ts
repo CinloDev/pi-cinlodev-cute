@@ -8,6 +8,7 @@ import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
 import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import { resetCuteColorsCache } from "./src/cute-colors.ts";
+import { syncProjectCloud, detectProjectName } from "./src/cute-engram.ts";
 import { CuteContextMonitor } from "./src/cute-context-monitor.ts";
 import * as fs from "node:fs";
 
@@ -91,6 +92,23 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 
 	pi.on("agent_end", () => {
 		setCinlodevPromptWorking(false);
+	});
+
+	// Hook into memory tool execution: sync to Engram Cloud ONLY when memories are saved/mutated
+	const MEMORY_MUTATION_TOOLS = new Set([
+		"mem_save",
+		"mem_update",
+		"mem_delete",
+		"mem_session_summary",
+		"mem_session_end",
+		"mem_capture_passive",
+	]);
+	pi.on("tool_execution_end", (event, ctx) => {
+		if (event && !event.isError && MEMORY_MUTATION_TOOLS.has(event.toolName)) {
+			const project = detectProjectName(ctx?.cwd);
+			// Fire non-blocking cloud replication
+			syncProjectCloud(project).catch(() => {});
+		}
 	});
 
 	// Monitor context threshold transitions on turn completion
