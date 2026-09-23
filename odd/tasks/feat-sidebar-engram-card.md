@@ -41,3 +41,7 @@ Add a dedicated, interactive Engram card to the CUTE sidebar rail located direct
 - [x] T2: Implement `CinlodevEngramCard` with Dracula semántica, status chips, and click routing
 - [x] T3: Integrate `"engram"` into `src/sidebar.ts` below `"context"` and register in `src/footer.ts`
 - [x] T4: Add comprehensive tests in `test/cute.test.ts` and verify clean build
+
+## Evidence
+- Commit: `786b182` (feat(sidebar): add interactive Engram card with cloud sync and dashboard link)
+- Verification: 65/65 tests passing via `npm test`
