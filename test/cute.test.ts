@@ -2012,6 +2012,7 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	assert.equal(resolveDashboardUrl(null), DEFAULT_ENGRAM_DASHBOARD);
 	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }), "https://engram.cinlodev.com/dashboard/");
 	assert.equal(resolveDashboardUrl({ serverUrl: "https://myengram.dev///" }), "https://myengram.dev/dashboard/");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }, "dypos"), "https://engram.cinlodev.com/dashboard/projects/dypos");
 
 	// 4. CinlodevEngramCard component
 	let renderCount = 0;
