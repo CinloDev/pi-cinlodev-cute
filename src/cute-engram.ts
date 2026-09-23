@@ -115,12 +115,17 @@ export function loadEngramCloudConfig(): EngramCloudConfig | null {
 /**
  * Resolves the web dashboard URL for Engram Cloud.
  */
-export function resolveDashboardUrl(config?: EngramCloudConfig | null): string {
+export function resolveDashboardUrl(config?: EngramCloudConfig | null, project?: string): string {
+	let base = DEFAULT_ENGRAM_DASHBOARD;
 	if (config?.serverUrl) {
 		const clean = config.serverUrl.replace(/\/+$/, "");
-		return `${clean}/dashboard/`;
+		base = `${clean}/dashboard/`;
 	}
-	return DEFAULT_ENGRAM_DASHBOARD;
+	if (project && project.trim().length > 0) {
+		const cleanBase = base.replace(/\/+$/, "");
+		return `${cleanBase}/projects/${encodeURIComponent(project.trim())}`;
+	}
+	return base;
 }
 
 /**
@@ -188,23 +193,31 @@ export async function fetchEngramSyncStatus(project: string, port = DEFAULT_ENGR
  */
 export async function checkProjectEnrolled(project: string): Promise<boolean> {
 	// 1. Try direct SQLite check first (fastest, ~2ms)
+	let sqliteChecked = false;
 	try {
 		const dbPath = path.join(os.homedir(), ".engram", "engram.db");
 		if (fs.existsSync(dbPath)) {
 			const safeProj = project.replace(/'/g, "''");
 			const cmd = `sqlite3 "${dbPath}" "SELECT 1 FROM sync_enrolled_projects WHERE project = '${safeProj}' LIMIT 1;"`;
 			const { stdout } = await execAsync(cmd, { timeout: 1500 });
+			sqliteChecked = true;
 			if (stdout.trim() === "1") return true;
+			return false;
 		}
 	} catch {}
 
-	// 2. Fallback to CLI
-	try {
-		const { stdout } = await execAsync(`engram cloud status --project "${project}"`, { timeout: 2500 });
-		return stdout.includes(`enrolled (${project})`);
-	} catch {
-		return false;
+	// 2. Fallback to CLI only if SQLite check failed to run
+	if (!sqliteChecked) {
+		try {
+			const { stdout } = await execAsync(`engram cloud status --project "${project}"`, { timeout: 2500 });
+			const match = stdout.match(/Project enrollment:\s*(.*)/i);
+			const line = match ? match[1].trim().toLowerCase() : "";
+			return line.startsWith("enrolled") && !line.startsWith("not enrolled");
+		} catch {
+			return false;
+		}
 	}
+	return false;
 }
 
 /**
@@ -238,8 +251,8 @@ export async function unenrollProject(project: string): Promise<{ success: boole
 /**
  * Opens the Engram dashboard in the user's default browser.
  */
-export async function openEngramDashboard(url?: string): Promise<boolean> {
-	const target = url || resolveDashboardUrl(loadEngramCloudConfig());
+export async function openEngramDashboard(url?: string, project?: string): Promise<boolean> {
+	const target = url || resolveDashboardUrl(loadEngramCloudConfig(), project);
 	try {
 		const isMac = process.platform === "darwin";
 		const isWin = process.platform === "win32";
@@ -248,6 +261,20 @@ export async function openEngramDashboard(url?: string): Promise<boolean> {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Triggers cloud replication for a project in background.
+ */
+export async function syncProjectCloud(project: string): Promise<{ success: boolean; message: string }> {
+	try {
+		const { stdout, stderr } = await execAsync(`engram sync --cloud --project "${project}"`, { timeout: 15000 });
+		const output = `${stdout}\n${stderr}`.trim();
+		const success = !output.includes("failed") && !output.includes("error");
+		return { success, message: output };
+	} catch (err: any) {
+		return { success: false, message: err?.message || String(err) };
 	}
 }
 
@@ -507,14 +534,15 @@ export class CinlodevEngramCard implements Component {
 		const dashboardBtn = c.cyan("dashboard ↗");
 		const cloudTitleLeft = `☁️ ${c.text("Cloud:")} ${c.dim(serverHost)}`;
 
-		// Click target for dashboard button
+		// Click target for dashboard button (opens project directly if enrolled/available)
 		this.clickTargets.push({
 			lineIndex: lines.length,
 			action: async () => {
 				this.resetConfirmation();
-				const opened = await openEngramDashboard(resolveDashboardUrl(snapshot?.cloudConfig));
+				const targetUrl = resolveDashboardUrl(snapshot?.cloudConfig, projectName);
+				const opened = await openEngramDashboard(targetUrl);
 				if (opened) {
-					this.setFlashNotice("Abriendo dashboard en el navegador…");
+					this.setFlashNotice(`Abriendo ${projectName} en browser…`);
 				} else {
 					this.setFlashNotice("Error al abrir navegador.");
 				}
@@ -535,7 +563,26 @@ export class CinlodevEngramCard implements Component {
 
 			lines.push(boxLine(`   ${c.dim("Sync:")}`, syncStatusText));
 
-			// Action button: Unenroll with confirmation
+			// Action button 1: Manual sync now
+			const syncNowBtn = c.cyan("sincronizar ⟳");
+			this.clickTargets.push({
+				lineIndex: lines.length,
+				action: async () => {
+					this.resetConfirmation();
+					this.setFlashNotice(`Sincronizando ${projectName}…`);
+					const res = await syncProjectCloud(projectName);
+					if (res.success) {
+						this.setFlashNotice(`✓ ${projectName} sincronizado`);
+						resetEngramCache();
+						triggerEngramRefresh(cwd, this.tui, 0);
+					} else {
+						this.setFlashNotice(`⚠ Error al sincronizar: ${res.message.slice(0, 30)}`);
+					}
+				},
+			});
+			lines.push(boxLine(`   ${c.dim("Push:")}`, syncNowBtn));
+
+			// Action button 2: Unenroll with confirmation
 			const isConfirming = this.confirmingAction === "unenroll";
 			const unenrollBtn = isConfirming
 				? c.coral("¿Desincronizar? [click = Sí]")
@@ -555,7 +602,7 @@ export class CinlodevEngramCard implements Component {
 					this.setFlashNotice(`Desincronizando ${projectName}…`);
 					const res = await unenrollProject(projectName);
 					if (res.success) {
-						this.setFlashNotice(`✓ ${projectName} desincronizado de la nube`);
+						this.setFlashNotice(`✓ ${projectName} desincronizado`);
 						resetEngramCache();
 						triggerEngramRefresh(cwd, this.tui, 0);
 					} else {
