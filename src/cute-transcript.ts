@@ -17,10 +17,19 @@ export interface CuteFrameOptions {
 export function calcVisibleWidth(text: string): number {
 	const plain = stripAnsi(text);
 	let width = 0;
+	let lastCharWidth = 0;
 	for (const char of plain) {
 		const cp = char.codePointAt(0) ?? 0;
-		if (cp >= 0xfe00 && cp <= 0xfe0f) {
-			// Unicode Variation Selectors (e.g. \uFE0F in 🖥️) are 0-width in terminals
+		if (cp === 0xfe0f) {
+			// Emoji variation selector promotes a 1-column symbol (like ☁ \u2601) to 2 columns in terminal
+			if (lastCharWidth === 1) {
+				width += 1;
+				lastCharWidth = 2;
+			}
+			continue;
+		}
+		if (cp >= 0xfe00 && cp <= 0xfe0e) {
+			// Other variation selectors are 0-width
 			continue;
 		}
 		if (
@@ -35,8 +44,10 @@ export function calcVisibleWidth(text: string): number {
 			(cp >= 0x1f300 && cp <= 0x1faff) // Emojis, Symbols (🤖, 🌷, etc.)
 		) {
 			width += 2;
+			lastCharWidth = 2;
 		} else if (cp >= 0x20) {
 			width += 1;
+			lastCharWidth = 1;
 		}
 	}
 	return width;
