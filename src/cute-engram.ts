@@ -448,7 +448,7 @@ export class CinlodevEngramCard implements Component {
 			const statusDot = isOnline ? c.mint("●") : c.coral("○");
 			const enrolledBadge = snapshot?.isEnrolled ? c.mint("cloud✓") : c.dim("local");
 			const summary = `${statusDot} ${obsCount} obs · ${enrolledBadge}`;
-			return [top, boxLine(summary, c.dim("[click para expandir]")), bottom];
+			return [top, boxLine(summary), bottom];
 		}
 
 		const lines: string[] = [top];

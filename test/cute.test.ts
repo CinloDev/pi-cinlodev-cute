@@ -2040,7 +2040,7 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	assert.equal(renderCount, 1);
 	const collapsedLines = card.render(80);
 	assert.ok(collapsedLines.length < lines.length, "Collapsed card must produce fewer lines");
-	assert.ok(collapsedLines.join("\n").includes("[click para expandir]"));
+	assert.ok(!collapsedLines.join("\n").includes("[click para expandir]"), "Must not include click hint");
 
 	// Un-collapse
 	card.handleClick(0);
