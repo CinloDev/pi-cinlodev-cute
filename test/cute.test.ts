@@ -17,6 +17,7 @@ import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
+import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD } from "../src/cute-engram.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -28,6 +29,7 @@ function resetAll() {
 	resetGitGraphCache();
 	resetGitStatusCache();
 	resetUsageCache();
+	resetEngramCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -1989,3 +1991,64 @@ test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge r
 	card.handleWheel(1); // wheel down
 	assert.equal(renderRequested, 4);
 });
+
+test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, and CinlodevEngramCard", () => {
+	resetAll();
+
+	// 1. detectProjectName
+	const proj = detectProjectName(process.cwd());
+	assert.equal(proj, "pi-cinlodev-cute");
+
+	// 2. formatRelativeTime
+	const now = new Date("2026-09-23T12:00:00Z");
+	assert.equal(formatRelativeTime(null, now), "nunca");
+	assert.equal(formatRelativeTime(new Date("2026-09-23T11:59:55Z"), now), "recién");
+	assert.equal(formatRelativeTime(new Date("2026-09-23T11:59:20Z"), now), "hace 40s");
+	assert.equal(formatRelativeTime(new Date("2026-09-23T11:50:00Z"), now), "hace 10m");
+	assert.equal(formatRelativeTime(new Date("2026-09-23T09:00:00Z"), now), "hace 3h");
+	assert.equal(formatRelativeTime(new Date("2026-09-21T12:00:00Z"), now), "hace 2d");
+
+	// 3. resolveDashboardUrl
+	assert.equal(resolveDashboardUrl(null), DEFAULT_ENGRAM_DASHBOARD);
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }), "https://engram.cinlodev.com/dashboard/");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://myengram.dev///" }), "https://myengram.dev/dashboard/");
+
+	// 4. CinlodevEngramCard component
+	let renderCount = 0;
+	const mockTui: any = {
+		requestRender: () => {
+			renderCount++;
+		},
+	};
+	const mockCtx: any = { cwd: process.cwd() };
+	const mockTheme: any = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	};
+	const card = new CinlodevEngramCard(mockCtx, mockTui, mockTheme);
+
+	// Initial render
+	const lines = card.render(80);
+	assert.ok(lines.length > 0, "Card should produce lines");
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("Engram:"), "Card must include Engram header");
+	assert.ok(joined.includes("Local (7437)"), "Card must include Local port");
+	assert.ok(joined.includes("Cloud:"), "Card must include Cloud section");
+	assert.ok(joined.includes("dashboard ↗"), "Card must have dashboard button without brackets");
+
+	// Header click toggles collapse
+	card.handleClick(0);
+	assert.equal(renderCount, 1);
+	const collapsedLines = card.render(80);
+	assert.ok(collapsedLines.length < lines.length, "Collapsed card must produce fewer lines");
+	assert.ok(!collapsedLines.join("\n").includes("[click para expandir]"), "Must not include click hint");
+
+	// Un-collapse
+	card.handleClick(0);
+	assert.equal(renderCount, 2);
+	const expandedLines = card.render(80);
+	assert.equal(expandedLines.length, lines.length);
+
+	// Invalid line index returns false
+	assert.equal(card.handleClick(999), false);
+});
+

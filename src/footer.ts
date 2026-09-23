@@ -14,6 +14,7 @@ import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
+import { CinlodevEngramCard } from "./cute-engram.ts";
 import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
@@ -32,6 +33,7 @@ let latestTodoTui: TUI | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
 let latestToolsCard: CinlodevToolsCard | undefined;
 let latestUsageCard: CinlodevUsageCard | undefined;
+let latestEngramCard: CinlodevEngramCard | undefined;
 
 export function toggleUsageCard(): boolean {
 	return latestUsageCard?.toggle() ?? false;
@@ -519,6 +521,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				latestGitGraph?.invalidate();
 				latestToolsCard?.invalidate();
 				latestUsageCard?.invalidate();
+				latestEngramCard?.invalidate();
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -530,6 +533,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		tuneTuiScroll(tui);
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const contextCard = new CinlodevCuteContextCard(ctx, theme);
+		const engramCard = new CinlodevEngramCard(ctx, tui, theme);
 		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
@@ -538,6 +542,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		latestGitGraph = gitGraph;
 		latestToolsCard = toolsCard;
 		latestUsageCard = usageCard;
+		latestEngramCard = engramCard;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
@@ -548,6 +553,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const contextRail = {
 			render: (width: number) => contextCard.render(width),
 			invalidate: () => contextCard.invalidate(),
+		};
+		const engramRail = {
+			render: (width: number) => engramCard.render(width),
+			invalidate: () => engramCard.invalidate(),
+			handleRailClick: (lineIndex: number) => engramCard.handleClick(lineIndex),
 		};
 		const usageRail = {
 			render: (width: number) => usageCard.render(width),
@@ -566,6 +576,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
+		const engramPart = sidebarPart(tui, "engram", { render: () => [] }, engramRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
@@ -585,6 +596,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				uninstall();
 				part.dispose?.();
 				contextPart.dispose?.();
+				engramPart.dispose?.();
 				usagePart.dispose?.();
 				gitGraphPart.dispose?.();
 				toolsPart.dispose?.();
