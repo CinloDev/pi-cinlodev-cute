@@ -190,7 +190,7 @@ All colors, strings, layout dimensions, and filesystem paths are cleanly separat
 
 <p align="center">
   <a href="https://github.com/Gentleman-Programming/gentle-ai">
-    <img width="240" src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" />
+    <img width="220" src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" />
   </a>
 </p>
 
