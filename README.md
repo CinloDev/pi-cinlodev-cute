@@ -3,6 +3,11 @@
   <p align="center">
     <strong>An exclusive high-density visual suite, aesthetic theme pack, Dracula syntax engine, and live telemetry sidebar for Pi Coding Agent and la Gentlewoman.</strong>
   </p>
+  <p align="center">
+    <a href="https://github.com/Gentleman-Programming/gentle-ai">
+      <img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" width="180" />
+    </a>
+  </p>
 </p>
 
 <p align="center">
@@ -176,6 +181,18 @@ All colors, strings, layout dimensions, and filesystem paths are cleanly separat
 * Hooks cleanly into standard Pi lifecycle events (`session_start`, `agent_start`, `agent_end`).
 * Zero mutation of external source files or foreign state.
 * Preserves all terminal escape sequences (OSC 133 / Kitty APC) atomically without breaking scroll or click semantics.
+
+---
+
+## 🌹 Built with Gentle-AI
+
+`pi-cinlodev-cute` was crafted and engineered with the **[Gentle-AI](https://github.com/Gentleman-Programming/gentle-ai)** ecosystem—powered by Organic Driven Development (ODD), persistent Engram context, and strict verification discipline.
+
+<p align="center">
+  <a href="https://github.com/Gentleman-Programming/gentle-ai">
+    <img width="240" src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" />
+  </a>
+</p>
 
 ---
 
