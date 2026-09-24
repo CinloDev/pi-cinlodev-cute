@@ -1,96 +1,115 @@
 <p align="center">
   <h1 align="center">🌸 pi-cinlodev-cute 💜</h1>
   <p align="center">
-    <strong>An exclusive, high-density visual suite, aesthetic theme pack, and custom TUI components for Pi Coding Agent and la Gentlewoman.</strong>
+    <strong>An exclusive high-density visual suite, aesthetic theme pack, Dracula syntax engine, and live telemetry sidebar for Pi Coding Agent and la Gentlewoman.</strong>
   </p>
 </p>
 
 <p align="center">
-  <img src="./public/theme_sup.png" alt="la Gentlewoman Welcome Dashboard & Persistent HUD" width="760" />
+  <img src="./public/cinlodev-cute.png" alt="pi-cinlodev-cute Live Session with Full Sidebar and Dracula Transcript" width="920" />
+</p>
+
+<p align="center">
+  <a href="#-overview">Overview</a> •
+  <a href="#-design-highlights">Highlights</a> •
+  <a href="#-interactive-sidebar--telemetry-cards">Sidebar Cards</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-shortcuts--cheat-sheet">Hotkeys</a> •
+  <a href="#-user-overrides--customization">Customization</a>
 </p>
 
 ---
 
 ## ✨ Overview
 
-**`pi-cinlodev-cute`** elevates the Pi Coding Agent terminal experience into a cohesive, elegant, and responsive developer workspace. Designed with the distinctive **Cinlodev CUTE** aesthetic—deep obsidian backdrops, double violet structural rails, pastel pink accents, and warm golden highlights—it combines visual delight with senior-grade density.
+**`pi-cinlodev-cute`** elevates the [Pi Coding Agent](https://github.com/earendil-works/pi) terminal experience into a cohesive, elegant, and responsive developer workspace. Designed with the distinctive **Cinlodev CUTE** aesthetic—deep obsidian backdrops, double violet structural rails, pastel pink accents, warm golden highlights, and Dracula syntax coloring—it combines visual delight with senior-grade density.
+
+Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI** ecosystem, `pi-cinlodev-cute` provides live telemetry, effort-aware prompt framing, persistent ambient monitoring, and unified tool transcript cards.
 
 ---
 
 ## 🎨 Design Highlights
 
-<p align="center">
-  <img src="./public/theme_inf.png" alt="Double-Line Prompt Editor & CUTE Statusline Footer" width="760" />
-</p>
-
-### 1. 🌸 Cinlodev CUTE Theme (`CinlodevCute.json`)
+### 1. 🌸 Cinlodev CUTE Theme (`themes/CinlodevCute.json`)
 * **Deep Obsidian Canvas:** `#1A1218` main background and subtle `#241822` element surfaces.
 * **Double-Rail Violet Borders:** Signature `#8e44ad` framing with `#5c2c74` subtle separators.
-* **Pastel Rose Accents:** `#F095C8` (active accent), `#FFB1DD` (bright pink highlights & custom block cursor), `#D7A0B8` (secondary).
+* **Pastel Rose Accents:** `#F095C8` (active accent), `#FFB1DD` (bright pastel pink highlights & custom block cursor), `#D7A0B8` (secondary).
 * **Warm Gilding & Notices:** `#E0C27A` (headings, user messages, thinking badges), `#F2B86D` (git dirty counts, package warnings), and `#B4E7C7` (success green).
 
-### 2. 👑 la Gentlewoman Welcome Dashboard (`src/welcome.ts`)
+---
+
+### 2. 🎛️ Interactive Sidebar & Telemetry Cards (`src/sidebar.ts`)
+
+<p align="center">
+  <img src="./public/cute-02.png" alt="Interactive Sidebar Cards: Status, Context, Engram, Quotas, Git Graph and Tools" width="340" />
+</p>
+
+The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated, auto-updating cards:
+
+* **👑 Status Card:** Shows active Project path, Git branch with dirty count, active Model and thinking level, MCP server count, and active profile.
+* **🧠 Context Gauge Card:** Real-time token progress bar with dynamic semáforo thresholds (mint → yellow → orange → coral), In/Out token counters, and accumulated session cost.
+* **🧠 Engram Memory Card (`src/cute-engram.ts`):** Live status of your local Engram daemon (`Local · Online · N obs`), cloud synchronization status (`engram.cinlodev.com`), direct dashboard shortcut (`dashboard ↗`), and interactive enroll/sync controls.
+* **⚡ Quotas & Usage Tracker Card (`src/cute-usage.ts`):** Displays real-time API quota limits for Gemini and Claude/GPT models (5h and weekly windows), dynamic 4-tier semáforo gauges, and reset countdowns (`en 3h 33m`). Toggle anytime with **`Alt+Q`**.
+* **🌿 Enhanced Git Graph Card (`src/cute-git-graph.ts`):** Renders an ASCII commit history graph with Dracula branch styling, dirty file counts (`5 mod · ?1 untracked`), session diff summary (`+783 -47`), and interactive `/gentle:changes` viewer hint.
+* **🛠️ Live Tools Telemetry Card (`src/cute-tools.ts`):** Summarizes tool execution metrics (`read`, `write`, `bash`, `engram`, `other`) into clean visual pills with total call count (`31 calls`).
+
+---
+
+### 3. 👑 Welcome Dashboard (`src/welcome.ts`)
+
+<p align="center">
+  <img src="./public/cute-04.png" alt="la Gentlewoman Welcome Dashboard with Specs and Telemetry" width="860" />
+</p>
+
+> 💡 **Demonstration Notice:** The animated *Neko-pi* pixel art mascot shown in the welcome screen screenshot is an optional personal extension used here for illustration and demonstration purposes; it is not bundled in this base theme pack.
+
 * High-density header showing Pi version, active Git branch, model, thinking profile, active context files, and loaded skills/extensions.
 * **Expandable on demand:** Toggle between compact and full dashboard with `Ctrl+O` or `/welcome`.
 * Symmetric double-line border with custom Unicode glyphs (`╔═ ◆ Cinlodev CUTE · la Gentlewoman ═╗`).
 
-### 3. 🎛️ Persistent HUD Widget (`src/hud.ts`)
-* Sits one row below the transcript with a breathing line above it, providing continuous ambient feedback without polluting conversation history.
-* Displays real-time model name, thinking level, context window token gauge, input/output token counts, session cost, active workspace path, and the active Git branch badge next to `Dir:` in secondary pink (`│  branch`).
-* **Profile as icon + name:** shows the active model profile as `👤 name` (no brackets), fully tunable via `profileIcon` + `profileFormat`.
-* **Modes:** Full (`/hud full`), Compact (`/hud compact`), or Hidden (`/hud off`).
+---
 
 ### 4. ✿ Double-Line Effort-Aware Prompt Editor (`src/editor.ts`)
-* Double frame (`╔═`, `║`, `╚═`) that wraps your command input seamlessly and renders at full width, aligned with native Pi cards.
-* **Effort-Aware Frame:** The frame follows the thinking level — mint `#B4E7C7` for minimal/low, gold `#E0C27A` for medium, violet `#8e44ad` for high and up — repainting live when you cycle with `Shift+Tab`.
-* **Animated Petal Indicator:** The flower icon spins through animated frames (`✿` → `❀` → `❁` → `✾`) with a muted `working` status whenever the agent executes a turn, resting peacefully in `✿` when idle.
-* **Pastel Pink Cursor:** Inverted block cursor styled in `#FFB1DD` pastel pink (`\x1b[48;2;255;177;221m`), with one column of breathing room from the left rail (`║ █`).
-* **Clipping-Safe Frame:** renders with a 1-column safety margin so the terminal never cuts the closing corner (`╗`).
+* **Double Frame:** Seamlessly wraps your command input at full terminal width, perfectly aligned with native Pi cards.
+* **Effort-Aware Dynamic Frame:** The border color follows your active thinking level—mint `#B4E7C7` for low/minimal, gold `#E0C27A` for medium, violet `#8e44ad` for high/max—repainting live when you cycle with `Shift+Tab`.
+* **Animated Status Indicator:** The petal icon spins through animated frames (`✿` → `❀` → `❁` → `✾`) while executing, or switches to expressive kaomojis (`/(xx)\_` / `preset: cats`) according to your configured preset.
+* **Pastel Pink Cursor:** Inverted block cursor styled in `#FFB1DD` pastel pink with 1 column of breathing room from the left rail (`║ █`).
+* **Clipping-Safe Frame:** Renders with a 1-column safety margin so the terminal never clips the closing corner (`╗`).
 
-### 5. 🎀 CUTE Minimalist Statusline Footer (`src/footer.ts`)
-* Replaces the default status bar with a responsive, single-line dock:
-  ```text
-  ✿ Cinlodev CUTE │  branch ±N │ model (high) │ ctx ▰▰▱▱▱▱ 15% │ $0.000 │ MCP: ready
-  ```
-* **Intelligent Responsive Compaction:** Never wraps or breaks into multiple lines. On narrower splits (e.g. Herdr/tmux panes), it gracefully shortens branch names, drops secondary metrics, and compacts branding to keep your workspace clean.
-* **Host Todos Mirror:** the sidebar rail mirrors the host Todos checklist (read-only) when the session provides todo state.
+---
 
-### 6. 🌸 Symmetrical Rails & Full-Height Divider (`src/sidebar.ts`)
-* **Symmetrical Left Rail:** Mirrors the right-hand double violet vertical rail (`║`) along the entire left terminal edge.
-* **Full-Height Middle Divider:** an explicit `║` column between body and sidebar spanning every terminal row, so the division never breaks above the input.
-* **Equalized Sidebar Spacing:** rail geometry (`railWidth 52`, `railPadding 1`) tuned so sidebar cards breathe exactly like body cards.
-* **Breathing Space (`║ `):** Insets the body, cards, prompt editor, and statusline by 1 column so content never looks abruptly cut off against the terminal bezel.
-* **Dual-Mode Harmony:** Seamlessly active in both single-pane and wide multi-pane sidebar layouts.
+### 5. 📜 Dracula Transcript & Minimalist Statusline (`src/cute-transcript.ts` & `src/footer.ts`)
 
-### 7. ✎ Working-Tree Changes Cap (`lib/shell-changes.ts`)
-* Intelligently caps the listed modified files at a maximum of 5, appending `+N más` for remaining files to prevent screen clutter on wide terminals.
+<p align="center">
+  <img src="./public/cute-03.png" alt="Dracula Syntax Transcript and Minimalist Statusline Dock" width="600" />
+</p>
 
-### 8. 🎛️ Tunable Personalization Without Code Changes (`src/cute-*.ts` + `config/CinlodevCute.*.json`)
-* **Non-destructive adapter:** the package transforms gentle-pi visuals without touching its files (e.g. it never deletes foreign state unless you opt in via `devBinaryHygiene`).
-* **Zero hardcoded visuals:** every color, text, glyph, layout number and path resolves through `src/cute-theme.ts`, `src/cute-strings.ts`, `src/cute-layout.ts` and `src/cute-paths.ts`, with compiled defaults as fallback — delete a JSON key and the classic CUTE look stays.
-* **`themes/CinlodevCute.json`** — palette (`vars`/`colors`) plus `glyphs`: `frameStyle` (`double`/`single`/`rounded`/`ascii`, with ASCII fallback for fonts without Nerd Font), frame corners, `branch`/`gauge`/`petalFrames`/`spinnerFrames` icons, and `profileIcon`.
-* **`config/CinlodevCute.strings.json`** — every user-facing text: brand titles, persona placeholders (`{name}`/`{user}`/`{lang}`), `profileFormat` (`{icon} {name}`), editor hint, hotkeys, sidebar banner, todo titles, `/cinlodev` messages and all notifys.
-* **`config/CinlodevCute.layout.json`** — geometry: sidebar rail (`breakpoint`, `railWidth`, `railPadding`, `gap`, borders), footer gauge/branch caps, HUD tiers + cache TTLs, todo row caps, welcome breakpoints, editor `paddingX`/pulse.
-* **`config/CinlodevCute.paths.json`** — filesystem touchpoints (kept outside `themes/` on purpose: Pi rejects any non-theme JSON found there). `agentDir`, `profileActive`, `contextFiles`, `homeAlias`, `gitNoLabel`, `todoSource`, `devBinaryHygiene`.
+* **Dracula Syntax Highlighting:** Commands, bash outputs, code blocks, `read` files, `grep` matches, and diff views (`write`/`edit`) are syntax-highlighted in rich Dracula tones.
+* **Intelligent Multi-Call Grouping:** Consecutive `bash`, `write`, `mem_*`, or error executions are automatically grouped into a single unified card to eliminate transcript clutter.
+* **Pastel Category Framing:**
+  * 🌿 **Mint:** Shell executions (`bash`)
+  * 🪻 **Lilac:** File inspections (`read`)
+  * 🧊 **Light Blue:** Code modifications (`write`, `edit`)
+  * 🌹 **Dusty Rose:** Web searches (`web_search`)
+  * 🌸 **Pastel Pink:** Content retrieval (`fetch_content`)
+  * 🍣 **Salmon:** Persistent memory (`mem_*`)
+  * 🪸 **Coral:** Errors and exceptions
+* **Assistant Prose & User Boxes:** Assistant text is styled in soft celeste for zero eye fatigue; user inputs are wrapped in warm golden boxes (`E0C27A`).
+* **CUTE Minimalist Statusline Footer:** Single-line responsive dock showing branch, model, context gauge, cost, MCP status, and working tree changes (`7 files · +783 -47 /gentle:changes`). Auto-compacts gracefully on narrow splits.
 
-#### 🐱 User Overrides (Persistent Across Updates)
-To personalize your theme without modifying files inside the git repository — so `pi update --extensions` never overwrites your customizations — place an override file at `~/.pi/agent/cute.json` (or in `~/.pi/agent/cute/`):
+---
 
-```json
-{
-  "user": "YourName",
-  "persona": "gentlewoman",
-  "preset": "cats",
-  "layout": {
-    "sidebar": { "railWidth": 52 }
-  }
-}
-```
+## ⌨️ Shortcuts & Cheat Sheet
 
-* **Animation presets:** easily switch animations with `"preset": "cats"`, `"kittens"` (smaller faces), `"petals"` (default), `"sparkles"`, `"stars"`, `"hearts"`, or `"ascii"`. You can also supply custom `petalFrames` if you want your own kaomojis.
-* **Dynamic `{user}` with auto-detection:** `user` replaces `{user}` placeholders across HUD, Header, Footer and persona instructions. If omitted, it automatically detects your name from `git config user.name` or your OS username.
-* **Persona mode & userRole:** `"persona": "gentleman"` (default, male agent and "desarrollador" treatment) or `"persona": "gentlewoman"` (female agent and "desarrolladora" treatment). You can also explicitly specify `"userRole"` (e.g. `"desarrolladora"`, `"desarrollador"`, `"developer"`).
-* Overrides merge on top of package defaults; omitted keys continue using official theme defaults. Project-level overrides in `<cwd>/.pi/cute.json` are also supported.
+| Shortcut / Command | Action | Description |
+| :--- | :--- | :--- |
+| **`Alt+Q`** | Toggle Quotas Card | Show or hide the Antigravity API quotas card in the sidebar. |
+| **`Alt+G`** | `/gentle:changes` | Open interactive two-pane diff viewer for modified working tree files. |
+| **`Ctrl+O`** (`^O`) | `/welcome` | Expand or collapse the Welcome Dashboard. |
+| **`Shift+Tab`** | Cycle Thinking Effort | Cycle thinking levels (editor border live-updates to mint, gold, or violet). |
+| **`/cinlodev`** | Hot Reload | Instantly reload configuration files and re-apply all CUTE components. |
+| **`/hud [full\|compact\|off]`** | HUD Mode | Configure persistent HUD above the input. |
+| **`/welcome [full\|compact\|off]`** | Welcome Mode | Configure or toggle the Welcome Dashboard. |
 
 ---
 
@@ -102,34 +121,64 @@ Install directly into Pi via Git:
 pi install git:github.com/CinloDev/pi-cinlodev-cute
 ```
 
-Or for local development / testing:
+Or for local development:
 
 ```bash
-pi install /path/to/pi-cinlodev-cute
+git clone https://github.com/CinloDev/pi-cinlodev-cute.git
+pi install ./pi-cinlodev-cute
 ```
+
+### 🧩 Compatibility
+* **Standalone Pi:** Works 100% out of the box with standard `@earendil-works/pi-coding-agent`.
+* **Ecosystem Companions:** Automatically lights up extra sidebar features when paired with:
+  * [`gentle-shell`](https://github.com/Gentleman-Programming/gentle-shell) (Welcome dashboard, `/gentle:changes`, sidebar harmony).
+  * [`gentle-engram`](https://github.com/Gentleman-Programming/gentle-engram) (Interactive memory card & cloud dashboard sync).
+  * Antigravity / CLIProxyAPI (Live Gemini & Claude quota monitoring).
 
 ---
 
-## ⌨️ Slash Commands
+## 🎛️ User Overrides & Customization
 
-| Command | Description |
-| :--- | :--- |
-| `/cinlodev` | Instantly reloads configuration files and re-applies all Cinlodev CUTE components (Header, HUD, Editor, Footer) with hot-reload. |
-| `/hud` | Configure persistent HUD above input (`/hud`, `/hud full`, `/hud compact`, `/hud off`). |
-| `/welcome` | Toggle or configure the Welcome Dashboard (`/welcome full`, `/welcome compact`, `/welcome off`). |
-| `/gentle:changes` | Open interactive two-pane diff viewer for modified working tree files (`Alt+G`). |
+All colors, strings, layout dimensions, and filesystem paths are cleanly separated in `config/CinlodevCute.*.json`. You can customize your workspace **without touching git files** by creating `~/.pi/agent/cute.json` (or `<cwd>/.pi/cute.json` for per-project settings). This ensures `pi update` never overwrites your personal configuration:
+
+```json
+{
+  "user": "Cinlo",
+  "persona": "gentlewoman",
+  "preset": "kittens",
+  "layout": {
+    "sidebar": {
+      "railWidth": 52
+    }
+  }
+}
+```
+
+### ✨ Configurable Options
+* **Animation Presets (`"preset"`):**
+  * `"petals"` (default spinning flower `✿` → `❀` → `❁` → `✾`)
+  * `"kittens"` (mini kaomoji cat faces)
+  * `"cats"` (expressive kaomojis `/(xx)\_`)
+  * `"sparkles"` (`✨` → `❇` → `❈`)
+  * `"stars"` (`★` → `☆` → `✦`)
+  * `"hearts"` (`♥` → `♡` → `❥`)
+  * `"ascii"` (standard ASCII animation for simple fonts)
+* **Persona & Role (`"persona"` / `"userRole"`):**
+  * `"persona": "gentlewoman"` (female agent mentor) or `"persona": "gentleman"`.
+  * `"userRole"`: `"desarrolladora"`, `"desarrollador"`, or `"developer"`.
+* **Dynamic User Placeholder (`"user"`):** Replaces `{user}` in UI headers. If omitted, it automatically resolves from `git config user.name` or your OS username.
 
 ---
 
 ## 🛡️ Architecture & Upstream Protection
 
-`pi-cinlodev-cute` is architected as an independent Pi extension package:
-* It hooks into standard Pi lifecycle events (`session_start`, `agent_start`, `agent_end`).
-* Your custom theme, HUD, editor, and statusline persist independently across `pi update` runs and upstream package resets.
-* Mathematical border alignments ensure all UI components colocate symmetrically across all terminal dimensions.
+`pi-cinlodev-cute` is built strictly as a non-destructive adapter:
+* Hooks cleanly into standard Pi lifecycle events (`session_start`, `agent_start`, `agent_end`).
+* Zero mutation of external source files or foreign state.
+* Preserves all terminal escape sequences (OSC 133 / Kitty APC) atomically without breaking scroll or click semantics.
 
 ---
 
 <p align="center">
-  <sub>Crafted with 💜 and 🌸 for Cinlo & la Gentlewoman.</sub>
+  <sub>Crafted with 💜 and 🌸 by Cinlo for Pi Coding Agent & la Gentlewoman.</sub>
 </p>
