@@ -3,11 +3,6 @@
   <p align="center">
     <strong>An exclusive high-density visual suite, aesthetic theme pack, Dracula syntax engine, and live telemetry sidebar for Pi Coding Agent and la Gentlewoman.</strong>
   </p>
-  <p align="center">
-    <a href="https://github.com/Gentleman-Programming/gentle-ai">
-      <img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" width="180" />
-    </a>
-  </p>
 </p>
 
 <p align="center">
