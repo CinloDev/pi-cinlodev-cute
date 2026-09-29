@@ -5,8 +5,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
-import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
+import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, unwrapNativeCard, extractCardHeaderTitle, stripCardLineBorders } from "../src/cute-transcript.ts";
+import { loadCuteStrings, resetCuteStringsCache, detectSystemUser, PERSONA_PRESETS } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
@@ -18,6 +18,7 @@ import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGi
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD } from "../src/cute-engram.ts";
+import { formatPersonaContract } from "../src/welcome.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -607,13 +608,71 @@ test("formatTranscriptChild - frames read in lilac, write/edit in light blue, er
 	assert.ok(errRender[0].includes("error"));
 	assert.ok(errRender.slice(1, -1).join("\n").includes("Error: 503"));
 
-	// 6. Normal Text mentioning errors casually stays natural
-	class PlainText {
-		render() { return ["some note about error handling in docs"]; }
+	// 7. Unwraps card-framed tool output so it doesn't nest a card inside another card
+	class FramedBashToolComponent {
+		toolName = "bash";
+		render() {
+			return [
+				"╭─ ✿ $ npm test ───────────────────────────── ctrl+o to expand ╮",
+				"│  ℹ skipped 0                                                 │",
+				"│  ℹ todo 0                                                    │",
+				"╰──────────────────────────────────────────────────────────────╯",
+			];
+		}
 	}
-	// NOTE: class name here is PlainText, not Text, so it stays natural.
-	const plainRender = formatTranscriptChild(new PlainText() as any, 70, mockTheme);
-	assert.equal(plainRender[0], "some note about error handling in docs");
+	const framedBashRender = formatTranscriptChild(new FramedBashToolComponent() as any, 70, mockTheme);
+	// Outer frame is CUTE's >_ bash box
+	assert.ok(framedBashRender[0].includes(">_ bash"));
+	// Inner lines MUST NOT contain ╭, ╮, ╰, ╯ or │ borders
+	const bodyWithoutBorders = framedBashRender.slice(1, -1).join("\n");
+	assert.ok(!bodyWithoutBorders.includes("╭"));
+	assert.ok(!bodyWithoutBorders.includes("╮"));
+	assert.ok(!bodyWithoutBorders.includes("╰"));
+	assert.ok(!bodyWithoutBorders.includes("╯"));
+	assert.ok(bodyWithoutBorders.includes("npm test"));
+	assert.ok(bodyWithoutBorders.includes("skipped"));
+
+	class FramedEditToolComponent {
+		toolName = "edit";
+		render() {
+			return [
+				"╭─ ✿ edit /path/to/file.ts ────────────────── ctrl+o to expand ╮",
+				"│  ✓ +2 / -2                                                   │",
+				"╰──────────────────────────────────────────────────────────────╯",
+			];
+		}
+	}
+	const framedEditRender = formatTranscriptChild(new FramedEditToolComponent() as any, 120, mockTheme);
+	assert.ok(framedEditRender[0].includes("write"));
+	const editBody = framedEditRender.slice(1, -1).join("\n");
+	assert.ok(!editBody.includes("╭"));
+	assert.ok(!editBody.includes("╮"));
+	assert.ok(!editBody.includes("╰"));
+	assert.ok(!editBody.includes("╯"));
+	assert.ok(editBody.includes("edit /path/to/file.ts"));
+	assert.ok(editBody.includes("+2"));
+	assert.ok(editBody.includes("-2"));
+});
+
+test("unwrapNativeCard - strips native and quiet-tools card frames", () => {
+	const rawCard = [
+		"╭─ ✿ $ git status ─────── ctrl+o to expand ╮",
+		"│ On branch main                           │",
+		"│ nothing to commit                        │",
+		"╰──────────────────────────────────────────╯",
+	];
+	const unwrapped = unwrapNativeCard(rawCard);
+	assert.equal(unwrapped.length, 3);
+	assert.equal(unwrapped[0], "$ git status");
+	assert.equal(unwrapped[1], "On branch main");
+	assert.equal(unwrapped[2], "nothing to commit");
+
+	// Non-card lines are left intact
+	const plain = ["hello world", "foo bar"];
+	assert.deepEqual(unwrapNativeCard(plain), plain);
+
+	// Empty array returns empty
+	assert.deepEqual(unwrapNativeCard([]), []);
 });
 
 test("isGrepComponent - matches grep tool executions only", () => {
@@ -2052,4 +2111,96 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	// Invalid line index returns false
 	assert.equal(card.handleClick(999), false);
 });
+
+test("formatPersonaContract - replaces dynamic datetime, timezone, and persona placeholders", () => {
+	const template =
+		"## Persona: {name}\n" +
+		"- Interlocutor: {user} ({userRole}, {userPronoun})\n" +
+		"- Tono: {lang}\n" +
+		"- Temporalidad y fecha actual: Hoy es {currentDateTime} ({timezone}). Fecha: {currentDate}, Hora: {currentTime}.\n";
+
+	const fixedDate = new Date("2026-09-29T14:30:00.000Z");
+	const result = formatPersonaContract(
+		{
+			contractTemplate: template,
+			name: "la Gentlewoman",
+			user: "Cinlo",
+			userRole: "desarrolladora",
+			userPronoun: "Tratala",
+			lang: "Español rioplatense",
+		},
+		{
+			now: fixedDate,
+			timezone: "America/Argentina/Buenos_Aires",
+			locale: "es-AR",
+		},
+	);
+
+	// Check placeholders are replaced
+	assert.ok(!result.includes("{name}"), "Placeholder {name} should be replaced");
+	assert.ok(!result.includes("{user}"), "Placeholder {user} should be replaced");
+	assert.ok(!result.includes("{userRole}"), "Placeholder {userRole} should be replaced");
+	assert.ok(!result.includes("{userPronoun}"), "Placeholder {userPronoun} should be replaced");
+	assert.ok(!result.includes("{lang}"), "Placeholder {lang} should be replaced");
+	assert.ok(!result.includes("{currentDateTime}"), "Placeholder {currentDateTime} should be replaced");
+	assert.ok(!result.includes("{timezone}"), "Placeholder {timezone} should be replaced");
+	assert.ok(!result.includes("{currentDate}"), "Placeholder {currentDate} should be replaced");
+	assert.ok(!result.includes("{currentTime}"), "Placeholder {currentTime} should be replaced");
+
+	// Check content
+	assert.ok(result.includes("la Gentlewoman"));
+	assert.ok(result.includes("Cinlo"));
+	assert.ok(result.includes("desarrolladora"));
+	assert.ok(result.includes("Tratala"));
+	assert.ok(result.includes("America/Argentina/Buenos_Aires"));
+	assert.ok(result.includes("2026"));
+	assert.ok(result.includes("septiembre"));
+
+	// Also verify default call without options resolves system datetime & timezone
+	const defaultResult = formatPersonaContract({
+		contractTemplate: "- Hoy es {currentDateTime} ({timezone}).",
+	});
+	assert.ok(!defaultResult.includes("{currentDateTime}"));
+	assert.ok(!defaultResult.includes("{timezone}"));
+	assert.match(defaultResult, /- Hoy es .+ \(.+\)\./);
+
+	// Also verify passing template as string directly works
+	const stringInputResult = formatPersonaContract("- Hoy es {currentDateTime} ({timezone}).", {
+		now: fixedDate,
+		timezone: "UTC",
+		locale: "es-AR",
+	});
+	assert.ok(!stringInputResult.includes("{currentDateTime}"));
+	assert.ok(!stringInputResult.includes("{timezone}"));
+	assert.ok(stringInputResult.includes("UTC"));
+});
+
+test("PERSONA_PRESETS and loadCuteStrings include temporalidad reference with {currentDateTime} and {timezone}", () => {
+	const expectedSubstr = "- Temporalidad y fecha actual: Hoy es {currentDateTime} ({timezone}). Tené siempre presente esta referencia temporal para situar investigaciones, versiones de paquetes y consultas cronológicas.";
+
+	// Presets must have the line
+	assert.ok(
+		PERSONA_PRESETS.gentleman.contractTemplate.includes(expectedSubstr),
+		"gentleman preset should contain temporalidad line",
+	);
+	assert.ok(
+		PERSONA_PRESETS.gentlewoman.contractTemplate.includes(expectedSubstr),
+		"gentlewoman preset should contain temporalidad line",
+	);
+
+	// Default loaded strings must have the line
+	resetCuteStringsCache();
+	const strings = loadCuteStrings();
+	assert.ok(
+		strings.welcomePersona.contractTemplate.includes(expectedSubstr),
+		"loaded strings welcomePersona.contractTemplate should contain temporalidad line",
+	);
+
+	// And formatted output replaces it completely
+	const formatted = formatPersonaContract(strings.welcomePersona);
+	assert.ok(formatted.includes("Temporalidad y fecha actual: Hoy es "));
+	assert.ok(!formatted.includes("{currentDateTime}"));
+	assert.ok(!formatted.includes("{timezone}"));
+});
+
 

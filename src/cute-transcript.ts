@@ -645,11 +645,74 @@ export function formatWriteDiffLines(
 }
 
 /**
+ * Extracts the title / command from a native or quiet-tools card top border.
+ * e.g. "╭─ ✿ $ npm test ───────────── ctrl+o to expand ╮" -> "$ npm test"
+ *      "╭─ ✿ edit /path/to/file ───── ctrl+o to expand ╮" -> "edit /path/to/file"
+ */
+export function extractCardHeaderTitle(headerLine: string): string {
+	const plain = stripAnsi(headerLine).trim();
+	let title = plain.replace(/^[╭┌][─═\s]*(?:[✿❀❁✾✣✎★]\s*)?/, "");
+	title = title.replace(/\s*[─═]{2,}.*$/, "").replace(/[╮┐]$/, "").trim();
+	return title;
+}
+
+/**
+ * Strips leading/trailing vertical card borders (│, ║, |) and surrounding ANSI escapes
+ * from a card body line so inner content nests cleanly inside CUTE frames.
+ */
+export function stripCardLineBorders(line: string): string {
+	let s = line;
+	s = s.replace(/^((?:\x1b\[[0-9;]*m)*)\s*[│║|]((?:\x1b\[[0-9;]*m)*)\s?/, "");
+	s = s.replace(/\s?((?:\x1b\[[0-9;]*m)*)[│║|]((?:\x1b\[[0-9;]*m)*)\s*$/, "");
+	return s.trimEnd();
+}
+
+/**
+ * Strips native/quiet-tools box frames (╭─ ..., │ ..., ╰─ ...)
+ * so inner content nests cleanly without card-in-card artifacts.
+ */
+export function unwrapNativeCard(lines: string[]): string[] {
+	if (!lines || lines.length === 0) return [];
+
+	const result: string[] = [];
+	let inCard = false;
+
+	for (const line of lines) {
+		const plain = stripAnsi(line).trim();
+
+		// Check for top border: starts with ╭ or ┌ and ends with ╮ or ┐
+		if (/^[╭┌].*[╮┐]$/.test(plain)) {
+			inCard = true;
+			const title = extractCardHeaderTitle(line);
+			if (title) {
+				result.push(title);
+			}
+			continue;
+		}
+
+		// Check for bottom border: starts with ╰ or └ and ends with ╯ or ┘
+		if (/^[╰└].*[╯┘]$/.test(plain)) {
+			inCard = false;
+			continue;
+		}
+
+		if (inCard) {
+			result.push(stripCardLineBorders(line));
+		} else {
+			result.push(line);
+		}
+	}
+
+	return result;
+}
+
+/**
  * Strips empty lines and horizontal border divider lines (e.g. ─── or ═══)
  * from raw bash component output so it nests cleanly inside our card.
  */
 export function cleanBashLines(rawLines: string[]): string[] {
-	return rawLines.filter((line) => {
+	const unwrapped = unwrapNativeCard(rawLines);
+	return unwrapped.filter((line) => {
 		const plain = stripAnsi(line).trim();
 		if (plain === "") return false;
 		if (/^[─═\-]+$/.test(plain)) return false;
@@ -968,7 +1031,8 @@ export function formatTranscriptChild(
 	if (isBashComponent(child)) {
 		const rawLines = child.render(width - 4);
 		const cleaned = cleanBashLines(rawLines);
-		const styled = formatBashOutputLines(cleaned.length ? cleaned : rawLines, theme, colors.bashOutput);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatBashOutputLines(cleaned.length ? cleaned : unwrapped, theme, colors.bashOutput);
 		return frameCategoryBox(styled, ">_ bash", colors.bashMessage, width, theme);
 	}
 
@@ -976,7 +1040,8 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting for code lines.
 	if (isReadComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatReadLines(unwrapped, toolFilePath(child, unwrapped), theme);
 		return frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 	}
 
@@ -984,7 +1049,8 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting inside diff lines.
 	if (isWriteComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatWriteDiffLines(unwrapped, toolFilePath(child, unwrapped), theme, (child as any).toolName);
 		return frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 	}
 
@@ -993,7 +1059,8 @@ export function formatTranscriptChild(
 	// (toolSuccessBg) is preserved; only the double-line frame is added.
 	if (isFetchComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return frameCategoryBox(unwrapped, "fetch", colors.fetchMessage, width, theme);
 	}
 
 	// Search tool execution in dusty-rose card (#D7A0B8 / colors.searchMessage).
@@ -1001,7 +1068,8 @@ export function formatTranscriptChild(
 	// stay distinguishable; inner dark background preserved untouched.
 	if (isSearchComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return frameCategoryBox(unwrapped, "search", colors.searchMessage, width, theme);
 	}
 
 	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage)
@@ -1010,7 +1078,8 @@ export function formatTranscriptChild(
 	// card by formatTranscriptChildren.
 	if (isMemoryComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatMemoryOutputLines(rawLines, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatMemoryOutputLines(unwrapped, theme);
 		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
 	}
 
@@ -1146,7 +1215,8 @@ export function formatTranscriptChildren(
 		if (isReadComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const styled = formatReadLines(unwrapped, toolFilePath(child, unwrapped), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
@@ -1158,7 +1228,8 @@ export function formatTranscriptChildren(
 		if (isWriteComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const styled = formatWriteDiffLines(unwrapped, toolFilePath(child, unwrapped), theme, (child as any).toolName);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
@@ -1170,7 +1241,8 @@ export function formatTranscriptChildren(
 		if (isFetchComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const boxed = frameCategoryBox(unwrapped, "fetch", colors.fetchMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
@@ -1181,7 +1253,8 @@ export function formatTranscriptChildren(
 		if (isSearchComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const boxed = frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const boxed = frameCategoryBox(unwrapped, "search", colors.searchMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
@@ -1209,10 +1282,11 @@ export function formatTranscriptChildren(
 			const combinedLines: string[] = [];
 			for (const comp of memGroup) {
 				const raw = comp.render(width - 4);
+				const unwrapped = unwrapNativeCard(raw);
 				if (combinedLines.length > 0) {
 					combinedLines.push(""); // subtle separation between calls
 				}
-				const styled = formatMemoryOutputLines(raw, theme);
+				const styled = formatMemoryOutputLines(unwrapped, theme);
 				combinedLines.push(...styled);
 			}
 

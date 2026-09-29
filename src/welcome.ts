@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-import { cuteGlyphs, frameFg, installWelcomeHeaderGuard, safeFg as safeThemeFg } from "./cute-theme";
+import { cuteGlyphs, frameFg, installWelcomeHeaderGuard, safeFg as safeThemeFg } from "./cute-theme.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import {
@@ -415,6 +415,107 @@ class GentlemanWelcomeWidget implements Component {
 	}
 }
 
+export interface FormatPersonaContractOptions {
+	now?: Date;
+	timezone?: string;
+	locale?: string;
+}
+
+/** Formats the persona contract template by injecting dynamic datetime, timezone, and persona details. */
+export function formatPersonaContract(
+	personaOrTemplate:
+		| string
+		| {
+				contractTemplate: string;
+				name?: string;
+				user?: string;
+				userRole?: string;
+				userPronoun?: string;
+				lang?: string;
+		  },
+	options?: FormatPersonaContractOptions,
+): string {
+	const template =
+		typeof personaOrTemplate === "string"
+			? personaOrTemplate
+			: personaOrTemplate.contractTemplate;
+
+	const name = typeof personaOrTemplate === "string" ? "" : (personaOrTemplate.name ?? "");
+	const user = typeof personaOrTemplate === "string" ? "" : (personaOrTemplate.user ?? "");
+	const userRole =
+		typeof personaOrTemplate === "string"
+			? "desarrollador"
+			: (personaOrTemplate.userRole || "desarrollador");
+	const userPronoun =
+		typeof personaOrTemplate === "string"
+			? "Tratalo"
+			: (personaOrTemplate.userPronoun || "Tratalo");
+	const lang = typeof personaOrTemplate === "string" ? "" : (personaOrTemplate.lang ?? "");
+
+	const now = options?.now ?? new Date();
+	const timezone = options?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+	const locale = options?.locale || "es-AR";
+
+	let currentDateTime = "";
+	let currentDate = "";
+	let currentTime = "";
+
+	try {
+		currentDateTime = new Intl.DateTimeFormat(locale, {
+			dateStyle: "full",
+			timeStyle: "medium",
+			timeZone: timezone,
+		}).format(now);
+
+		currentDate = new Intl.DateTimeFormat(locale, {
+			dateStyle: "full",
+			timeZone: timezone,
+		}).format(now);
+
+		currentTime = new Intl.DateTimeFormat(locale, {
+			timeStyle: "medium",
+			timeZone: timezone,
+		}).format(now);
+	} catch {
+		const fallbackTz = "UTC";
+		currentDateTime = new Intl.DateTimeFormat(locale, {
+			dateStyle: "full",
+			timeStyle: "medium",
+			timeZone: fallbackTz,
+		}).format(now);
+
+		currentDate = new Intl.DateTimeFormat(locale, {
+			dateStyle: "full",
+			timeZone: fallbackTz,
+		}).format(now);
+
+		currentTime = new Intl.DateTimeFormat(locale, {
+			timeStyle: "medium",
+			timeZone: fallbackTz,
+		}).format(now);
+	}
+
+	return template
+		.split("{name}")
+		.join(name)
+		.split("{user}")
+		.join(user)
+		.split("{userRole}")
+		.join(userRole)
+		.split("{userPronoun}")
+		.join(userPronoun)
+		.split("{lang}")
+		.join(lang)
+		.split("{currentDateTime}")
+		.join(currentDateTime)
+		.split("{currentDate}")
+		.join(currentDate)
+		.split("{currentTime}")
+		.join(currentTime)
+		.split("{timezone}")
+		.join(timezone);
+}
+
 export default function (pi: ExtensionAPI) {
 	let currentWidget: GentlemanWelcomeWidget | null = null;
 	let activeTui: any = null;
@@ -542,17 +643,7 @@ export default function (pi: ExtensionAPI) {
 			prompt = prompt.replaceAll(replacement.from, replacement.to);
 		}
 
-		const personaContract = strings.welcomePersona.contractTemplate
-			.split("{name}")
-			.join(strings.welcomePersona.name)
-			.split("{user}")
-			.join(strings.welcomePersona.user)
-			.split("{userRole}")
-			.join(strings.welcomePersona.userRole || "desarrollador")
-			.split("{userPronoun}")
-			.join(strings.welcomePersona.userPronoun || "Tratalo")
-			.split("{lang}")
-			.join(strings.welcomePersona.lang);
+		const personaContract = formatPersonaContract(strings.welcomePersona);
 
 		return {
 			systemPrompt: prompt + personaContract,
