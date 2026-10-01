@@ -214,14 +214,15 @@ export function isGrepComponent(child: Component): boolean {
  * Header lines (grep /pattern/ in path) and hints pass through untouched.
  */
 export function formatGrepLines(rawLines: string[], theme?: Theme): string[] {
-	if (!theme || !rawLines.length) return rawLines;
-	return rawLines.map((line, idx) => {
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !lines.length) return lines;
+	return lines.map((line, idx) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
 		if (!trimmed) return line;
 
-		// 1. Tool call header: "grep /pattern/ in path..."
-		if (idx === 0 && /^grep\s+/i.test(trimmed)) {
+		// 1. Tool call header: "grep /pattern/ in path..." or "⌕ grep ..."
+		if (idx === 0 && /^(?:[⌕\u2315\u270E]\s*)?grep\s+/i.test(trimmed)) {
 			return line;
 		}
 
@@ -284,10 +285,11 @@ export function isFetchComponent(child: Component, renderedLines?: string[]): bo
  * (e.g. pi-web-access `fetch_content` with a custom tool name).
  */
 export function looksLikeFetchLines(rawLines: string[]): boolean {
-	for (const line of rawLines) {
+	const lines = unwrapNativeCard(rawLines);
+	for (const line of lines) {
 		const plain = stripAnsi(line).trim();
 		if (!plain) continue;
-		return /^fetch\s+/i.test(plain);
+		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E]\s*)?fetch\s+/i.test(plain);
 	}
 	return false;
 }
@@ -327,12 +329,120 @@ export function isSearchComponent(child: Component, renderedLines?: string[]): b
  * True when rendered lines open with a `search ...` tool header.
  */
 export function looksLikeSearchLines(rawLines: string[]): boolean {
-	for (const line of rawLines) {
+	const lines = unwrapNativeCard(rawLines);
+	for (const line of lines) {
 		const plain = stripAnsi(line).trim();
 		if (!plain) continue;
-		return /^search\s+/i.test(plain);
+		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E]\s*)?search\s+/i.test(plain);
 	}
 	return false;
+}
+
+/**
+ * Known gentle_review / RDD tool names.
+ */
+const REVIEW_TOOL_NAMES = new Set([
+	"gentle_review",
+	"gentle_review_capture",
+	"gentle_review_capture_group",
+	"gentle_review_scope",
+]);
+
+/**
+ * Checks whether a transcript component is a gentle_review / RDD tool execution.
+ * Matches by toolName (gentle_review, gentle_review_capture, etc.) or by
+ * rendered lines that match `🌹 rdd ...`, `rdd ...`, or `gentle_review...`.
+ */
+export function isReviewComponent(child: Component, renderedLines?: string[]): boolean {
+	if (!child) return false;
+	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
+	if (name === "UserMessageComponent" || name === "AssistantMessageComponent") return false;
+	const toolName = (child as any).toolName;
+	if (typeof toolName === "string" && (REVIEW_TOOL_NAMES.has(toolName) || toolName.startsWith("gentle_review"))) {
+		return true;
+	}
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines) return looksLikeReviewLines(lines);
+	return false;
+}
+
+/**
+ * True when rendered lines open with a review / RDD header (e.g. `🌹 rdd inspect`, `rdd start`).
+ */
+export function looksLikeReviewLines(rawLines: string[]): boolean {
+	const lines = unwrapNativeCard(rawLines);
+	for (const line of lines) {
+		const plain = stripAnsi(line).trim();
+		if (!plain) continue;
+		return /(?:🌹\s*)?rdd\b/i.test(plain) || /^gentle_review(?:_|\b)/i.test(plain);
+	}
+	return false;
+}
+
+/**
+ * Extracts a clean title for the card header (e.g. "🌹 rdd inspect", "🌹 rdd start").
+ * Fallbacks to "🌹 rdd" when no specific operation is found.
+ */
+export function extractReviewHeader(rawLines: string[], child?: Component): string {
+	const lines = unwrapNativeCard(rawLines);
+	for (const line of lines) {
+		const plain = stripAnsi(line).trim();
+		if (!plain) continue;
+		const rddMatch = /(?:🌹\s*)?rdd(?:\s+([a-z0-9_-]+))?/i.exec(plain);
+		if (rddMatch) {
+			const op = rddMatch[1]?.trim();
+			return op ? `🌹 rdd ${op}` : "🌹 rdd";
+		}
+		const reviewMatch = /^gentle_review(?:_([a-z0-9_-]+))?(?:\s+([a-z0-9_-]+))?/i.exec(plain);
+		if (reviewMatch) {
+			const op = reviewMatch[2]?.trim() || reviewMatch[1]?.trim();
+			return op ? `🌹 rdd ${op}` : "🌹 rdd";
+		}
+	}
+	if (child) {
+		const toolName = (child as any).toolName;
+		const args = (child as any).toolArgs ?? (child as any).args ?? (child as any).input;
+		const opFromArgs =
+			typeof args === "object" && args !== null
+				? (args.command || args.op || args.subcommand || args.action)
+				: undefined;
+
+		if (typeof toolName === "string") {
+			if (toolName === "gentle_review_capture") return "🌹 rdd capture";
+			if (toolName === "gentle_review_capture_group") return "🌹 rdd capture_group";
+			if (toolName === "gentle_review_scope") return "🌹 rdd scope";
+			if (toolName === "gentle_review") {
+				if (typeof opFromArgs === "string" && opFromArgs.trim()) {
+					return `🌹 rdd ${opFromArgs.trim()}`;
+				}
+				return "🌹 rdd";
+			}
+			const subMatch = /^gentle_review_([a-z0-9_-]+)/i.exec(toolName);
+			if (subMatch && subMatch[1]) {
+				return `🌹 rdd ${subMatch[1]}`;
+			}
+		}
+	}
+	return "🌹 rdd";
+}
+
+/**
+ * Formats inner lines of an RDD / gentle_review card:
+ * Preserves pre-colored output (pass/fail status, kept colors),
+ * strips float chrome, and highlights structured lines.
+ */
+export function formatReviewOutputLines(rawLines: string[], theme?: Theme): string[] {
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !lines.length) return lines;
+	return lines.map((line) => {
+		const plain = stripAnsi(line);
+		if (plain.trim() === "") return "";
+		if (hasKeptColor(line, theme)) return line;
+		const leadingSpace = line.match(/^(\s*)/)?.[1] ?? "";
+		const content = plain.slice(leadingSpace.length);
+		if (!content) return "";
+		return leadingSpace + highlightCodeLine(content, theme);
+	});
 }
 
 /**
@@ -341,8 +451,9 @@ export function looksLikeSearchLines(rawLines: string[]): boolean {
  * using theme syntax roles while preserving existing ANSI formatting.
  */
 export function formatMemoryOutputLines(rawLines: string[], theme?: Theme): string[] {
-	if (!theme || !rawLines.length) return rawLines;
-	return rawLines.map((line) => {
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !lines.length) return lines;
+	return lines.map((line) => {
 		const plain = stripAnsi(line);
 		if (plain.trim() === "") return line;
 		if (hasKeptColor(line, theme)) return line;
@@ -435,9 +546,10 @@ export function toolFilePath(child: Component, renderedLines?: string[]): string
 	// Fallback: extract path from rendered header lines, e.g. "edit src/cute-theme.ts" or "read foo.ts:1-10"
 	const lines = renderedLines ?? tryRender(child, 80);
 	if (lines && lines.length > 0) {
-		for (const line of lines) {
+		const unwrapped = unwrapNativeCard(lines);
+		for (const line of unwrapped) {
 			const plain = stripAnsi(line ?? "").trim();
-			const m = /(?:✎\s*)?(?:edit|write|read)\s+(\S+)/i.exec(plain);
+			const m = /(?:[≡✎\u270E\+]\s*)?(?:edit|write|read)\s+(\S+)/i.exec(plain);
 			if (m && m[1]) {
 				// Strip line ranges like ":1-10" or ":50" from read paths
 				const clean = m[1].replace(/:\d+(?:-\d+)?$/, "");
@@ -523,15 +635,16 @@ const WRITE_DIFF_CONTEXT = /^ (\d+)\s?(.*)$/;
  * - Headers, hint/truncation lines, and image notes pass through.
  */
 export function formatReadLines(rawLines: string[], filePath?: string, theme?: Theme): string[] {
-	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !toolFileHighlightable(filePath)) return lines;
 	let headerHandled = false;
-	return rawLines.map((line) => {
+	return lines.map((line) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
 		if (!trimmed) return "";
 
-		// 1. Tool call header: `read path/to/file` or `✎ read path/to/file`
-		if (!headerHandled && /^(?:✎\s*)?read\s+\S+/i.test(trimmed)) {
+		// 1. Tool call header: `read path/to/file` or `≡ read path/to/file` or `✎ read ...`
+		if (!headerHandled && /^(?:[≡✎\u270E\+]\s*)?read\s+\S+/i.test(trimmed)) {
 			headerHandled = true;
 			return line;
 		}
@@ -573,18 +686,19 @@ export function formatWriteDiffLines(
 	theme?: Theme,
 	toolName?: string,
 ): string[] {
-	if (!theme || !toolFileHighlightable(filePath)) return rawLines;
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !toolFileHighlightable(filePath)) return lines;
 
 	const isEditTool = toolName === "edit";
 	let headerHandled = false;
 
-	return rawLines.map((line) => {
+	return lines.map((line) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
 		if (!trimmed) return "";
 
 		// 1. Tool call header: `write path/to/file` or `edit path/to/file`
-		if (!headerHandled && /^(?:✎\s*)?(?:write|edit)\s+\S+/i.test(trimmed)) {
+		if (!headerHandled && /^(?:[≡✎\u270E\+]\s*)?(?:write|edit)\s+\S+/i.test(trimmed)) {
 			headerHandled = true;
 			return line;
 		}
@@ -645,16 +759,234 @@ export function formatWriteDiffLines(
 }
 
 /**
+ * ANSI background color escape sequences (\x1b[48;...m and \x1b[49m)
+ * that leak from gentle-shell float cards.
+ */
+export const BG_ESCAPE_RE = /\x1b\[(?:48;[0-9;]*|49)m/g;
+
+/**
+ * Trailing interactive key hints appended to tool headers (e.g. "ctrl+o to expand", "ctrl+o to collapse").
+ */
+export const KEY_HINT_TRAILING_RE = /\s*(?:(?:ctrl|cmd|alt|opt|meta)\+[a-z0-9]+|\S+)?\s*to\s+(?:expand|collapse)\s*$/i;
+
+/**
+ * Strips background fill ANSI escapes (\x1b[48;...m and \x1b[49m) that leak from float cards.
+ */
+export function stripBackgroundAnsi(text: string): string {
+	return text.replace(BG_ESCAPE_RE, "");
+}
+
+/**
+ * Extracts the title / command from a native or quiet-tools card top border.
+ * e.g. "╭─ ✿ $ npm test ───────────── ctrl+o to expand ╮" -> "$ npm test"
+ *      "╭─ ✿ edit /path/to/file ───── ctrl+o to expand ╮" -> "edit /path/to/file"
+ *      "╭─ ≡ read /path/to/file ───── ctrl+o to expand ╮" -> "read /path/to/file"
+ */
+export function extractCardHeaderTitle(headerLine: string): string {
+	const plain = stripAnsi(headerLine).trim();
+	let title = plain.replace(/^[╭┌][─═\s]*(?:[✿❀❁✾✣✎★≡⌕+☷⌖$]\s*)?/, "");
+	title = title.replace(/\s*[─═]{2,}.*$/, "").replace(/[╮┐]$/, "").trim();
+	title = title.replace(KEY_HINT_TRAILING_RE, "").trim();
+	return title;
+}
+
+/**
+ * Strips leading/trailing vertical card borders (│, ║, |) and surrounding ANSI escapes
+ * from a card body line so inner content nests cleanly inside CUTE frames.
+ */
+export function stripCardLineBorders(line: string): string {
+	let s = line.replace(BG_ESCAPE_RE, "");
+	s = s.replace(/^((?:\x1b\[[0-9;]*m)*)\s*[│║|]((?:\x1b\[[0-9;]*m)*)\s?/, "");
+	s = s.replace(/\s?((?:\x1b\[[0-9;]*m)*)[│║|]((?:\x1b\[[0-9;]*m)*)\s*$/, "");
+	return s.trimEnd();
+}
+
+/**
+ * Checks whether a line represents a tool call header line.
+ */
+export function isToolHeaderLine(line: string): boolean {
+	const plain = stripAnsi(line).trim();
+	if (!plain) return false;
+	if (/^(?:\$\s*)?bash\s+\$/i.test(plain) || /^\$\s+\S/.test(plain)) return true;
+	if (/(?:🌹\s*)?rdd\b/i.test(plain) || /^gentle_review(?:_|\b)/i.test(plain)) return true;
+	if (/^(?:[≡⌕✎+⌖☷✿❀❁✾★✣\u270E$🌹]\s*)?(?:read|write|edit|grep|find|ls|fetch|search|bash|rdd|gentle_review)\b/i.test(plain)) return true;
+	return false;
+}
+
+/**
+ * Checks whether a line is a blank float card padding line
+ * (e.g. contains only whitespace, block rails like ▎, or background escapes).
+ */
+export function isBlankFloatLine(line: string): boolean {
+	const stripped = stripAnsi(line.replace(BG_ESCAPE_RE, "")).trim();
+	return stripped === "" || /^[▎▏▍▌▋▊▉█│║|]$/.test(stripped);
+}
+
+/**
+ * Checks whether an array of lines carries gentle-shell float card chrome.
+ */
+export function hasFloatChrome(lines: string[]): boolean {
+	return lines.some((line) => {
+		const plain = stripAnsi(line).trim();
+		return /^[▎▏▍▌▋▊▉█]/.test(plain) || /\x1b\[48;[0-9;]*m/.test(line);
+	});
+}
+
+/**
+ * Checks whether an array of lines carries outline card borders.
+ */
+export function hasOutlineChrome(lines: string[]): boolean {
+	return lines.some((line) => {
+		const plain = stripAnsi(line).trim();
+		return /^[╭┌].*[╮┐]$/.test(plain) || /^[╰└].*[╯┘]$/.test(plain);
+	});
+}
+
+/**
+ * Strips leading rail (▎ or other block rail), trailing padding/rail, and leaking background ANSI
+ * from a float card line.
+ */
+export function stripFloatLineChrome(line: string): string {
+	let s = line.replace(BG_ESCAPE_RE, "");
+	// Strip leading rail character, optional margin spaces, and optional space after rail
+	s = s.replace(/^\s*(?:\x1b\[[0-9;]*m)*\s*[▎▏▍▌▋▊▉█│║|](?:\x1b\[[0-9;]*m)*\s?/, "");
+	// Strip trailing rail and trailing padding
+	s = s.replace(/\s*(?:\x1b\[[0-9;]*m)*[▎▏▍▌▋▊▉█│║|]?(?:\x1b\[[0-9;]*m)*\s*$/, "");
+	// Strip trailing key hint if present on a tool header
+	if (isToolHeaderLine(s)) {
+		s = s.replace(KEY_HINT_TRAILING_RE, "");
+	}
+	return s.trimEnd();
+}
+
+/**
+ * Strips gentle-shell float card chrome and native outline card frames
+ * (╭─ ..., │ ..., ╰─ ..., ▎ ...) and leaking background ANSI escapes
+ * so inner content nests cleanly without double borders or color bleeds.
+ */
+export function unwrapNativeCard(lines: string[]): string[] {
+	if (!lines || lines.length === 0) return [];
+
+	// Gentle AI notice / lifecycle cards (review start, consent, binary override)
+	// are handled specifically by transformTranscriptLines and unifyCardFrame.
+	if (lines.some((line) => {
+		const plain = stripAnsi(line);
+		const isRdd = /(?:🌹\s*)?rdd\b/i.test(plain) || /^gentle_review(?:_|\b)/i.test(plain);
+		const hasGentleTitle = !isRdd && (plain.includes("Gentle AI") || plain.includes("🤖") || /[\u{1F339}\uFE0E🌹🌷]/u.test(plain));
+		return (plain.includes("╭") || plain.includes("╔")) && hasGentleTitle;
+	})) {
+		return lines;
+	}
+
+	// Step 1: Strip background fill ANSI escapes that leak from float cards
+	const cleanedBg = lines.map((line) => line.replace(BG_ESCAPE_RE, ""));
+
+	// Step 2: Unwrap outline card framing if present
+	let workingLines = cleanedBg;
+	if (hasOutlineChrome(cleanedBg)) {
+		const outlineResult: string[] = [];
+		let inCard = false;
+		for (const line of cleanedBg) {
+			const plain = stripAnsi(line).trim();
+			if (/^[╭┌].*[╮┐]$/.test(plain)) {
+				inCard = true;
+				const title = extractCardHeaderTitle(line);
+				if (title) outlineResult.push(title);
+				continue;
+			}
+			if (/^[╰└].*[╯┘]$/.test(plain)) {
+				inCard = false;
+				continue;
+			}
+			if (inCard) {
+				outlineResult.push(stripCardLineBorders(line));
+			} else {
+				outlineResult.push(line);
+			}
+		}
+		workingLines = outlineResult;
+	}
+
+	// Step 3: Unwrap float card chrome (▎ rails, margins, blank float padding lines)
+	if (hasFloatChrome(workingLines)) {
+		const floatResult: string[] = [];
+		for (const line of workingLines) {
+			if (isBlankFloatLine(line)) {
+				floatResult.push("");
+			} else {
+				floatResult.push(stripFloatLineChrome(line));
+			}
+		}
+
+		// Drop leading blank float padding lines
+		let start = 0;
+		while (start < floatResult.length && floatResult[start].trim() === "") {
+			start++;
+		}
+		// Drop trailing blank float padding lines
+		let end = floatResult.length;
+		while (end > start && floatResult[end - 1].trim() === "") {
+			end--;
+		}
+
+		const trimmed = floatResult.slice(start, end);
+
+		// Drop intermediate blank padding line between header and body if present
+		if (trimmed.length > 1 && isToolHeaderLine(trimmed[0]) && trimmed[1].trim() === "") {
+			trimmed.splice(1, 1);
+		}
+
+		return trimmed;
+	}
+
+	return workingLines;
+}
+
+const BASH_HEADER_VARIANTS_RE = /^(?:\$\s*)?(?:bash\s+\$\s+)(.*)$/i;
+const BASH_STANDARD_HEADER_RE = /^(\$\s+)(.*)$/;
+
+/**
+ * Extracts the clean command from a bash header line, normalizing
+ * "$ bash $ <cmd>", "bash $ <cmd>", or "$ <cmd>" and stripping any trailing key hints.
+ */
+export function extractBashCommand(line: string): string | undefined {
+	const plain = stripAnsi(line).trim();
+	const m1 = BASH_HEADER_VARIANTS_RE.exec(plain);
+	if (m1) {
+		return m1[1].replace(KEY_HINT_TRAILING_RE, "").trim();
+	}
+	const m2 = BASH_STANDARD_HEADER_RE.exec(plain);
+	if (m2) {
+		return m2[2].replace(KEY_HINT_TRAILING_RE, "").trim();
+	}
+	return undefined;
+}
+
+/**
+ * Normalizes a bash header line back to "$ <command>".
+ */
+export function normalizeBashHeader(line: string): string {
+	const cmd = extractBashCommand(line);
+	if (cmd !== undefined) {
+		return `$ ${cmd}`;
+	}
+	return line;
+}
+
+/**
  * Strips empty lines and horizontal border divider lines (e.g. ─── or ═══)
  * from raw bash component output so it nests cleanly inside our card.
  */
 export function cleanBashLines(rawLines: string[]): string[] {
-	return rawLines.filter((line) => {
-		const plain = stripAnsi(line).trim();
-		if (plain === "") return false;
-		if (/^[─═\-]+$/.test(plain)) return false;
-		return true;
-	});
+	const unwrapped = unwrapNativeCard(rawLines);
+	return unwrapped
+		.map((line) => normalizeBashHeader(line))
+		.filter((line) => {
+			const plain = stripAnsi(line).trim();
+			if (plain === "") return false;
+			if (/^[─═\-]+$/.test(plain)) return false;
+			return true;
+		});
 }
 
 /**
@@ -746,17 +1078,27 @@ export function extractBashDisplayPath(headerLine: string): string | undefined {
 /**
  * Formats a `$ ...` bash command header: keeps the leading `$` in pink
  * (`bashMode`) and highlights the command itself Dracula-style.
+ * Normalizes gentle-shell variants ("$ bash $ <cmd>", "bash $ <cmd>")
+ * and strips trailing key hints ("ctrl+o to expand").
  * Falls back to the original line when no theme is available.
  */
 export function formatBashCommandHeader(line: string, theme?: Theme): string {
-	if (!theme) return line;
-	const plain = stripAnsi(line);
-	const m = /^(\s*\$\s?)(.*)$/.exec(plain);
-	if (!m) return line;
-	const prefix = m[1] ?? "$ ";
-	const cmd = m[2] ?? "";
-	if (!cmd) return line;
-	return safeFg(theme, "bashMode", prefix, "pink") + highlightCodeLine(cmd, theme);
+	const cmd = extractBashCommand(line);
+	if (cmd === undefined) {
+		if (!theme) return line;
+		const plain = stripAnsi(line);
+		const m = /^(\s*\$\s?)(.*)$/.exec(plain);
+		if (!m) return line;
+		const prefix = m[1] ?? "$ ";
+		const rest = m[2] ?? "";
+		if (!rest) return line;
+		return safeFg(theme, "bashMode", prefix, "pink") + highlightCodeLine(rest, theme);
+	}
+	if (!cmd) {
+		return theme ? safeFg(theme, "bashMode", "$", "pink") : "$";
+	}
+	if (!theme) return `$ ${cmd}`;
+	return safeFg(theme, "bashMode", "$ ", "pink") + highlightCodeLine(cmd, theme);
 }
 
 /**
@@ -773,13 +1115,14 @@ export function formatBashOutputLines(
 	colorKey = "bashOutput",
 ): string[] {
 	if (!lines.length) return lines;
+	const unwrapped = unwrapNativeCard(lines);
 	const color = (s: string): string => (theme ? safeFg(theme, colorKey, s) : `\x1b[38;2;142;197;166m${s}\x1b[39m`);
 
 	// Tracks whether the current `$` section is highlightable code (a `cat`-style
 	// file dump or a code-interpreter heredoc) plus the heredoc terminator.
 	let highlightMode = false;
 	let heredocEnd: string | undefined;
-	return lines.map((line) => {
+	return unwrapped.map((line) => {
 		const plain = stripAnsi(line);
 		const trimmed = plain.trim();
 		if (trimmed === "") return line;
@@ -795,16 +1138,19 @@ export function formatBashOutputLines(
 		// 2. Command header line ($ ...) gets Dracula highlighting on the command,
 		// keeping `$` pink, and decides whether the lines that follow are
 		// highlightable code or plain output.
-		if (trimmed.startsWith("$") || plain.trimStart().startsWith("$ ")) {
-			const heredoc = extractHeredoc(trimmed);
+		const bashCmd = extractBashCommand(line);
+		if (bashCmd !== undefined || trimmed.startsWith("$") || plain.trimStart().startsWith("$ ")) {
+			const normalizedHeader = bashCmd !== undefined ? `$ ${bashCmd}` : line;
+			const normTrimmed = stripAnsi(normalizedHeader).trim();
+			const heredoc = extractHeredoc(normTrimmed);
 			if (heredoc && (HEREDOC_CODE_COMMANDS.has(heredoc.interpreter) || HEREDOC_SHELL_COMMANDS.has(heredoc.interpreter) || toolFileHighlightable(heredoc.target))) {
 				highlightMode = true;
 				heredocEnd = heredoc.delimiter;
 			} else {
-				highlightMode = toolFileHighlightable(extractBashDisplayPath(trimmed));
+				highlightMode = toolFileHighlightable(extractBashDisplayPath(normTrimmed));
 				heredocEnd = undefined;
 			}
-			return formatBashCommandHeader(line, theme);
+			return formatBashCommandHeader(normalizedHeader, theme);
 		}
 
 		// 3. Lines with real colors (diff green/red, native highlighting, ...)
@@ -968,7 +1314,8 @@ export function formatTranscriptChild(
 	if (isBashComponent(child)) {
 		const rawLines = child.render(width - 4);
 		const cleaned = cleanBashLines(rawLines);
-		const styled = formatBashOutputLines(cleaned.length ? cleaned : rawLines, theme, colors.bashOutput);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatBashOutputLines(cleaned.length ? cleaned : unwrapped, theme, colors.bashOutput);
 		return frameCategoryBox(styled, ">_ bash", colors.bashMessage, width, theme);
 	}
 
@@ -976,7 +1323,8 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting for code lines.
 	if (isReadComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatReadLines(unwrapped, toolFilePath(child, unwrapped), theme);
 		return frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 	}
 
@@ -984,7 +1332,8 @@ export function formatTranscriptChild(
 	// with Dracula-style syntax highlighting inside diff lines.
 	if (isWriteComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatWriteDiffLines(unwrapped, toolFilePath(child, unwrapped), theme, (child as any).toolName);
 		return frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 	}
 
@@ -993,7 +1342,8 @@ export function formatTranscriptChild(
 	// (toolSuccessBg) is preserved; only the double-line frame is added.
 	if (isFetchComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return frameCategoryBox(unwrapped, "fetch", colors.fetchMessage, width, theme);
 	}
 
 	// Search tool execution in dusty-rose card (#D7A0B8 / colors.searchMessage).
@@ -1001,7 +1351,17 @@ export function formatTranscriptChild(
 	// stay distinguishable; inner dark background preserved untouched.
 	if (isSearchComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return frameCategoryBox(unwrapped, "search", colors.searchMessage, width, theme);
+	}
+
+	// Review tool (RDD) execution in gentle tone (#a46db5 / colors.reviewMessage).
+	if (isReviewComponent(child)) {
+		const rawLines = child.render(width - 4);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const title = extractReviewHeader(unwrapped, child);
+		const styled = formatReviewOutputLines(unwrapped, theme);
+		return frameCategoryBox(styled, title, colors.reviewMessage ?? "gentle", width, theme);
 	}
 
 	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage)
@@ -1010,7 +1370,8 @@ export function formatTranscriptChild(
 	// card by formatTranscriptChildren.
 	if (isMemoryComponent(child)) {
 		const rawLines = child.render(width - 4);
-		const styled = formatMemoryOutputLines(rawLines, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatMemoryOutputLines(unwrapped, theme);
 		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
 	}
 
@@ -1018,13 +1379,15 @@ export function formatTranscriptChild(
 	// syntax highlighting on matches, line numbers, and file paths.
 	if (isGrepComponent(child)) {
 		const rawLines = child.render(width);
-		return formatGrepLines(rawLines, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return formatGrepLines(unwrapped, theme);
 	}
 
 	// Top-level Pi error Text in coral card (same tone as error typography / colors.errorMessage)
 	if (isErrorTextComponent(child)) {
 		const rawLines = child.render(width - 4);
-		return frameCategoryBox(rawLines, "\u26A0 error", colors.errorMessage, width, theme);
+		const unwrapped = unwrapNativeCard(rawLines);
+		return frameCategoryBox(unwrapped, "\u26A0 error", colors.errorMessage, width, theme);
 	}
 
 	// Assistant prose renders free (no card) with bolder headings and celeste
@@ -1036,7 +1399,8 @@ export function formatTranscriptChild(
 		return formatAssistantProse(rawLines, theme, width);
 	}
 	const rawLines = child.render(width);
-	return transformTranscriptLines(rawLines, theme);
+	const unwrapped = unwrapNativeCard(rawLines);
+	return transformTranscriptLines(unwrapped, theme);
 }
 
 /**
@@ -1146,7 +1510,8 @@ export function formatTranscriptChildren(
 		if (isReadComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const styled = formatReadLines(rawLines, toolFilePath(child, rawLines), theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const styled = formatReadLines(unwrapped, toolFilePath(child, unwrapped), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
@@ -1158,7 +1523,8 @@ export function formatTranscriptChildren(
 		if (isWriteComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const styled = formatWriteDiffLines(rawLines, toolFilePath(child, rawLines), theme, (child as any).toolName);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const styled = formatWriteDiffLines(unwrapped, toolFilePath(child, unwrapped), theme, (child as any).toolName);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
@@ -1170,7 +1536,8 @@ export function formatTranscriptChildren(
 		if (isFetchComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const boxed = frameCategoryBox(rawLines, "fetch", colors.fetchMessage, width, theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const boxed = frameCategoryBox(unwrapped, "fetch", colors.fetchMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
@@ -1181,7 +1548,21 @@ export function formatTranscriptChildren(
 		if (isSearchComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width - 4);
-			const boxed = frameCategoryBox(rawLines, "search", colors.searchMessage, width, theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const boxed = frameCategoryBox(unwrapped, "search", colors.searchMessage, width, theme);
+			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
+			lines.push(...boxed);
+			i++;
+			continue;
+		}
+
+		if (isReviewComponent(child)) {
+			ensureBreathingRoom();
+			const rawLines = child.render(width - 4);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const title = extractReviewHeader(unwrapped, child);
+			const styled = formatReviewOutputLines(unwrapped, theme);
+			const boxed = frameCategoryBox(styled, title, colors.reviewMessage ?? "gentle", width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
 			lines.push(...boxed);
 			i++;
@@ -1209,10 +1590,11 @@ export function formatTranscriptChildren(
 			const combinedLines: string[] = [];
 			for (const comp of memGroup) {
 				const raw = comp.render(width - 4);
+				const unwrapped = unwrapNativeCard(raw);
 				if (combinedLines.length > 0) {
 					combinedLines.push(""); // subtle separation between calls
 				}
-				const styled = formatMemoryOutputLines(raw, theme);
+				const styled = formatMemoryOutputLines(unwrapped, theme);
 				combinedLines.push(...styled);
 			}
 
@@ -1260,10 +1642,11 @@ export function formatTranscriptChildren(
 			for (let j = 0; j < errorGroup.length; j++) {
 				const comp = errorGroup[j];
 				const raw = comp.render(width - 4);
+				const unwrapped = unwrapNativeCard(raw);
 				if (combinedLines.length > 0) {
 					combinedLines.push(""); // subtle separation between errors
 				}
-				combinedLines.push(...raw);
+				combinedLines.push(...unwrapped);
 			}
 
 			const cardLines = frameCategoryBox(
@@ -1292,7 +1675,8 @@ export function formatTranscriptChildren(
 		if (isGrepComponent(child)) {
 			ensureBreathingRoom();
 			const rawLines = child.render(width);
-			const styled = formatGrepLines(rawLines, theme);
+			const unwrapped = unwrapNativeCard(rawLines);
+			const styled = formatGrepLines(unwrapped, theme);
 			mouseChildren.push({ component: child, height: styled.length });
 			lines.push(...styled);
 			i++;
@@ -1306,11 +1690,38 @@ export function formatTranscriptChildren(
 		const transformed =
 			name === "AssistantMessageComponent"
 				? formatAssistantProse(rawLines, theme, width)
-				: transformTranscriptLines(rawLines, theme);
+				: transformTranscriptLines(unwrapNativeCard(rawLines), theme);
 		mouseChildren.push({ component: child, height: transformed.length });
 		lines.push(...transformed);
 		i++;
 	}
 
 	return { lines, mouseChildren };
+}
+
+/**
+ * Renders any generic tool call output cleanly inside a CUTE category box,
+ * unwrapping float card chrome and outline cards.
+ */
+export function formatToolCallCard(
+	rawLines: string[],
+	toolName: string,
+	theme?: Theme,
+	width = 80,
+): string[] {
+	const unwrapped = unwrapNativeCard(rawLines);
+	const colors = loadCuteColors();
+	return frameCategoryBox(unwrapped, toolName, colors.readMessage, width, theme);
+}
+
+/**
+ * Renders a file preview cleanly unwrapped and highlighted.
+ */
+export function formatFilePreview(
+	rawLines: string[],
+	filePath?: string,
+	theme?: Theme,
+): string[] {
+	const unwrapped = unwrapNativeCard(rawLines);
+	return formatReadLines(unwrapped, filePath, theme);
 }
