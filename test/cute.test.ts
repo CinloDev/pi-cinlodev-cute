@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
-import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor } from "../src/cute-transcript.ts";
+import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, isReviewComponent, looksLikeReviewLines, extractReviewHeader, formatReviewOutputLines } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
@@ -381,6 +381,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		assert.equal(colors.writeMessage, "write");
 		assert.equal(colors.errorMessage, "error");
 		assert.equal(colors.sidebarBorder, "border");
+		assert.equal(colors.reviewMessage, "gentle");
 
 		// Test user override
 		fs.writeFileSync(
@@ -389,6 +390,7 @@ test("Cute Colors - defaults and user overrides", () => {
 				colors: {
 					userMessage: "accent",
 					gentleCardWarning: "gold",
+					reviewMessage: "#a46db5",
 				},
 			}),
 			"utf8",
@@ -399,6 +401,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		assert.equal(overridden.userMessage, "accent");
 		assert.equal(overridden.gentleCardWarning, "gold");
 		assert.equal(overridden.gentleCardSuccess, "success");
+		assert.equal(overridden.reviewMessage, "#a46db5");
 	} finally {
 		if (originalContent !== null) {
 			fs.writeFileSync(userConfigFile, originalContent, "utf8");
@@ -782,6 +785,147 @@ test("isFetchComponent - matches fetch_content, fetch alias and fetch headers, n
 	assert.equal(isFetchComponent({ render: () => ["let me fetch the docs for you"] } as any), false);
 	assert.equal(looksLikeFetchLines(["search 2 queries"]), false);
 	assert.equal(looksLikeFetchLines([]), false);
+});
+
+test("isReviewComponent - matches gentle_review tools and rdd header variants", () => {
+	// 1. Tool names
+	assert.ok(isReviewComponent({ toolName: "gentle_review" } as any));
+	assert.ok(isReviewComponent({ toolName: "gentle_review_capture" } as any));
+	assert.ok(isReviewComponent({ toolName: "gentle_review_capture_group" } as any));
+	assert.ok(isReviewComponent({ toolName: "gentle_review_scope" } as any));
+
+	// 2. Rendered header lines fallback
+	assert.ok(isReviewComponent({ render: () => ["🌹 rdd inspect", "findings: none"] } as any));
+	assert.ok(isReviewComponent({ render: () => ["rdd start"] } as any));
+	assert.ok(isReviewComponent({ render: () => ["gentle_review_scope"] } as any));
+	assert.ok(looksLikeReviewLines([" ▎ 🌹 rdd inspect \x1b[2mctrl+o to expand\x1b[22m "]));
+	assert.ok(looksLikeReviewLines(["╭─ 🌹 rdd diff ───────────── ╮"]));
+
+	// 3. Negative checks: other tools and chat prose do NOT match
+	assert.equal(isReviewComponent({ toolName: "read" } as any), false);
+	assert.equal(isReviewComponent({ toolName: "bash" } as any), false);
+	assert.equal(isReviewComponent({ toolName: "write" } as any), false);
+	assert.equal(isReviewComponent({ toolName: "fetch_content" } as any), false);
+	assert.equal(isReviewComponent({ toolName: "web_search" } as any), false);
+	class UserMessageComponent { render() { return ["can you run rdd inspect?"]; } }
+	class AssistantMessageComponent { render() { return ["I will run rdd start for you"]; } }
+	assert.equal(isReviewComponent(new UserMessageComponent() as any), false);
+	assert.equal(isReviewComponent(new AssistantMessageComponent() as any), false);
+	assert.equal(looksLikeReviewLines([]), false);
+	assert.equal(looksLikeReviewLines(["fetch https://example.com"]), false);
+});
+
+test("extractReviewHeader - extracts clean title with rose and operation", () => {
+	// From unwrapped lines
+	assert.equal(extractReviewHeader(["🌹 rdd inspect", "receipt: ok"]), "🌹 rdd inspect");
+	assert.equal(extractReviewHeader(["rdd start"]), "🌹 rdd start");
+	assert.equal(extractReviewHeader(["rdd diff", "diff output"]), "🌹 rdd diff");
+	assert.equal(extractReviewHeader(["🌹 rdd"]), "🌹 rdd");
+	assert.equal(extractReviewHeader(["gentle_review inspect"]), "🌹 rdd inspect");
+
+	// From toolName or args on component
+	assert.equal(extractReviewHeader([], { toolName: "gentle_review_scope" } as any), "🌹 rdd scope");
+	assert.equal(extractReviewHeader([], { toolName: "gentle_review_capture" } as any), "🌹 rdd capture");
+	assert.equal(extractReviewHeader([], { toolName: "gentle_review_capture_group" } as any), "🌹 rdd capture_group");
+	assert.equal(extractReviewHeader([], { toolName: "gentle_review", args: { command: "inspect" } } as any), "🌹 rdd inspect");
+	assert.equal(extractReviewHeader([], { toolName: "gentle_review" } as any), "🌹 rdd");
+	assert.equal(extractReviewHeader([]), "🌹 rdd");
+});
+
+test("formatTranscriptChild - frames gentle_review in double-line rose card with unwrapped float chrome", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	class GentleReviewToolComponent {
+		toolName = "gentle_review";
+		render() {
+			return [
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m                                                \x1b[49m ",
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m 🌹 rdd inspect                  \x1b[2mctrl+o to expand\x1b[22m   \x1b[49m ",
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m                                                \x1b[49m ",
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m receipt: verified                              \x1b[49m ",
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m pass: 5 / fail: 0                              \x1b[49m ",
+				" \x1b[48;2;20;20;30m\x1b[38;2;140;200;140m▎\x1b[39m                                                \x1b[49m ",
+			];
+		}
+	}
+
+	const framed = formatTranscriptChild(new GentleReviewToolComponent() as any, 120, mockTheme);
+
+	// 1. Double line framing with reviewMessage / gentle tone
+	assert.ok(framed[0].includes("╔═"));
+	assert.ok(framed[0].includes("🌹 rdd inspect"));
+	assert.ok(framed[0].includes("═╗"));
+	assert.ok(framed[0].includes("[gentle]"));
+
+	// 2. Float chrome (▎ rails and background escapes) stripped
+	for (const line of framed) {
+		assert.ok(!line.includes("▎"), `rail leaked in: ${line}`);
+		assert.ok(!/\x1b\[48;[0-9;]*m/.test(line), `bg escape leaked in: ${line}`);
+		assert.ok(!/\x1b\[49m/.test(line), `bg reset leaked in: ${line}`);
+		assert.ok(!line.includes("ctrl+o to expand"), `key hint leaked in: ${line}`);
+	}
+
+	// 3. Inner content preserved cleanly
+	const plainFramed = framed.map((line) => line.replace(/\[\/?[a-zA-Z0-9_-]+\]/g, ""));
+	assert.ok(plainFramed.some((line) => line.includes("receipt: verified")));
+	assert.ok(plainFramed.some((line) => line.includes("pass: 5 / fail: 0")));
+
+	// 4. Bottom frame double lines
+	assert.ok(framed[framed.length - 1].includes("╚═"));
+	assert.ok(framed[framed.length - 1].includes("═╝"));
+
+	// 5. Outline card variant unwraps and frames cleanly
+	class OutlineReviewComponent {
+		toolName = "gentle_review_scope";
+		render() {
+			return [
+				"╭─ 🌹 rdd scope ───────────────────────── ctrl+o to expand ╮",
+				"│ scope: src/cute-transcript.ts                            │",
+				"│ \x1b[32m✔ clean\x1b[39m                                                  │",
+				"╰──────────────────────────────────────────────────────────╯",
+			];
+		}
+	}
+	const outlineFramed = formatTranscriptChild(new OutlineReviewComponent() as any, 100, mockTheme);
+	assert.ok(outlineFramed[0].includes("╔═"));
+	assert.ok(outlineFramed[0].includes("🌹 rdd scope"));
+	assert.ok(outlineFramed.some((l) => l.includes("scope: src/cute-transcript.ts")));
+	assert.ok(outlineFramed.some((l) => l.includes("\x1b[32m✔ clean\x1b[39m")));
+	assert.ok(!outlineFramed.some((l) => l.includes("╭─") || l.includes("╰─")));
+});
+
+test("formatTranscriptChildren - registers FramedCardMouseProxy for gentle_review cards", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	let clicked = false;
+	class GentleReviewComponent {
+		toolName = "gentle_review";
+		render() {
+			return [" ▎ 🌹 rdd start \x1b[2mctrl+o to expand\x1b[22m ", " ▎ started "];
+		}
+		handleMouse(event: any) {
+			clicked = true;
+			return { handled: true };
+		}
+	}
+
+	const reviewComp = new GentleReviewComponent();
+	const { lines, mouseChildren } = formatTranscriptChildren([reviewComp as any], 60, mockTheme);
+
+	assert.ok(lines.length > 0);
+	assert.ok(lines[0].includes("🌹 rdd start"));
+	assert.equal(mouseChildren.length, 1);
+	assert.equal(mouseChildren[0].height, lines.length);
+
+	// Test mouse click delegation through proxy
+	const proxy = mouseChildren[0].component;
+	assert.ok(typeof (proxy as any).handleMouse === "function");
+	(proxy as any).handleMouse({ x: 5, y: 0, button: 0 });
+	assert.equal(clicked, true);
 });
 
 test("formatTranscriptChild - frames fetch_content in pink card with dark background intact", () => {
