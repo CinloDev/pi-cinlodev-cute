@@ -12,7 +12,11 @@ import {
 	formatWriteDiffLines,
 	formatToolCallCard,
 	formatFilePreview,
+	formatTranscriptChildren,
+	formatTranscriptChild,
+	isAsciiArtOrBanner,
 } from "../src/cute-transcript.ts";
+import { stripAnsi } from "../src/cute-theme.ts";
 
 const mockTheme = {
 	fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
@@ -184,6 +188,70 @@ test("unwrapNativeCard - outline cards with tool glyphs extract title cleanly", 
 	];
 	const unwrappedRead = unwrapNativeCard(outlineRead);
 	assert.deepEqual(unwrappedRead, ["read /var/log/syslog", "log line 1"]);
+});
+
+test("formatTranscriptChildren - groups consecutive subagent status polls into one coalesced card", () => {
+	const comp1 = {
+		toolName: "subagent_status",
+		render: () => [
+			"agent status · muqbfaub-1-mq3o",
+			"muqbfaub-1-mq3o · gentle-ai-explore · running · background · 61 turns · 61 tool calls · last: read",
+		],
+	};
+	const comp2 = {
+		toolName: "subagent_status",
+		render: () => [
+			"agent status · muqbfaub-1-mq3o",
+			"muqbfaub-1-mq3o · gentle-ai-explore · running · background · 62 turns · 62 tool calls · last: grep",
+		],
+	};
+
+	const { lines, mouseChildren } = formatTranscriptChildren([comp1 as any, comp2 as any], 120);
+	const plain = lines.map(stripAnsi).join("\n");
+
+	assert.match(plain, /🤖 subagent/);
+	assert.match(plain, /62 turns/);
+	assert.match(plain, /2 status polls coalesced/);
+	assert.equal(mouseChildren.length, 2);
+});
+
+test("formatTranscriptChild - frames subagent tool in cyan card", () => {
+	const comp = {
+		toolName: "subagent_status",
+		render: () => [
+			"agent status · task-123",
+			"task-123 · worker · completed · task · cwd: /app · 5 turns · 5 tool calls · last: edit",
+		],
+	};
+	const lines = formatTranscriptChild(comp as any, 80);
+	const plain = lines.map(stripAnsi).join("\n");
+	assert.match(plain, /🤖 subagent/);
+	assert.match(plain, /task-123/);
+});
+
+test("isAsciiArtOrBanner protects neko banner and dense ASCII block art", () => {
+	const nekoBannerLines = [
+		"                                            \u001b[38;2;158;101;219m\u2584\u001b[0m\u001b[38;2;23;29;31m\u2584\u001b[0m\u001b[38;2;158;101;219m\u2596\u001b[0m                     ",
+		"                  \u001b[38;2;158;101;219m\u259f\u001b[0m\u001b[38;2;158;101;219m\u001b[48;2;23;29;31m\u2580\u001b[0m\u001b[38;2;158;101;219m\u2584\u001b[0m\u001b[38;2;158;101;219m\u2596\u001b[0m                    \u001b[38;2;158;101;219m\u2584\u001b[0m\u001b[38;2;158;101;219m\u001b[48;2;23;29;31m\u2598\u001b[0m\u001b[38;2;170;77;54m\u001b[48;2;23;29;31m\u2597\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u001b[48;2;23;29;31m\u2599\u001b[0m\u001b[38;2;158;101;219m\u2599\u001b[0m                    ",
+		"                 \u001b[38;2;158;101;219m\u259f\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u001b[48;2;23;29;31m\u2584\u001b[0m\u001b[38;2;23;29;31m\u2588\u001b[0m\u001b[38;2;23;29;31m\u2599\u001b[0m\u001b[38;2;158;101;219m\u2596\u001b[0m                \u001b[38;2;158;101;219m\u2597\u001b[0m\u001b[38;2;158;101;219m\u001b[48;2;23;29;31m\u2580\u001b[0m\u001b[38;2;23;29;31m\u2588\u001b[0m\u001b[38;2;170;77;54m\u001b[48;2;23;29;31m\u2597\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;170;77;54m\u2588\u001b[0m\u001b[38;2;158;101;219m\u2599\u001b[0m                   ",
+		"                        \x1b[1;38;2;0;229;255m\u2726\x1b[0m  \x1b[1;38;2;222;124;82mN e k o - p i\x1b[0m  \x1b[1;38;2;158;101;219m\u2726\x1b[0m                         ",
+	];
+
+	assert.equal(isAsciiArtOrBanner(nekoBannerLines), true);
+
+	// unwrapNativeCard should leave it 100% untouched
+	const unwrapped = unwrapNativeCard(nekoBannerLines);
+	assert.deepEqual(unwrapped, nekoBannerLines);
+	// 24-bit background color escape preserved
+	assert.ok(unwrapped[1].includes("\u001b[48;2;23;29;31m"));
+
+	// formatTranscriptChildren should render it completely intact
+	const comp = {
+		render: () => nekoBannerLines,
+	};
+	const { lines } = formatTranscriptChildren([comp as any], 80);
+	assert.ok(lines.join("\n").includes("N e k o - p i"));
+	assert.ok(lines.join("\n").includes("\u001b[48;2;23;29;31m"));
 });
 
 test("formatToolCallCard and formatFilePreview helper functions", () => {
