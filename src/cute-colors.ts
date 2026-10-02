@@ -18,6 +18,7 @@ export interface CuteColors {
 	gentleCardError: string;
 	sidebarBorder: string;
 	reviewMessage: string;
+	agentMessage: string;
 }
 
 export const CUTE_COLORS_FILENAME = "CinlodevCute.colors.json";
@@ -37,6 +38,7 @@ export const DEFAULT_CUTE_COLORS: CuteColors = {
 	gentleCardError: "error",
 	sidebarBorder: "border",
 	reviewMessage: "gentle",
+	agentMessage: "accent",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -108,6 +110,7 @@ function mergeColors(raw: unknown, current: CuteColors): CuteColors {
 		gentleCardError: typeof source.gentleCardError === "string" ? source.gentleCardError : current.gentleCardError,
 		sidebarBorder: typeof source.sidebarBorder === "string" ? source.sidebarBorder : current.sidebarBorder,
 		reviewMessage: typeof source.reviewMessage === "string" ? source.reviewMessage : current.reviewMessage,
+		agentMessage: typeof source.agentMessage === "string" ? source.agentMessage : current.agentMessage,
 	};
 }
 
