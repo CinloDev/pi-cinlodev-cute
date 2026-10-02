@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { cuteGlyphs, cutePalette, safeFg, type CutePalette } from "./cute-theme.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
-import { readActiveProfile } from "./cute-paths.ts";
+import { loadCutePaths, readActiveProfile } from "./cute-paths.ts";
 
 export interface QuotaPoolDisplay {
 	label: string;
@@ -99,10 +99,20 @@ export function resolveManagementKey(): string {
 		}
 	} catch {}
 
-	const candidateSecretsPaths = [
-		"/mnt/d/orca/CLIProxyAPI/secrets.txt",
-		join(homedir(), "CLIProxyAPI", "secrets.txt"),
-	];
+	const cutePaths = loadCutePaths();
+	const configuredPaths = Array.isArray(cutePaths.secretsPaths) ? cutePaths.secretsPaths : [];
+
+	const candidateSecretsPaths: string[] = [];
+	if (process.env.CLIPROXYAPI_SECRETS_PATH) {
+		candidateSecretsPaths.push(process.env.CLIPROXYAPI_SECRETS_PATH);
+	}
+	for (const p of configuredPaths) {
+		if (p.startsWith("~/")) {
+			candidateSecretsPaths.push(join(homedir(), p.slice(2)));
+		} else {
+			candidateSecretsPaths.push(p);
+		}
+	}
 
 	for (const secretPath of candidateSecretsPaths) {
 		try {

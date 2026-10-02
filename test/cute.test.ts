@@ -226,7 +226,7 @@ test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to d
 
 	const warningLines = [
 		"\u001b[33m╭─\u001b[39m ✿ Gentle AI · dev binary override · field-test only \u001b[35m──────────────────╮\u001b[39m",
-		"\u001b[33m│\u001b[39m /home/cinlodev/go/bin/gentle-ai · sha256:882bfd7a9d5c16f1              \u001b[35m│\u001b[39m",
+		"\u001b[33m│\u001b[39m /home/user/go/bin/gentle-ai · sha256:882bfd7a9d5c16f1                 \u001b[35m│\u001b[39m",
 		"\u001b[33m╰\u001b[39m\u001b[35m────────────────────────────────────────────────────────────────────────╯\u001b[39m",
 		"",
 	];
@@ -242,7 +242,7 @@ test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to d
 	assert.ok(transformed[0].includes("[warning]"));
 
 	assert.ok(transformed[1].includes("║"));
-	assert.ok(transformed[1].includes("/home/cinlodev/go/bin/gentle-ai"));
+	assert.ok(transformed[1].includes("/home/user/go/bin/gentle-ai"));
 	assert.ok(transformed[1].includes("[warning]"));
 
 	assert.ok(transformed[2].includes("╚"));
@@ -1999,14 +1999,14 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 
 	// 3. Parse raw usage to accounts with prefixes
 	const prefixMap = new Map([
-		["cinlodigital@gmail.com", "cinlo_dig"],
+		["testuser@example.com", "test_user"],
 	]);
 	const rawGroups = [
 		{
 			provider: "antigravity",
 			accounts: [
 				{
-					account: "cinlodigital@gmail.com",
+					account: "testuser@example.com",
 					pools: [
 						{ label: "Gemini Models (weekly)", availablePercentage: 84, resetAt: in3h },
 						{ label: "Gemini Models (5h)", availablePercentage: 100, resetAt: in3h },
@@ -2021,38 +2021,38 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	const accounts = parseRawUsageToAccounts(rawGroups, prefixMap);
 	assert.equal(accounts.length, 1);
 	assert.equal(accounts[0].provider, "antigravity");
-	assert.equal(accounts[0].prefix, "cinlo_dig", "Must use prefix instead of email");
+	assert.equal(accounts[0].prefix, "test_user", "Must use prefix instead of email");
 	assert.equal(accounts[0].pools.length, 4, "Must hold all 4 quota pools");
 	assert.equal(accounts[0].pools[0].availablePercent, 84);
 
 	// 4. Provider-isolated prefix mapping without collisions
 	const collidingPrefixMap = new Map([
-		["antigravity:cinlodev@gmail.com", "cinlodev"],
-		["codex:cinlodev@gmail.com", "codex_cinlodev"],
-		["cinlodev@gmail.com", "fallback_should_not_be_used"],
+		["antigravity:user@example.com", "user_main"],
+		["codex:user@example.com", "codex_user"],
+		["user@example.com", "fallback_should_not_be_used"],
 	]);
 	const multiProviderGroups = [
 		{
 			provider: "antigravity",
-			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Gemini", availablePercentage: 100 }] }],
+			accounts: [{ account: "user@example.com", pools: [{ label: "Gemini", availablePercentage: 100 }] }],
 		},
 		{
 			provider: "codex",
-			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Codex", availablePercentage: 50 }] }],
+			accounts: [{ account: "user@example.com", pools: [{ label: "Codex", availablePercentage: 50 }] }],
 		},
 	];
 	const multiAccounts = parseRawUsageToAccounts(multiProviderGroups, collidingPrefixMap);
-	assert.equal(multiAccounts[0].prefix, "cinlodev", "Antigravity account must get provider-scoped prefix");
-	assert.equal(multiAccounts[1].prefix, "codex_cinlodev", "Codex account must get provider-scoped prefix");
+	assert.equal(multiAccounts[0].prefix, "user_main", "Antigravity account must get provider-scoped prefix");
+	assert.equal(multiAccounts[1].prefix, "codex_user", "Codex account must get provider-scoped prefix");
 
 	// 5. prioritizeActiveAccount puts active prefix at index 0
 	const mockAccounts = [
 		{ provider: "codex", prefix: "codex", pools: [] },
-		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
-		{ provider: "antigravity", prefix: "cin82", pools: [] },
+		{ provider: "antigravity", prefix: "test_user", pools: [] },
+		{ provider: "antigravity", prefix: "acc_active", pools: [] },
 	];
-	const prioritized = prioritizeActiveAccount(mockAccounts, "cin82");
-	assert.equal(prioritized[0].prefix, "cin82", "Active orchestrator prefix must be at index 0");
+	const prioritized = prioritizeActiveAccount(mockAccounts, "acc_active");
+	assert.equal(prioritized[0].prefix, "acc_active", "Active orchestrator prefix must be at index 0");
 });
 
 test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge rendering", () => {
@@ -2123,8 +2123,8 @@ test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge r
 	// 6. Mouse wheel and bidirectional click navigation (with cached accounts)
 	renderRequested = 0;
 	setCachedAccountsForTesting([
-		{ provider: "antigravity", prefix: "cin82", pools: [] },
-		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
+		{ provider: "antigravity", prefix: "acc_active", pools: [] },
+		{ provider: "antigravity", prefix: "test_user", pools: [] },
 	]);
 	card.handleClick(0, "left"); // forward
 	assert.equal(renderRequested, 1);
@@ -2154,9 +2154,9 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 
 	// 3. resolveDashboardUrl
 	assert.equal(resolveDashboardUrl(null), DEFAULT_ENGRAM_DASHBOARD);
-	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }), "https://engram.cinlodev.com/dashboard/");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.example.com" }), "https://engram.example.com/dashboard/");
 	assert.equal(resolveDashboardUrl({ serverUrl: "https://myengram.dev///" }), "https://myengram.dev/dashboard/");
-	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }, "dypos"), "https://engram.cinlodev.com/dashboard/projects/dypos");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.example.com" }, "dypos"), "https://engram.example.com/dashboard/projects/dypos");
 
 	// 4. CinlodevEngramCard component
 	let renderCount = 0;

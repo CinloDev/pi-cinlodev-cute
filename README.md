@@ -48,7 +48,7 @@ The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated,
 
 * **👑 Status Card:** Shows active Project path, Git branch with dirty count, active Model and thinking level, MCP server count, and active profile.
 * **🧠 Context Gauge Card:** Real-time token progress bar with dynamic semáforo thresholds (mint → yellow → orange → coral), In/Out token counters, and accumulated session cost.
-* **🧠 Engram Memory Card (`src/cute-engram.ts`):** Live status of your local Engram daemon (`Local · Online · N obs`), cloud synchronization status (`engram.cinlodev.com`), direct dashboard shortcut (`dashboard ↗`), and interactive enroll/sync controls.
+* **🧠 Engram Memory Card (`src/cute-engram.ts`):** Live status of your local Engram daemon (`Local · Online · N obs`), cloud synchronization status, direct dashboard shortcut (`dashboard ↗`), and interactive enroll/sync controls.
 * **⚡ Quotas & Usage Tracker Card (`src/cute-usage.ts`):** Displays real-time API quota limits for Gemini and Claude/GPT models (5h and weekly windows), dynamic 4-tier semáforo gauges, and reset countdowns (`en 3h 33m`). Toggle anytime with **`Alt+Q`**.
 * **🌿 Enhanced Git Graph Card (`src/cute-git-graph.ts`):** Renders an ASCII commit history graph with Dracula branch styling, dirty file counts (`5 mod · ?1 untracked`), session diff summary (`+783 -47`), and interactive `/gentle:changes` viewer hint.
 * **🛠️ Live Tools Telemetry Card (`src/cute-tools.ts`):** Summarizes tool execution metrics (`read`, `write`, `bash`, `engram`, `other`) into clean visual pills with total call count (`31 calls`).

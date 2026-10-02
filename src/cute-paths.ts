@@ -36,6 +36,16 @@ export interface CutePaths {
 	 * Default false: index.ts must not delete files it does not own.
 	 */
 	devBinaryHygiene: boolean;
+	/**
+	 * Web dashboard URL for Engram Cloud.
+	 * Defaults to "" (disabled/local only unless configured).
+	 */
+	engramDashboardUrl: string;
+	/**
+	 * Candidate file paths to probe for CLIProxyAPI management secrets.
+	 * Can include environment paths, ~/ or absolute paths.
+	 */
+	secretsPaths: string[];
 }
 
 export const CUTE_PATHS_FILENAME = "CinlodevCute.paths.json";
@@ -48,6 +58,8 @@ const DEFAULTS: CutePaths = {
 	gitNoLabel: "no git",
 	todoSource: "gentleTodo",
 	devBinaryHygiene: false,
+	engramDashboardUrl: "",
+	secretsPaths: ["~/CLIProxyAPI/secrets.txt"],
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,6 +91,8 @@ function mergePaths(raw: unknown, baseSource: CutePaths = DEFAULTS): CutePaths {
 	base.gitNoLabel = pickString(raw.gitNoLabel, base.gitNoLabel);
 	base.todoSource = pickString(raw.todoSource, base.todoSource);
 	base.devBinaryHygiene = pickBoolean(raw.devBinaryHygiene, base.devBinaryHygiene);
+	base.engramDashboardUrl = pickString(raw.engramDashboardUrl, base.engramDashboardUrl);
+	base.secretsPaths = pickStringArray(raw.secretsPaths, base.secretsPaths);
 	return base;
 }
 

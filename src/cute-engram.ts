@@ -8,12 +8,13 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { cuteGlyphs, cutePalette, safeFg } from "./cute-theme.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
+import { loadCutePaths } from "./cute-paths.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 
 const execAsync = promisify(exec);
 
 export const DEFAULT_ENGRAM_PORT = 7437;
-export const DEFAULT_ENGRAM_DASHBOARD = "https://engram.cinlodev.com/dashboard/";
+export const DEFAULT_ENGRAM_DASHBOARD = "http://localhost:7437/dashboard/";
 
 export interface EngramCloudConfig {
 	serverUrl: string;
@@ -115,8 +116,8 @@ export function loadEngramCloudConfig(): EngramCloudConfig | null {
 /**
  * Resolves the web dashboard URL for Engram Cloud.
  */
-export function resolveDashboardUrl(config?: EngramCloudConfig | null, project?: string): string {
-	let base = DEFAULT_ENGRAM_DASHBOARD;
+export function resolveDashboardUrl(config?: EngramCloudConfig | null, project?: string, customDefault?: string): string {
+	let base = customDefault || DEFAULT_ENGRAM_DASHBOARD;
 	if (config?.serverUrl) {
 		const clean = config.serverUrl.replace(/\/+$/, "");
 		base = `${clean}/dashboard/`;
@@ -525,8 +526,9 @@ export class CinlodevEngramCard implements Component {
 		lines.push(frame(`${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
 
 		// Section 3: Cloud & Dashboard
-		const cloudServerUrl = snapshot?.cloudConfig?.serverUrl || DEFAULT_ENGRAM_DASHBOARD;
-		let serverHost = "cinlodev.com";
+		const configuredDashboard = loadCutePaths().engramDashboardUrl;
+		const cloudServerUrl = snapshot?.cloudConfig?.serverUrl || configuredDashboard || DEFAULT_ENGRAM_DASHBOARD;
+		let serverHost = "local";
 		try {
 			serverHost = new URL(cloudServerUrl).hostname;
 		} catch {}
@@ -539,7 +541,8 @@ export class CinlodevEngramCard implements Component {
 			lineIndex: lines.length,
 			action: async () => {
 				this.resetConfirmation();
-				const targetUrl = resolveDashboardUrl(snapshot?.cloudConfig, projectName);
+				const configuredDashboard = loadCutePaths().engramDashboardUrl;
+				const targetUrl = resolveDashboardUrl(snapshot?.cloudConfig, projectName, configuredDashboard);
 				const opened = await openEngramDashboard(targetUrl);
 				if (opened) {
 					this.setFlashNotice(`Abriendo ${projectName} en browser…`);
