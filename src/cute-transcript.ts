@@ -427,6 +427,65 @@ export function extractReviewHeader(rawLines: string[], child?: Component): stri
 }
 
 /**
+ * Formats lines of a subagent component (e.g. subagent_status, subagent_run):
+ * Highlights agent name, task ID, status, and turn/call metrics with Dracula palette.
+ */
+export function formatSubagentLines(rawLines: string[], theme?: Theme): string[] {
+	const lines = unwrapNativeCard(rawLines);
+	if (!theme || !lines.length) return lines;
+
+	return lines.map((line) => {
+		const plain = stripAnsi(line).trim();
+		if (!plain) return line;
+
+		// 1. Tool call header: "* agent status · taskId" or "agent status · taskId"
+		if (/^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E*]\s*)?agent\s+(?:status|run|result|reply|cancel|continue|list)/i.test(plain)) {
+			const parts = plain.split("·").map((p) => p.trim());
+			const action = safeFg(theme, "heading", parts[0] || "agent status", "accent");
+			if (parts.length > 1) {
+				const rest = parts.slice(1).map((p) => safeFg(theme, "syntaxString", p, "info")).join(safeFg(theme, "syntaxPunctuation", " · ", "muted"));
+				return `${action} ${safeFg(theme, "syntaxPunctuation", "·", "muted")} ${rest}`;
+			}
+			return action;
+		}
+
+		// 2. Status line: "taskId · agent-name · status · mode · cwd: ... · X turns · Y tool calls · last: Z"
+		if (plain.includes("·") && (plain.includes("turns") || plain.includes("tool calls") || plain.includes("running") || plain.includes("completed"))) {
+			const tokens = plain.split("·").map((t) => t.trim());
+			// For compact display in cards without overflowing box borders, prioritize:
+			// taskId · agent · status · X turns · Y calls · last: Z
+			const filtered = tokens.filter((t) => !t.startsWith("cwd:"));
+			return filtered
+				.map((token) => {
+					if (/^[a-z0-9]+-[a-z0-9-]+$/i.test(token)) {
+						return safeFg(theme, "syntaxNumber", token, "warning"); // task id
+					}
+					if (token === "running" || token === "queued" || token === "waiting") {
+						return safeFg(theme, "warning", `⏳ ${token}`, "warning");
+					}
+					if (token === "completed" || token === "finished") {
+						return safeFg(theme, "success", `✔ ${token}`, "success");
+					}
+					if (token === "failed" || token === "error" || token === "cancelled") {
+						return safeFg(theme, "error", `✖ ${token}`, "error");
+					}
+					if (token.includes("turns") || token.includes("tool calls")) {
+						return token.replace(/\b(\d+)\b/g, (_m, num) => safeFg(theme, "syntaxNumber", num, "accent"));
+					}
+					if (token.startsWith("last:")) {
+						const lastPart = token.slice(5).trim();
+						return `${safeFg(theme, "muted", "last: ", "muted")}${safeFg(theme, "syntaxString", lastPart, "info")}`;
+					}
+					return safeFg(theme, "text", token, "muted");
+				})
+				.join(safeFg(theme, "syntaxPunctuation", " · ", "muted"));
+		}
+
+		return line;
+	});
+}
+
+/**
  * Formats inner lines of an RDD / gentle_review card:
  * Preserves pre-colored output (pass/fail status, kept colors),
  * strips float chrome, and highlights structured lines.
@@ -462,6 +521,39 @@ export function formatMemoryOutputLines(rawLines: string[], theme?: Theme): stri
 		if (!content) return line;
 		return leadingSpace + highlightCodeLine(content, theme);
 	});
+}
+
+/**
+ * Checks whether a transcript component is a subagent tool execution
+ * (subagent_status, subagent_run, subagent_result, subagent_list_tasks, etc.)
+ */
+export function isSubagentComponent(child: Component, renderedLines?: string[]): boolean {
+	if (!child) return false;
+	const toolName = (child as any).toolName;
+	if (typeof toolName === "string" && toolName.startsWith("subagent_")) return true;
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines && lines.length > 0) {
+		const plain = stripAnsi(lines[0]).trim();
+		if (/^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E*]\s*)?agent\s+(?:status|run|result|reply|cancel|continue|list)/i.test(plain)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Checks whether a transcript component is an agent status poll specifically.
+ */
+export function isAgentStatusComponent(child: Component, renderedLines?: string[]): boolean {
+	if (!child) return false;
+	const toolName = (child as any).toolName;
+	if (toolName === "subagent_status") return true;
+	const lines = renderedLines ?? tryRender(child, 80);
+	if (lines && lines.length > 0) {
+		const plain = stripAnsi(lines[0]).trim();
+		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E*]\s*)?agent\s+status\b/i.test(plain);
+	}
+	return false;
 }
 
 /**
@@ -809,7 +901,7 @@ export function isToolHeaderLine(line: string): boolean {
 	if (!plain) return false;
 	if (/^(?:\$\s*)?bash\s+\$/i.test(plain) || /^\$\s+\S/.test(plain)) return true;
 	if (/(?:🌹\s*)?rdd\b/i.test(plain) || /^gentle_review(?:_|\b)/i.test(plain)) return true;
-	if (/^(?:[≡⌕✎+⌖☷✿❀❁✾★✣\u270E$🌹]\s*)?(?:read|write|edit|grep|find|ls|fetch|search|bash|rdd|gentle_review)\b/i.test(plain)) return true;
+	if (/^(?:[≡⌕✎+⌖☷✿❀❁✾★✣\u270E$🌹*]\s*)?(?:read|write|edit|grep|find|ls|fetch|search|bash|rdd|gentle_review|agent)\b/i.test(plain)) return true;
 	return false;
 }
 
@@ -823,9 +915,44 @@ export function isBlankFloatLine(line: string): boolean {
 }
 
 /**
+ * Checks whether an array of lines represents an ASCII art block, banner, or logo
+ * rather than a tool float card or simple text.
+ * Art banners typically contain:
+ * - Specific banner text signatures (e.g. "N e k o - p i", "neko-banner", logo names)
+ * - Dense 2x2 subpixel block elements (▀, ▄, █, ▌, ▐, ▘, ▝, ▖, ▗, ▚, ▞, ▛, ▜, ▙, ▟)
+ *   used as graphic canvas pixels across multiple columns, rather than single-column vertical card rails (│, ║, ▎, ▏).
+ */
+export function isAsciiArtOrBanner(lines: string[]): boolean {
+	if (!lines || lines.length === 0) return false;
+
+	// 1. Signature check: known banners or explicit logo titles
+	const combinedPlain = lines.map((l) => stripAnsi(l)).join("\n");
+	if (/N\s*e\s*k\s*o\s*-\s*p\s*i/i.test(combinedPlain) || /neko-banner/i.test(combinedPlain)) {
+		return true;
+	}
+
+	// 2. Structural graphic check:
+	// A float card uses ▎ or ▏ as a 1-character left border rail.
+	// Dense ASCII art / subpixel drawings have MULTIPLE block characters in single lines (e.g. ▄█▀▌).
+	let denseArtLines = 0;
+	for (const line of lines) {
+		const plain = stripAnsi(line);
+		// Count block characters in this line
+		const blockMatches = plain.match(/[▀▄█▌▐▘▝▖▗▚▞▛▜▙▟]/g);
+		if (blockMatches && blockMatches.length >= 3) {
+			denseArtLines++;
+		}
+	}
+
+	// If at least 3 lines have dense multi-block graphic drawing characters, it's an art/banner canvas!
+	return denseArtLines >= 3;
+}
+
+/**
  * Checks whether an array of lines carries gentle-shell float card chrome.
  */
 export function hasFloatChrome(lines: string[]): boolean {
+	if (isAsciiArtOrBanner(lines)) return false;
 	return lines.some((line) => {
 		const plain = stripAnsi(line).trim();
 		return /^[▎▏▍▌▋▊▉█]/.test(plain) || /\x1b\[48;[0-9;]*m/.test(line);
@@ -866,6 +993,11 @@ export function stripFloatLineChrome(line: string): string {
  */
 export function unwrapNativeCard(lines: string[]): string[] {
 	if (!lines || lines.length === 0) return [];
+
+	// Protect ASCII art, animations, and banner components from being stripped or deformed
+	if (isAsciiArtOrBanner(lines)) {
+		return lines;
+	}
 
 	// Gentle AI notice / lifecycle cards (review start, consent, binary override)
 	// are handled specifically by transformTranscriptLines and unifyCardFrame.
@@ -1375,6 +1507,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
 	}
 
+	// Subagent tool execution in cute cyan/accent card (colors.agentMessage / #8BE9FD)
+	if (isSubagentComponent(child)) {
+		const rawLines = child.render(width - 4);
+		const unwrapped = unwrapNativeCard(rawLines);
+		const styled = formatSubagentLines(unwrapped, theme);
+		return frameCategoryBox(styled, "🤖 subagent", colors.agentMessage ?? "accent", width, theme);
+	}
+
 	// Grep tool execution without bounding box, but with full Dracula-style
 	// syntax highlighting on matches, line numbers, and file paths.
 	if (isGrepComponent(child)) {
@@ -1620,6 +1760,74 @@ export function formatTranscriptChildren(
 			continue;
 		}
 
+		// 4e. Group consecutive subagent poll / status / run calls into ONE single cyan card
+		if (isSubagentComponent(child)) {
+			ensureBreathingRoom();
+			const agentGroup: Component[] = [];
+			while (i < children.length) {
+				const curr = children[i];
+				if (isSubagentComponent(curr)) {
+					agentGroup.push(curr);
+					i++;
+				} else if (isSpacer(curr) && i + 1 < children.length && isSubagentComponent(children[i + 1])) {
+					// Intervening spacer between agent calls - consume so group stays united
+					mouseChildren.push({ component: curr, height: 0 });
+					i++;
+				} else {
+					break;
+				}
+			}
+
+			// If all calls in the group are agent status polls, we coalesce them into the latest active status
+			// plus a subtle indicator if multiple polls happened, so it doesn't flood 15 lines of status!
+			let combinedLines: string[] = [];
+			const allStatusPolls = agentGroup.every((c) => isAgentStatusComponent(c));
+
+			if (allStatusPolls && agentGroup.length > 1) {
+				// Take the latest status poll result, rendered at width to preserve contents
+				const latest = agentGroup[agentGroup.length - 1];
+				const raw = latest.render(width);
+				const unwrapped = unwrapNativeCard(raw);
+				const styled = formatSubagentLines(unwrapped, theme);
+				const countHint = safeFg(theme, "muted", ` (${agentGroup.length} status polls coalesced)`, "muted");
+				if (styled.length > 0) {
+					styled[0] = `${styled[0]}${countHint}`;
+				}
+				combinedLines = styled;
+			} else {
+				for (const comp of agentGroup) {
+					const raw = comp.render(width - 4);
+					const unwrapped = unwrapNativeCard(raw);
+					if (combinedLines.length > 0) {
+						combinedLines.push(""); // subtle separation between calls
+					}
+					const styled = formatSubagentLines(unwrapped, theme);
+					combinedLines.push(...styled);
+				}
+			}
+
+			const cardLines = frameCategoryBox(
+				combinedLines.length ? combinedLines : ["agent"],
+				"🤖 subagent",
+				colors.agentMessage ?? "accent",
+				width,
+				theme,
+			);
+
+			// Distribute mouse heights across the grouped children
+			const avgHeight = Math.max(1, Math.floor(cardLines.length / agentGroup.length));
+			for (let j = 0; j < agentGroup.length; j++) {
+				const compHeight =
+					j === agentGroup.length - 1
+						? cardLines.length - avgHeight * (agentGroup.length - 1)
+						: avgHeight;
+				mouseChildren.push({ component: new FramedCardMouseProxy(agentGroup[j], compHeight), height: compHeight });
+			}
+
+			lines.push(...cardLines);
+			continue;
+		}
+
 		// 5. Group consecutive top-level error Texts into ONE single coral card
 		if (isErrorTextComponent(child)) {
 			ensureBreathingRoom();
@@ -1684,9 +1892,18 @@ export function formatTranscriptChildren(
 		}
 
 		// 7. Assistant prose (bolder headings, dracula text) and other
-		// components (remaining tools, notices) via transformTranscriptLines
+		// components (remaining tools, notices, custom banners) via transformTranscriptLines
 		ensureBreathingRoom();
 		const rawLines = child.render(width);
+		if (isAsciiArtOrBanner(rawLines)) {
+			// Keep custom banners and ASCII art untouched: preserve 24-bit ANSI background escapes,
+			// exact spacing, and layout alignment without card wrapping or border stripping.
+			mouseChildren.push({ component: child, height: rawLines.length });
+			lines.push(...rawLines);
+			i++;
+			continue;
+		}
+
 		const transformed =
 			name === "AssistantMessageComponent"
 				? formatAssistantProse(rawLines, theme, width)
