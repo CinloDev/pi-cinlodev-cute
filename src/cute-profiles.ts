@@ -469,19 +469,9 @@ export class CinlodevProfilesExtendedCard implements Component {
 		return false;
 	}
 
-	handleRailWheel(wheelDelta: number): boolean {
-		if (wheelDelta === 0) return false;
-		const clusters = ["cinlo1", "cinlo2", "cinlo3", "cinlo4"];
-		const activeDetails = getActiveProfileDetails(this.cwd);
-		const activeName = (activeDetails?.name || "").toLowerCase();
-		let activeIdx = clusters.findIndex((name) => name.toLowerCase() === activeName);
-		if (activeIdx === -1) activeIdx = 0;
-		const dir = wheelDelta > 0 ? 1 : -1;
-		const nextIdx = (activeIdx + dir + clusters.length) % clusters.length;
-		switchProfile(clusters[nextIdx], this.ctx, this.pi, this.cwd).then(() => {
-			this.tui?.requestRender();
-		});
-		return true;
+	handleRailWheel(_wheelDelta: number): boolean {
+		// Disable profile switching via mouse wheel so wheel scroll naturally scrolls the sidebar content
+		return false;
 	}
 
 	render(width: number): string[] {

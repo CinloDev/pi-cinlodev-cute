@@ -2809,12 +2809,11 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		const activeAfter = fs.readFileSync(path.join(projDir, ".active"), "utf8").trim();
 		assert.equal(activeAfter, "cinlo2", "Active profile should be switched to cinlo2");
 
-		// 6. Test wheel cycling on card
+		// 6. Test wheel on profiles card is disabled to preserve natural sidebar vertical scrolling
 		renderRequested = false;
 		const wheelHandled = card.handleRailWheel(1);
-		assert.ok(wheelHandled, "handleRailWheel should return true");
-		await new Promise((r) => setTimeout(r, 50));
-		assert.ok(renderRequested, "requestRender should be called on wheel");
+		assert.equal(wheelHandled, false, "handleRailWheel should return false to preserve vertical scroll");
+		assert.equal(renderRequested, false, "requestRender should NOT be called on wheel when disabled");
 
 		// 7. Click outside hitboxes returns false
 		const missClick = card.handleRailClick(targetHitbox.lineIndex, "left", 999);
