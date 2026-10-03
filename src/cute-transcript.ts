@@ -969,16 +969,37 @@ export function hasOutlineChrome(lines: string[]): boolean {
 	});
 }
 
+const RAIL_CHARS = "▎▏▍▌▋▊▉█│║|";
+
+// Cache to avoid repeatedly unwrapping immutable message lines on every render tick
+const unwrapCache = new WeakMap<string[], string[]>();
+
 /**
  * Strips leading rail (▎ or other block rail), trailing padding/rail, and leaking background ANSI
  * from a float card line.
  */
 export function stripFloatLineChrome(line: string): string {
 	let s = line.replace(BG_ESCAPE_RE, "");
-	// Strip leading rail character, optional margin spaces, and optional space after rail
-	s = s.replace(/^\s*(?:\x1b\[[0-9;]*m)*\s*[▎▏▍▌▋▊▉█│║|](?:\x1b\[[0-9;]*m)*\s?/, "");
-	// Strip trailing rail and trailing padding
-	s = s.replace(/\s*(?:\x1b\[[0-9;]*m)*[▎▏▍▌▋▊▉█│║|]?(?:\x1b\[[0-9;]*m)*\s*$/, "");
+
+	// Fast-path: only perform rail stripping if the line actually contains rail characters
+	let hasRail = false;
+	for (let i = 0; i < RAIL_CHARS.length; i++) {
+		if (s.includes(RAIL_CHARS[i])) {
+			hasRail = true;
+			break;
+		}
+	}
+
+	if (hasRail) {
+		// Strip leading rail without nested quantifier explosion
+		s = s.replace(/^\s*(?:\x1b\[[0-9;]*m)*\s*[▎▏▍▌▋▊▉█│║|](?:\x1b\[[0-9;]*m)*\s?/, "");
+
+		// Strip trailing rail and padding linearly and deterministically (no ReDoS)
+		s = s.trimEnd();
+		s = s.replace(/[▎▏▍▌▋▊▉█│║|](?:\x1b\[[0-9;]*m)*$/, "");
+		s = s.replace(/(?:\x1b\[[0-9;]*m|\s)+$/, "");
+	}
+
 	// Strip trailing key hint if present on a tool header
 	if (isToolHeaderLine(s)) {
 		s = s.replace(KEY_HINT_TRAILING_RE, "");
@@ -994,8 +1015,12 @@ export function stripFloatLineChrome(line: string): string {
 export function unwrapNativeCard(lines: string[]): string[] {
 	if (!lines || lines.length === 0) return [];
 
+	const cached = unwrapCache.get(lines);
+	if (cached) return cached;
+
 	// Protect ASCII art, animations, and banner components from being stripped or deformed
 	if (isAsciiArtOrBanner(lines)) {
+		unwrapCache.set(lines, lines);
 		return lines;
 	}
 
@@ -1007,6 +1032,7 @@ export function unwrapNativeCard(lines: string[]): string[] {
 		const hasGentleTitle = !isRdd && (plain.includes("Gentle AI") || plain.includes("🤖") || /[\u{1F339}\uFE0E🌹🌷]/u.test(plain));
 		return (plain.includes("╭") || plain.includes("╔")) && hasGentleTitle;
 	})) {
+		unwrapCache.set(lines, lines);
 		return lines;
 	}
 
@@ -1068,9 +1094,11 @@ export function unwrapNativeCard(lines: string[]): string[] {
 			trimmed.splice(1, 1);
 		}
 
+		unwrapCache.set(lines, trimmed);
 		return trimmed;
 	}
 
+	unwrapCache.set(lines, workingLines);
 	return workingLines;
 }
 
