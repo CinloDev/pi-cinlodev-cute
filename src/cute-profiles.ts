@@ -646,13 +646,15 @@ export class CinlodevProfilesExtendedCard implements Component {
 		const hostAccount = (activeDetails as any).default_account || extractAccountFromModel(hostModel) || "host";
 		const shortHost = shortModelName(hostModel).replace(/-high$/, "");
 
-		// Line 1: 🎯 host / orquestador (left) + <model> (<effort>) (right)
-		lines.push(
-			boxLine(
-				`${c.pink("🎯")} ${c.bold("host / orquestador")}`,
-				`${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`,
-			),
-		);
+		// Line 1: Host title + model
+		const hostLeft = `${c.pink("🎯")} ${c.bold("host / orquestador")}`;
+		const hostMeta = `${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`;
+		if (calcVisibleWidth("🎯 host / orquestador") + calcVisibleWidth(`${shortHost} (${hostEffort})`) + 2 <= innerWidth) {
+			lines.push(boxLine(hostLeft, hostMeta));
+		} else {
+			lines.push(boxLine(hostLeft));
+			lines.push(boxLine(`  ${hostMeta}`));
+		}
 
 		// Line 2: @<account> (left) + <pct>% (right)
 		const hostQuota = getAccountQuota(hostAccount, hostModel);
@@ -696,13 +698,15 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 			const agentQuota = getAccountQuota(account, model);
 
-			// Line 1: • <agent-id> (left) + <model> (<effort>) (right)
-			lines.push(
-				boxLine(
-					`• ${c.text(agentId)}`,
-					`${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`,
-				),
-			);
+			// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
+			const leftText = `• ${c.text(agentId)}`;
+			const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
+			if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
+				lines.push(boxLine(leftText, rightText));
+			} else {
+				lines.push(boxLine(leftText));
+				lines.push(boxLine(`  ${rightText}`));
+			}
 
 			// Line 2: @<account> (left) + <pct>% (right)
 			const agentRight = agentQuota.hasQuota
