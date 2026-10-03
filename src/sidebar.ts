@@ -484,6 +484,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			// Tabs enabled flow
 			if (branding.length) {
 				railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
+				railLines.push("");
 			}
 
 			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme);

@@ -2368,12 +2368,12 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 		const gitHitbox = hitboxes.find((h) => h.id === "git");
 		assert.ok(gitHitbox, "Git hitbox must exist");
 
-		// Click on TabBar at line 2 (tab bar line) over Git tab hitbox
+		// Click on TabBar at line 3 (with branding separator: line 0 top pad, line 1 banner, line 2 blank, line 3 tab bar) over Git tab hitbox
 		const clickResult = scroll.handleMouse({
 			type: "click",
 			button: "left",
 			x: gitHitbox.startX + layout.railPadding + 1,
-			y: 2,
+			y: 3,
 		});
 		assert.ok(clickResult.handled, "Click on tab bar should be handled");
 		assert.equal(state.activeTabId, "git", "Active tab should switch to git after click");
@@ -2386,7 +2386,7 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 			type: "wheel",
 			wheelDelta: 1,
 			x: 10,
-			y: 2,
+			y: 3,
 		});
 		assert.ok(wheelResult.handled, "Wheel on tab bar should be handled");
 		assert.equal(state.activeTabId, "usage", "Wheel delta +1 should cycle tab from git to usage");
@@ -2397,7 +2397,7 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
-			y: 2,
+			y: 3,
 		});
 		assert.equal(state.activeTabId, "git", "Wheel delta -1 should cycle tab back to git");
 
@@ -2406,7 +2406,7 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
-			y: 2,
+			y: 3,
 		});
 		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
 
@@ -2415,7 +2415,7 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
-			y: 2,
+			y: 3,
 		});
 		assert.equal(state.activeTabId, "all", "Wheel delta -1 from index 0 should wrap to all");
 	} finally {
