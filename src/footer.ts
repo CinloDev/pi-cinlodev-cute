@@ -19,7 +19,7 @@ import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cu
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
-import { listAvailableProfiles, switchProfile, type ProfileItem } from "./cute-profiles.ts";
+import { listAvailableProfiles, switchProfile, type ProfileItem, CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 
 export { formatTokenCount, getContextThreshold };
 
@@ -574,12 +574,21 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => toolsCard.render(width),
 			invalidate: () => toolsCard.invalidate(),
 		};
+		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme, undefined, ctx, pi);
+		const profilesRail = {
+			render: (width: number) => profilesCard.render(width),
+			invalidate: () => profilesCard.invalidate?.(),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				profilesCard.handleRailClick(lineIndex, button, localX),
+			handleRailWheel: (delta: number) => profilesCard.handleRailWheel(delta),
+		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
 		const engramPart = sidebarPart(tui, "engram", { render: () => [] }, engramRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
+		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
 		const todoBottom: Component & { dispose?(): void } = {
 			render: (width: number) => todos.renderBottom(width),
 			invalidate: () => todos.invalidate(),
@@ -600,6 +609,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				usagePart.dispose?.();
 				gitGraphPart.dispose?.();
 				toolsPart.dispose?.();
+				profilesPart.dispose?.();
 				todoPart.dispose?.();
 			},
 		};

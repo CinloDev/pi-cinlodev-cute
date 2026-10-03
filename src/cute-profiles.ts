@@ -484,6 +484,9 @@ export class CinlodevProfilesExtendedCard implements Component {
 			accent: (s: string) => palette.pinkAccent(s),
 			pink: (s: string) => palette.pinkAccent(s),
 			pinkBright: (s: string) => (theme ? safeFg(theme, "pinkBright", s) : s),
+			violet: (s: string) => (theme ? safeFg(theme, "border", s) : s),
+			celeste: (s: string) => (theme ? safeFg(theme, "write", s) : s),
+			salmon: (s: string) => (theme ? safeFg(theme, "salmon", s) : s),
 			bold: (s: string) => bolden(theme, s),
 		};
 
@@ -700,7 +703,7 @@ export class CinlodevProfilesExtendedCard implements Component {
 		const shortHost = shortModelName(hostModel).replace(/-high$/, "");
 
 		// Line 1: Host title + model
-		const hostLeft = `${c.pink("🎯")} ${c.bold("host / orquestador")}`;
+		const hostLeft = `${c.violet("🎯")} ${c.bold(c.violet("host / orquestador"))}`;
 		const hostMeta = `${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`;
 		if (calcVisibleWidth("🎯 host / orquestador") + calcVisibleWidth(`${shortHost} (${hostEffort})`) + 2 <= innerWidth) {
 			lines.push(boxLine(hostLeft, hostMeta));
@@ -734,6 +737,27 @@ export class CinlodevProfilesExtendedCard implements Component {
 		);
 		const allAgentIds = [...FLAT_AGENTS, ...extraAgents];
 
+		const getAgentStyle = (agentId: string) => {
+			if (agentId.startsWith("gentle-ai-")) {
+				// ODD Core: Celeste
+				return { bullet: c.celeste("•"), name: (s: string) => c.celeste(s) };
+			}
+			if (agentId.startsWith("jd-")) {
+				// Judgment Day: Dorado
+				return { bullet: c.gold("•"), name: (s: string) => c.gold(s) };
+			}
+			if (agentId.startsWith("review-")) {
+				// Review Lenses: Menta
+				return { bullet: c.mint("•"), name: (s: string) => c.mint(s) };
+			}
+			if (agentId.startsWith("research-")) {
+				// Deep Research: Salmón
+				return { bullet: c.salmon("•"), name: (s: string) => c.salmon(s) };
+			}
+			// Fallback / Extra agents: Pink accent
+			return { bullet: c.pink("•"), name: (s: string) => c.text(s) };
+		};
+
 		for (const agentId of allAgentIds) {
 			lines.push(boxLine(""));
 
@@ -744,9 +768,10 @@ export class CinlodevProfilesExtendedCard implements Component {
 			const shortAgent = shortModelName(model).replace(/-high$/, "");
 
 			const agentQuota = getAccountModelPools(account, model);
+			const style = getAgentStyle(agentId);
 
 			// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
-			const leftText = `• ${c.text(agentId)}`;
+			const leftText = `${style.bullet} ${style.name(agentId)}`;
 			const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
 			if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
 				lines.push(boxLine(leftText, rightText));
