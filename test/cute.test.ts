@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, isReviewComponent, looksLikeReviewLines, extractReviewHeader, formatReviewOutputLines } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
-import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll, mergeLayout, mergeSidebar } from "../src/cute-layout.ts";
+import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installSidebar, sidebarState, CUTE_LAYOUT_WRAPPER } from "../src/sidebar.ts";
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
@@ -2196,4 +2198,383 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	// Invalid line index returns false
 	assert.equal(card.handleClick(999), false);
 });
+
+test("sidebar tabs - loadCuteLayout contains tabs defaults and mergeLayout respects overrides", () => {
+	resetAll();
+	const layout = loadCuteLayout();
+	assert.equal(layout.sidebar.tabsEnabled, true);
+	assert.equal(layout.sidebar.defaultTab, "1");
+
+	// Overrides via mergeLayout with string
+	const mergedString = mergeLayout({
+		sidebar: {
+			defaultTab: "2",
+			tabsEnabled: false,
+		},
+	});
+	assert.equal(mergedString.sidebar.defaultTab, "2");
+	assert.equal(mergedString.sidebar.tabsEnabled, false);
+
+	// Overrides via mergeLayout with number
+	const mergedNumber = mergeLayout({
+		sidebar: {
+			defaultTab: 4,
+		},
+	});
+	assert.equal(mergedNumber.sidebar.defaultTab, "4");
+
+	// Overrides via mergeSidebar directly
+	const sidebarDirect = mergeSidebar(layout.sidebar, {
+		defaultTab: 5,
+		tabsEnabled: true,
+	});
+	assert.equal(sidebarDirect.defaultTab, "5");
+	assert.equal(sidebarDirect.tabsEnabled, true);
+
+	// Whitespace string preserves base
+	const preserved = mergeSidebar(layout.sidebar, {
+		defaultTab: "   ",
+	});
+	assert.equal(preserved.defaultTab, "1");
+});
+
+test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty hitboxes, and respects width", () => {
+	// 1. Unthemed generation check for tab contents
+	const unthemedBar = renderCuteSidebarTabBar(50, "1");
+	assert.ok(unthemedBar.line.length > 0);
+	assert.ok(unthemedBar.divider.length > 0);
+	assert.equal(visibleWidth(unthemedBar.line), 50);
+	assert.equal(visibleWidth(unthemedBar.divider), 50);
+
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:USAGE, 4:FORGE, 5:MEM, 0:ALL
+	assert.ok(unthemedBar.line.includes("1:MAIN"));
+	assert.ok(unthemedBar.line.includes("2:GIT"));
+	assert.ok(unthemedBar.line.includes("3:USAGE"));
+	assert.ok(unthemedBar.line.includes("4:FORGE"));
+	assert.ok(unthemedBar.line.includes("5:MEM"));
+	assert.ok(unthemedBar.line.includes("0:ALL"));
+
+	// Non-empty hitboxes
+	assert.equal(unthemedBar.hitboxes.length, 6);
+	for (const h of unthemedBar.hitboxes) {
+		assert.ok(h.id);
+		assert.ok(h.key);
+		assert.ok(h.label);
+		assert.ok(h.startX < h.endX);
+		assert.ok(h.endX <= 50);
+	}
+
+	// 2. Themed generation check
+	const mockTheme = {
+		fg: (role: string, text: string) => `\x1b[38;5;200m${text}\x1b[0m`,
+	} as any;
+	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
+	assert.equal(visibleWidth(themedBar.line), 50);
+	assert.equal(visibleWidth(themedBar.divider), 50);
+	assert.equal(themedBar.hitboxes.length, 6);
+
+	// 3. Narrow rail edge case: visibleWidth must never exceed width
+	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
+	assert.ok(visibleWidth(narrowBar.line) <= 20, `Narrow line visible width ${visibleWidth(narrowBar.line)} must be <= 20`);
+	assert.ok(visibleWidth(narrowBar.divider) <= 20);
+	for (const h of narrowBar.hitboxes) {
+		assert.ok(h.startX < 20);
+		assert.ok(h.endX <= 20);
+	}
+
+	// 4. Very narrow rail (width = 5)
+	const tinyBar = renderCuteSidebarTabBar(5, "1");
+	assert.ok(visibleWidth(tinyBar.line) <= 5);
+
+	// 5. Zero width
+	const zeroBar = renderCuteSidebarTabBar(0, "1");
+	assert.equal(visibleWidth(zeroBar.line), 0);
+	assert.equal(zeroBar.hitboxes.length, 0);
+});
+
+test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
+	// Resolves by key ("1" -> "main", "2" -> "git", etc.)
+	assert.equal(resolveSidebarTab("1").id, "main");
+	assert.equal(resolveSidebarTab("2").id, "git");
+	assert.equal(resolveSidebarTab("3").id, "usage");
+	assert.equal(resolveSidebarTab("4").id, "forge");
+	assert.equal(resolveSidebarTab("5").id, "mem");
+	assert.equal(resolveSidebarTab("0").id, "all");
+
+	// Resolves by id
+	assert.equal(resolveSidebarTab("main").id, "main");
+	assert.equal(resolveSidebarTab("git").id, "git");
+	assert.equal(resolveSidebarTab("usage").id, "usage");
+	assert.equal(resolveSidebarTab("forge").id, "forge");
+	assert.equal(resolveSidebarTab("mem").id, "mem");
+	assert.equal(resolveSidebarTab("all").id, "all");
+
+	// Fallback to main on undefined or invalid
+	assert.equal(resolveSidebarTab(undefined).id, "main");
+	assert.equal(resolveSidebarTab("").id, "main");
+	assert.equal(resolveSidebarTab("invalid").id, "main");
+
+	// Tab properties
+	for (const tab of CUTE_SIDEBAR_TABS) {
+		assert.ok(tab.id);
+		assert.ok(tab.key);
+		assert.ok(tab.label);
+		assert.ok(Array.isArray(tab.cards) && tab.cards.length > 0);
+	}
+});
+
+test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	let renderRequests = 0;
+	const mockLayoutRoot: any = {
+		render: () => ["line1", "line2"],
+		invalidate: () => {},
+	};
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockLayoutRoot, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+		// Call replacement to trigger prepare() and mount rail
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.ok(nodeResult.entries.length >= 2, "Should mount rail entries");
+
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "ScrollView component must be mounted");
+		const scroll = scrollEntry.component;
+
+		// Initial tab should resolve to defaultTab ("1" -> "main")
+		assert.equal(state.activeTabId, "main");
+
+		const layout = loadCuteLayout().sidebar;
+		const netWidth = layout.railWidth - 2 * layout.railPadding;
+		const { hitboxes } = renderCuteSidebarTabBar(netWidth, "main");
+		const gitHitbox = hitboxes.find((h) => h.id === "git");
+		assert.ok(gitHitbox, "Git hitbox must exist");
+
+		// Click on TabBar at line 2 (tab bar line) over Git tab hitbox
+		const clickResult = scroll.handleMouse({
+			type: "click",
+			button: "left",
+			x: gitHitbox.startX + layout.railPadding + 1,
+			y: 2,
+		});
+		assert.ok(clickResult.handled, "Click on tab bar should be handled");
+		assert.equal(state.activeTabId, "git", "Active tab should switch to git after click");
+		assert.ok(renderRequests > 0, "requestRender should be called on click");
+
+		const prevRenderCount = renderRequests;
+
+		// Wheel forward (wheelDelta > 0) -> cycles from git (index 1) to usage (index 2)
+		const wheelResult = scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: 1,
+			x: 10,
+			y: 2,
+		});
+		assert.ok(wheelResult.handled, "Wheel on tab bar should be handled");
+		assert.equal(state.activeTabId, "usage", "Wheel delta +1 should cycle tab from git to usage");
+		assert.ok(renderRequests > prevRenderCount, "requestRender should be called on wheel");
+
+		// Wheel backward (wheelDelta < 0) -> cycles back from usage (index 2) to git (index 1)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 2,
+		});
+		assert.equal(state.activeTabId, "git", "Wheel delta -1 should cycle tab back to git");
+
+		// Wheel backward again -> from git (index 1) to main (index 0)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 2,
+		});
+		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
+
+		// Wheel backward from main (index 0) wraps to all (index 5)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 2,
+		});
+		assert.equal(state.activeTabId, "all", "Wheel delta -1 from index 0 should wrap to all");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("sidebar integration - gentle-shell wrapper cooperative coexistence (header preserved, foreign rail replaced, CUTE_LAYOUT_WRAPPER marked, idempotent)", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const foreignHeader: any = {
+		render: () => ["LIVE HEADER"],
+		invalidate: () => {},
+	};
+	const foreignLeft: any = {
+		render: () => ["transcript line 1", "dock line"],
+		invalidate: () => {},
+	};
+	const foreignRail: any = {
+		render: () => ["gentle shell monolithic rail"],
+		invalidate: () => {},
+	};
+
+	const foreignHstackNode = {
+		type: "hstack",
+		entries: [
+			{ component: foreignLeft, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: foreignRail, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	};
+
+	const foreignBodyComponent: any = {
+		render: () => [],
+		invalidate: () => {},
+		[NODE]: () => foreignHstackNode,
+	};
+
+	const mockLayoutRoot: any = {
+		render: () => ["root"],
+		invalidate: () => {},
+	};
+
+	// Simulate gentle-shell layout wrapper: vstack [header, body]
+	mockLayoutRoot[NODE] = () => ({
+		type: "vstack",
+		entries: [
+			{ component: foreignHeader, basis: 2, grow: 0, shrink: 0, minSize: 2 },
+			{ component: foreignBodyComponent, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		],
+	});
+
+	let renderRequests = 0;
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		// 1. CUTE_LAYOUT_WRAPPER marker must be present on root[NODE]
+		assert.equal(typeof mockLayoutRoot[NODE], "function");
+		assert.equal((mockLayoutRoot[NODE] as any)[CUTE_LAYOUT_WRAPPER], true);
+
+		// 2. Unpack layout node
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.equal(nodeResult.type, "vstack", "Top-level layout should be vstack preserving header");
+		assert.equal(nodeResult.entries.length, 2, "vstack must have 2 entries: header and cute container");
+
+		// Header entry is preserved at top
+		assert.equal(nodeResult.entries[0].component, foreignHeader, "Header entry component must be preserved");
+
+		// Body entry wraps cuteHstack
+		const cuteContainer = nodeResult.entries[1].component;
+		assert.ok(cuteContainer, "Cute container component must exist");
+		assert.equal(typeof cuteContainer[NODE], "function", "Cute container must have [NODE]");
+
+		const cuteHstack = cuteContainer[NODE]();
+		assert.equal(cuteHstack.type, "hstack", "Cute container node must be hstack");
+
+		// foreignRail should be discarded, foreignLeft should be preserved
+		const hasForeignRail = cuteHstack.entries.some((e: any) => e.component === foreignRail);
+		assert.equal(hasForeignRail, false, "Monolithic gentle-shell rail must be discarded");
+
+		const hasForeignLeft = cuteHstack.entries.some((e: any) => e.component === foreignLeft);
+		assert.equal(hasForeignLeft, true, "Prepared left component (transcript/dock) must be preserved");
+
+		// CUTE tabbed rail (ScrollView with handleMouse) must be mounted
+		const scrollEntry = cuteHstack.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "CUTE tabbed ScrollView must be mounted in place of foreign rail");
+
+		// 3. Idempotency: re-attaching does not double-wrap or overwrite
+		const currentWrapper = mockLayoutRoot[NODE];
+		const cleanup2 = installSidebar(mockTui);
+		assert.equal(mockLayoutRoot[NODE], currentWrapper, "Re-attaching must not double-wrap root[NODE]");
+		cleanup2();
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("sidebar integration - direct hstack without header discards foreign rail and preserves left", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const foreignLeft: any = {
+		render: () => ["transcript line 1"],
+		invalidate: () => {},
+	};
+	const foreignRail: any = {
+		render: () => ["foreign rail"],
+		invalidate: () => {},
+	};
+
+	const mockLayoutRoot: any = {
+		render: () => ["root"],
+		invalidate: () => {},
+	};
+
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: foreignLeft, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: foreignRail, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		assert.equal((mockLayoutRoot[NODE] as any)[CUTE_LAYOUT_WRAPPER], true);
+
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.equal(nodeResult.type, "hstack", "Layout should be hstack without header");
+
+		const hasForeignRail = nodeResult.entries.some((e: any) => e.component === foreignRail);
+		assert.equal(hasForeignRail, false, "Foreign rail must be discarded");
+
+		const hasForeignLeft = nodeResult.entries.some((e: any) => e.component === foreignLeft);
+		assert.equal(hasForeignLeft, true, "Foreign left must be used as main left");
+
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "CUTE tabbed ScrollView must be mounted");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
 
