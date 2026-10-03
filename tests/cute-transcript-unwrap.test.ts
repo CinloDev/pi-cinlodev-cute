@@ -269,3 +269,13 @@ test("formatToolCallCard and formatFilePreview helper functions", () => {
 	assert.ok(!preview[0].includes("▎"));
 });
 
+test("unwrapNativeCard - memoization returns cached reference for identical array", () => {
+	const raw = [
+		" ▎ $ ls ",
+		" ▎ file1.txt ",
+	];
+	const first = unwrapNativeCard(raw);
+	const second = unwrapNativeCard(raw);
+	assert.equal(first, second, "Repeated unwrapping of the same array must return identical memoized reference");
+});
+
