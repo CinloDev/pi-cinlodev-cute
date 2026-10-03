@@ -7,7 +7,7 @@ import { resetActiveProfileCache, readActiveProfile } from "./cute-paths.ts";
 import { cuteGlyphs, cutePalette, safeFg, bolden } from "./cute-theme.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
-import { getCachedAccounts, getQuotaThreshold, triggerUsageRefresh, fetchUsageAccounts } from "./cute-usage.ts";
+import { getCachedAccounts, getQuotaThreshold, triggerUsageRefresh, fetchUsageAccounts, formatRelativeReset, type QuotaPoolDisplay } from "./cute-usage.ts";
 
 export const SDD_PROFILES_API_SYMBOL = Symbol.for("cinlodev.sdd-profiles.api");
 export { fetchUsageAccounts as fetchQuotaAccounts } from "./cute-usage.ts";
@@ -585,10 +585,14 @@ export class CinlodevProfilesExtendedCard implements Component {
 		triggerUsageRefresh(this.ctx, this.tui, 15000);
 		const cachedAccounts = getCachedAccounts();
 
-		const getAccountQuota = (
+		const getAccountModelPools = (
 			account: string,
 			model: string,
-		): { hasQuota: boolean; pct: number; threshold: any } => {
+		): {
+			hasAccount: boolean;
+			pool5h?: { pct: number; threshold: any; resetStr: string };
+			poolWeekly?: { pct: number; threshold: any; resetStr: string };
+		} => {
 			let matching: any;
 			if (cachedAccounts && cachedAccounts.length > 0) {
 				const accLower = account.toLowerCase();
@@ -601,43 +605,92 @@ export class CinlodevProfilesExtendedCard implements Component {
 			}
 
 			if (!matching || !matching.pools || matching.pools.length === 0) {
-				return {
-					hasQuota: false,
-					pct: 0,
-					threshold: getQuotaThreshold(0, c),
-				};
+				return { hasAccount: false };
 			}
 
-			let pool = matching.pools[0];
 			const modelLower = model.toLowerCase();
+			let candidatePools: QuotaPoolDisplay[] = matching.pools;
+
 			if (modelLower.includes("gemini")) {
-				const found = matching.pools.find((p: any) => /gemini/i.test(p.label));
-				if (found) pool = found;
+				const geminiPools = matching.pools.filter((p: QuotaPoolDisplay) => /gemini/i.test(p.label));
+				if (geminiPools.length > 0) candidatePools = geminiPools;
 			} else if (modelLower.includes("claude") || modelLower.includes("gpt")) {
-				const found = matching.pools.find((p: any) => /claude|gpt/i.test(p.label));
-				if (found) pool = found;
+				const claudeGptPools = matching.pools.filter((p: QuotaPoolDisplay) => /claude|gpt/i.test(p.label));
+				if (claudeGptPools.length > 0) candidatePools = claudeGptPools;
 			}
 
-			const pct = Math.round(pool.availablePercent);
-			const threshold = getQuotaThreshold(pool.availablePercent, c);
+			const raw5h = candidatePools.find((p) => /5\s*h|five\s*hour/i.test(p.label));
+			const rawWeekly = candidatePools.find((p) => /week|seman/i.test(p.label));
+
+			let final5h = raw5h;
+			let finalWeekly = rawWeekly;
+
+			// Fallback si no coinciden exactamente los nombres de 5h o Weekly
+			if (!final5h && !finalWeekly && candidatePools.length > 0) {
+				if (candidatePools.length === 1) {
+					final5h = candidatePools[0];
+				} else {
+					final5h = candidatePools[0];
+					finalWeekly = candidatePools[1];
+				}
+			}
+
+			const toPoolInfo = (p?: QuotaPoolDisplay) => {
+				if (!p) return undefined;
+				const pct = Math.round(p.availablePercent);
+				const threshold = getQuotaThreshold(p.availablePercent, c);
+				const resetStr = formatRelativeReset(p.resetAt);
+				return { pct, threshold, resetStr };
+			};
 
 			return {
-				hasQuota: true,
-				pct,
-				threshold,
+				hasAccount: true,
+				pool5h: toPoolInfo(final5h),
+				poolWeekly: toPoolInfo(finalWeekly),
 			};
 		};
 
 		const cellWidth = Math.max(1, calcVisibleWidth(g.gaugeFilled) || 1);
 		const barCells = Math.max(4, Math.floor(innerWidth / cellWidth));
 
-		const renderFullGaugeBar = (quota: { hasQuota: boolean; pct: number; threshold: any }): string => {
-			if (!quota.hasQuota) {
+		const renderFullGaugeBar = (quota?: { pct: number; threshold: any }): string => {
+			if (!quota) {
 				return c.dim(g.gaugeEmpty.repeat(barCells));
 			}
 			const filled = Math.min(barCells, Math.max(0, Math.round((quota.pct / 100) * barCells)));
 			const empty = Math.max(0, barCells - filled);
 			return `${quota.threshold.color(g.gaugeFilled.repeat(filled))}${c.dim(g.gaugeEmpty.repeat(empty))}`;
+		};
+
+		const renderModelQuotaBars = (
+			account: string,
+			quotaInfo: ReturnType<typeof getAccountModelPools>,
+		): void => {
+			if (!quotaInfo.hasAccount || (!quotaInfo.pool5h && !quotaInfo.poolWeekly)) {
+				lines.push(boxLine(c.mint(`@${account}`), c.dim("sin cuota")));
+				lines.push(boxLine(renderFullGaugeBar(undefined)));
+				return;
+			}
+
+			// Barra 1: 5h Window
+			if (quotaInfo.pool5h) {
+				const p5 = quotaInfo.pool5h;
+				const left5h = `${c.mint(`@${account}`)} ${c.dim("·")} ${c.muted("5h")}`;
+				const pctText = c.bold(p5.threshold.color(`${p5.pct}%`));
+				const right5h = p5.resetStr ? `${pctText} ${c.dim(`(${p5.resetStr})`)}` : pctText;
+				lines.push(boxLine(left5h, right5h));
+				lines.push(boxLine(renderFullGaugeBar(p5)));
+			}
+
+			// Barra 2: Weekly Limit
+			if (quotaInfo.poolWeekly) {
+				const pw = quotaInfo.poolWeekly;
+				const leftWeekly = `${c.muted("Semanal")}`;
+				const pctText = c.bold(pw.threshold.color(`${pw.pct}%`));
+				const rightWeekly = pw.resetStr ? `${pctText} ${c.dim(`(${pw.resetStr})`)}` : pctText;
+				lines.push(boxLine(leftWeekly, rightWeekly));
+				lines.push(boxLine(renderFullGaugeBar(pw)));
+			}
 		};
 
 		// 2. Host row
@@ -656,15 +709,9 @@ export class CinlodevProfilesExtendedCard implements Component {
 			lines.push(boxLine(`  ${hostMeta}`));
 		}
 
-		// Line 2: @<account> (left) + <pct>% (right)
-		const hostQuota = getAccountQuota(hostAccount, hostModel);
-		const hostRight = hostQuota.hasQuota
-			? c.bold(hostQuota.threshold.color(`${hostQuota.pct}%`))
-			: c.dim("sin cuota");
-		lines.push(boxLine(c.mint(`@${hostAccount}`), hostRight));
-
-		// Line 3: Full-width quota gauge bar
-		lines.push(boxLine(renderFullGaugeBar(hostQuota)));
+		// Quota bars (5h y Semanal)
+		const hostQuota = getAccountModelPools(hostAccount, hostModel);
+		renderModelQuotaBars(hostAccount, hostQuota);
 
 		// 3. Flat agent rows
 		const FLAT_AGENTS = [
@@ -696,7 +743,7 @@ export class CinlodevProfilesExtendedCard implements Component {
 			const account = (agentCfg as any)?.account || extractAccountFromModel(agentCfg?.model) || hostAccount;
 			const shortAgent = shortModelName(model).replace(/-high$/, "");
 
-			const agentQuota = getAccountQuota(account, model);
+			const agentQuota = getAccountModelPools(account, model);
 
 			// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
 			const leftText = `• ${c.text(agentId)}`;
@@ -708,14 +755,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 				lines.push(boxLine(`  ${rightText}`));
 			}
 
-			// Line 2: @<account> (left) + <pct>% (right)
-			const agentRight = agentQuota.hasQuota
-				? c.bold(agentQuota.threshold.color(`${agentQuota.pct}%`))
-				: c.dim("sin cuota");
-			lines.push(boxLine(c.mint(`@${account}`), agentRight));
-
-			// Line 3: Full-width quota gauge bar
-			lines.push(boxLine(renderFullGaugeBar(agentQuota)));
+			// Quota bars (5h y Semanal)
+			renderModelQuotaBars(account, agentQuota);
 		}
 
 		// 4. Task Manager status summary if available

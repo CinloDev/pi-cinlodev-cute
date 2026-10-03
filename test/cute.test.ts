@@ -2710,6 +2710,7 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 				prefix: "ranchesca",
 				pools: [
 					{ label: "Gemini 5h", availablePercent: 85, used: 15, total: 100, unlimited: false, resetAt: "in 2 hours" },
+					{ label: "Gemini Weekly", availablePercent: 90, used: 10, total: 100, unlimited: false, resetAt: "in 5 days" },
 				],
 			},
 			{
@@ -2717,6 +2718,7 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 				prefix: "nekocin01",
 				pools: [
 					{ label: "Gemini 5h", availablePercent: 30, used: 70, total: 100, unlimited: false, resetAt: "in 1 hour" },
+					{ label: "Gemini Weekly", availablePercent: 45, used: 55, total: 100, unlimited: false, resetAt: "in 3 days" },
 				],
 			},
 		]);
@@ -2748,12 +2750,16 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		const lineWith3and4 = lines.find((l) => l.includes("cinlo3") && l.includes("cinlo4"));
 		assert.ok(lineWith3and4, "Line 2 should contain cinlo3 and cinlo4");
 
-		// 2. Real quota bar for ranchesca and nekocin01, graceful fallback for cinlo_dig
+		// 2. Real quota bars for ranchesca and nekocin01 (5h + Semanal), graceful fallback for cinlo_dig
 		assert.ok(fullText.includes("ranchesca"), "Should list ranchesca account");
-		assert.ok(fullText.includes("85%"), "Should show 85% quota for ranchesca");
+		assert.ok(fullText.includes("85%"), "Should show 85% 5h quota for ranchesca");
+		assert.ok(fullText.includes("90%"), "Should show 90% weekly quota for ranchesca");
 		assert.ok(fullText.includes("nekocin01"), "Should list nekocin01 account");
-		assert.ok(fullText.includes("30%"), "Should show 30% quota for nekocin01");
+		assert.ok(fullText.includes("30%"), "Should show 30% 5h quota for nekocin01");
+		assert.ok(fullText.includes("45%"), "Should show 45% weekly quota for nekocin01");
 		assert.ok(fullText.includes("cinlo_dig"), "Should list cinlo_dig account");
+		assert.ok(fullText.includes("5h"), "Should show 5h quota label");
+		assert.ok(fullText.includes("Semanal"), "Should show Semanal quota label");
 
 		// 3. Flat subagent list structure & 3 lines per agent with full-width bars
 		assert.ok(/host \/ orquestador/i.test(fullText), "Should render Host orchestrator");
