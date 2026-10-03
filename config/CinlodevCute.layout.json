@@ -63,6 +63,10 @@
 		"enabled": true,
 		"minWidth": 30
 	},
+	"profiles": {
+		"enabled": true,
+		"minWidth": 30
+	},
 	"terminal": {
 		"insetLeft": 0,
 		"insetRight": 0,

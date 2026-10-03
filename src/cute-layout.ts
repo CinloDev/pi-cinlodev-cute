@@ -126,6 +126,13 @@ export interface CuteToolsLayout {
 	minWidth: number;
 }
 
+export interface CuteProfilesLayout {
+	/** Whether the Profiles & Clusters card in the sidebar is enabled. */
+	enabled: boolean;
+	/** Minimum width in cells for the profiles card. */
+	minWidth: number;
+}
+
 export interface CuteTerminalLayout {
 	/** Columns always kept clear on the left edge (was 0: full-bleed). */
 	insetLeft: number;
@@ -147,6 +154,7 @@ export interface CuteLayout {
 	scroll: CuteScrollLayout;
 	gitGraph: CuteGitGraphLayout;
 	tools: CuteToolsLayout;
+	profiles: CuteProfilesLayout;
 	terminal: CuteTerminalLayout;
 }
 
@@ -213,6 +221,10 @@ const DEFAULTS: CuteLayout = {
 		minWidth: 30,
 	},
 	tools: {
+		enabled: true,
+		minWidth: 30,
+	},
+	profiles: {
 		enabled: true,
 		minWidth: 30,
 	},
@@ -286,6 +298,14 @@ function mergeToolsSection(currentSection: CuteToolsLayout, raw: unknown): CuteT
 	return base;
 }
 
+function mergeProfilesSection(currentSection: CuteProfilesLayout, raw: unknown): CuteProfilesLayout {
+	const base = { ...currentSection };
+	if (!isRecord(raw)) return base;
+	base.enabled = pickBoolean(raw.enabled, base.enabled);
+	base.minWidth = pickNumber(raw.minWidth, base.minWidth);
+	return base;
+}
+
 export function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayout {
 	const base: CuteLayout = {
 		sidebar: { ...baseSource.sidebar },
@@ -297,6 +317,7 @@ export function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): Cu
 		scroll: { ...baseSource.scroll },
 		gitGraph: { ...baseSource.gitGraph },
 		tools: { ...baseSource.tools },
+		profiles: { ...baseSource.profiles },
 		terminal: { ...baseSource.terminal },
 	};
 	if (!isRecord(raw)) return base;
@@ -309,6 +330,7 @@ export function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): Cu
 	base.scroll = mergeSection(base.scroll, raw.scroll);
 	base.gitGraph = mergeGitGraphSection(base.gitGraph, raw.gitGraph);
 	base.tools = mergeToolsSection(base.tools, raw.tools);
+	base.profiles = mergeProfilesSection(base.profiles, raw.profiles);
 	base.terminal = mergeSection(base.terminal, raw.terminal);
 	return base;
 }

@@ -9,11 +9,11 @@ import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncate
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll, mergeLayout, mergeSidebar } from "../src/cute-layout.ts";
-import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installSidebar, sidebarState, CUTE_LAYOUT_WRAPPER } from "../src/sidebar.ts";
+import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installSidebar, sidebarState, CUTE_LAYOUT_WRAPPER, SIDEBAR_TAB_CARD_MAP } from "../src/sidebar.ts";
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
-import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
+import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
@@ -2246,11 +2246,11 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.equal(visibleWidth(unthemedBar.line), 50);
 	assert.equal(visibleWidth(unthemedBar.divider), 50);
 
-	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:USAGE, 4:FORGE, 5:MEM, 0:ALL
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:USAGE, 4:prof, 5:MEM, 0:ALL
 	assert.ok(unthemedBar.line.includes("1:MAIN"));
 	assert.ok(unthemedBar.line.includes("2:GIT"));
 	assert.ok(unthemedBar.line.includes("3:USAGE"));
-	assert.ok(unthemedBar.line.includes("4:FORGE"));
+	assert.ok(unthemedBar.line.includes("4:prof"));
 	assert.ok(unthemedBar.line.includes("5:MEM"));
 	assert.ok(unthemedBar.line.includes("0:ALL"));
 
@@ -2297,7 +2297,7 @@ test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
 	assert.equal(resolveSidebarTab("1").id, "main");
 	assert.equal(resolveSidebarTab("2").id, "git");
 	assert.equal(resolveSidebarTab("3").id, "usage");
-	assert.equal(resolveSidebarTab("4").id, "forge");
+	assert.equal(resolveSidebarTab("4").id, "prof");
 	assert.equal(resolveSidebarTab("5").id, "mem");
 	assert.equal(resolveSidebarTab("0").id, "all");
 
@@ -2305,9 +2305,14 @@ test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
 	assert.equal(resolveSidebarTab("main").id, "main");
 	assert.equal(resolveSidebarTab("git").id, "git");
 	assert.equal(resolveSidebarTab("usage").id, "usage");
-	assert.equal(resolveSidebarTab("forge").id, "forge");
+	assert.equal(resolveSidebarTab("prof").id, "prof");
+	assert.equal(resolveSidebarTab("forge").id, "prof", "forge should be backward compatible alias for prof");
 	assert.equal(resolveSidebarTab("mem").id, "mem");
 	assert.equal(resolveSidebarTab("all").id, "all");
+
+	// SIDEBAR_TAB_CARD_MAP checks
+	assert.ok(SIDEBAR_TAB_CARD_MAP.prof.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.prof must include cute-profiles");
+	assert.ok(SIDEBAR_TAB_CARD_MAP.forge.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.forge alias must include cute-profiles");
 
 	// Fallback to main on undefined or invalid
 	assert.equal(resolveSidebarTab(undefined).id, "main");
@@ -2575,6 +2580,225 @@ test("sidebar integration - direct hstack without header discards foreign rail a
 		cleanup();
 		resetAll();
 	}
+});
+
+test("cute-profiles - extractAccountFromModel parses accounts from model strings", () => {
+	assert.equal(extractAccountFromModel("cpamc/ranchesca/gemini-3.8-flash-high"), "ranchesca");
+	assert.equal(extractAccountFromModel("cpamc/nekocin01/gemini-3.8-flash-high"), "nekocin01");
+	assert.equal(extractAccountFromModel("cpamc/cinlo_dig/gemini-3.8-flash-high"), "cinlo_dig");
+	assert.equal(extractAccountFromModel("cpam/cin82/claude-3-5-sonnet"), "cin82");
+	assert.equal(extractAccountFromModel("proxy/neko02/gpt-4o"), "neko02");
+	assert.equal(extractAccountFromModel("anthropic/claude-3-5-sonnet"), null);
+	assert.equal(extractAccountFromModel(""), null);
+	assert.equal(extractAccountFromModel(undefined), null);
+});
+
+test("cute-profiles - extractUniqueAccounts collects unique accounts in order from profile", () => {
+	const sampleProfile = {
+		name: "cinlo1",
+		default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+		default_effort: "high",
+		model_profiles: {
+			"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+			"gentle-ai-explore": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "low" },
+			"gentle-ai-verify": { model: "cpamc/cin82/gemini-3.8-flash-high", effort: "low" },
+			"jd-judge-a": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "high" },
+			"jd-judge-b": { model: "cpamc/neko02/gemini-3.8-flash-high", effort: "high" },
+			"jd-fix-agent": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+			"review-risk": { model: "cpamc/cin82/gemini-3.8-flash-high", effort: "high" },
+		},
+	};
+
+	const accounts = extractUniqueAccounts(sampleProfile as any);
+	assert.deepEqual(accounts, ["ranchesca", "nekocin01", "cinlo_dig", "cin82", "neko02"]);
+});
+
+test("cute-profiles - loadProfileDetails loads from temporary project directory", () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profile-load-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projDir, "test-cluster.json"),
+			JSON.stringify({
+				name: "test-cluster",
+				description: "Test Cluster",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "high",
+				model_profiles: {
+					"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+				},
+			}),
+			"utf8",
+		);
+
+		const loaded = loadProfileDetails("test-cluster", tmpDir);
+		assert.ok(loaded);
+		assert.equal(loaded?.name, "test-cluster");
+		assert.equal(loaded?.default_model, "cpamc/ranchesca/gemini-3.8-flash-high");
+		assert.ok(loaded?.model_profiles?.["gentle-ai-worker"]);
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, subagent tree, and handles clicks", async () => {
+	resetAll();
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profile-card-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "cluster-a", "utf8");
+		fs.writeFileSync(
+			path.join(projDir, "cluster-a.json"),
+			JSON.stringify({
+				name: "cluster-a",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "high",
+				model_profiles: {
+					"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+					"gentle-ai-explore": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "low" },
+				},
+			}),
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(projDir, "cluster-b.json"),
+			JSON.stringify({
+				name: "cluster-b",
+				default_model: "cpamc/nekocin01/gemini-3.8-flash-high",
+				default_effort: "medium",
+			}),
+			"utf8",
+		);
+
+		// Also write task-manager.json
+		fs.writeFileSync(
+			path.join(tmpDir, ".pi", "task-manager.json"),
+			JSON.stringify({
+				todos: [
+					{ id: "1", title: "Implement feature", status: "completed" },
+					{ id: "2", title: "Write tests", status: "in_progress" },
+					{ id: "3", title: "Review PR", status: "pending" },
+				],
+			}),
+			"utf8",
+		);
+
+		// Set cached quota accounts for testing
+		setCachedAccountsForTesting([
+			{
+				provider: "antigravity",
+				prefix: "ranchesca",
+				pools: [
+					{ label: "Gemini 5h", availablePercent: 85, used: 15, total: 100, unlimited: false, resetAt: "in 2 hours" },
+				],
+			},
+			{
+				provider: "antigravity",
+				prefix: "nekocin01",
+				pools: [
+					{ label: "Gemini 5h", availablePercent: 30, used: 70, total: 100, unlimited: false, resetAt: "in 1 hour" },
+				],
+			},
+		]);
+
+		let renderRequested = false;
+		const mockTui: any = {
+			requestRender: () => {
+				renderRequested = true;
+			},
+		};
+
+		const card = new CinlodevProfilesExtendedCard(mockTui, undefined, tmpDir);
+		const lines = card.render(52);
+		assert.ok(lines.length > 0, "Card should render lines");
+		const fullText = lines.join("\n");
+
+		// 1. Top profile switcher buttons
+		assert.ok(fullText.includes("cluster-a"), "Should render cluster-a in switcher");
+		assert.ok(fullText.includes("cluster-b"), "Should render cluster-b in switcher");
+		assert.ok(fullText.includes("●") && fullText.includes("○"), "Should render active/inactive dots");
+
+		// 2. Real quota bar for ranchesca and nekocin01, graceful fallback for cinlo_dig
+		assert.ok(fullText.includes("ranchesca"), "Should list ranchesca account");
+		assert.ok(fullText.includes("85%"), "Should show 85% quota for ranchesca");
+		assert.ok(fullText.includes("nekocin01"), "Should list nekocin01 account");
+		assert.ok(fullText.includes("30%"), "Should show 30% quota for nekocin01");
+		assert.ok(fullText.includes("cinlo_dig"), "Should list cinlo_dig account");
+
+		// 3. Flat subagent list structure
+		assert.ok(/host \/ orquestador/i.test(fullText), "Should render Host orchestrator");
+		assert.ok(fullText.includes("gentle-ai-explore"), "Should render gentle-ai-explore");
+		assert.ok(fullText.includes("gentle-ai-worker"), "Should render gentle-ai-worker");
+		assert.ok(fullText.includes("jd-judge-a"), "Should render jd-judge-a");
+		assert.ok(fullText.includes("review-risk"), "Should render review-risk");
+		assert.ok(fullText.includes("research-scout"), "Should render research-scout");
+		assert.ok(!fullText.includes("ODD Core"), "Should not contain old collapsible category ODD Core");
+		assert.ok(!fullText.includes("Judgment Day"), "Should not contain old collapsible category Judgment Day");
+		assert.ok(fullText.includes("sin cuota"), "Should show sin cuota fallback for cinlo_dig");
+		assert.ok(fullText.includes("▰"), "Should render gauge filled glyph");
+
+		// 4. Task Manager status summary
+		assert.ok(fullText.includes("Task Manager"), "Should render Task Manager status");
+		assert.ok(fullText.includes("1/3"), "Should render 1/3 completed tasks");
+
+		// 5. Click switcher hitbox to activate cluster-b
+		const hitboxes = card.getSwitcherHitboxes();
+		assert.ok(hitboxes.length >= 2, "Should have hitboxes for cluster-a and cluster-b");
+		const targetHitbox = hitboxes.find((h) => h.profileName === "cluster-b");
+		assert.ok(targetHitbox, "Hitbox for cluster-b must exist");
+
+		renderRequested = false;
+		const clickHandled = card.handleRailClick(targetHitbox.lineIndex, "left", targetHitbox.startX + 1);
+		assert.ok(clickHandled, "Click on cluster-b button should be handled");
+
+		// Wait briefly for switchProfile async file write
+		await new Promise((r) => setTimeout(r, 50));
+		assert.ok(renderRequested, "requestRender should be called on profile switch");
+		const activeAfter = fs.readFileSync(path.join(projDir, ".active"), "utf8").trim();
+		assert.equal(activeAfter, "cluster-b", "Active profile should be switched to cluster-b");
+
+		// 6. Test wheel cycling on card
+		renderRequested = false;
+		const wheelHandled = card.handleRailWheel(1);
+		assert.ok(wheelHandled, "handleRailWheel should return true");
+		await new Promise((r) => setTimeout(r, 50));
+		assert.ok(renderRequested, "requestRender should be called on wheel");
+
+		// 7. Click outside hitboxes returns false
+		const missClick = card.handleRailClick(targetHitbox.lineIndex, "left", 999);
+		assert.equal(missClick, false, "Click outside hitbox bounds should return false");
+
+		// 8. Narrow width rendering safety (width = 30)
+		const narrowLines = card.render(30);
+		assert.ok(narrowLines.length > 0);
+		for (const line of narrowLines) {
+			assert.ok(visibleWidth(line) <= 30, `Line width ${visibleWidth(line)} should be <= 30`);
+		}
+	} finally {
+		setCachedAccountsForTesting(null);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetAll();
+	}
+});
+
+test("cute-profiles - edge cases for account extraction and empty profiles", () => {
+	// Malformed model strings
+	assert.equal(extractAccountFromModel("cpamc//model"), null);
+	assert.equal(extractAccountFromModel("cpamc/ranchesca"), null);
+	assert.equal(extractAccountFromModel("   "), null);
+
+	// Empty profile
+	const emptyProfile: any = {};
+	assert.deepEqual(extractUniqueAccounts(emptyProfile), []);
+
+	// Profile with empty model_profiles
+	const minimalProfile: any = { name: "min", model_profiles: {} };
+	assert.deepEqual(extractUniqueAccounts(minimalProfile), []);
+
+	// Non-existent profile details load
+	assert.equal(loadProfileDetails("does-not-exist-xyz", "/tmp"), null);
 });
 
 

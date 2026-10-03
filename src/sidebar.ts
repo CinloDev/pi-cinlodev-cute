@@ -4,6 +4,7 @@ import { cuteGlyphs, frameFg, safeFg, bolden, transformTranscriptLines, unifySid
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
+import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -83,21 +84,33 @@ export interface CuteSidebarTab {
 	id: string;
 	key: string;
 	label: string;
+	title?: string;
 	cards: string[];
 }
 
+export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
+	main: ["footer", "context", "todo"],
+	git: ["gitGraph"],
+	usage: ["usage"],
+	prof: ["cute-profiles"],
+	forge: ["cute-profiles"],
+	mem: ["engram", "tools"],
+	all: ["footer", "context", "engram", "usage", "gitGraph", "tools", "cute-profiles", "todo"],
+};
+
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
-	{ id: "main", key: "1", label: "MAIN", cards: ["footer", "context", "todo"] },
-	{ id: "git", key: "2", label: "GIT", cards: ["gitGraph"] },
-	{ id: "usage", key: "3", label: "USAGE", cards: ["usage"] },
-	{ id: "forge", key: "4", label: "FORGE", cards: ["agents"] },
-	{ id: "mem", key: "5", label: "MEM", cards: ["engram", "tools"] },
-	{ id: "all", key: "0", label: "ALL", cards: ["footer", "context", "engram", "usage", "gitGraph", "tools", "agents", "todo"] },
+	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
+	{ id: "git", key: "2", label: "GIT", title: "Git Graph", cards: SIDEBAR_TAB_CARD_MAP.git },
+	{ id: "usage", key: "3", label: "USAGE", title: "Quotas & Usage", cards: SIDEBAR_TAB_CARD_MAP.usage },
+	{ id: "prof", key: "4", label: "prof", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
+	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
+	{ id: "all", key: "0", label: "ALL", title: "All Cards", cards: SIDEBAR_TAB_CARD_MAP.all },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
 	if (tabIdOrKey) {
-		const match = CUTE_SIDEBAR_TABS.find((t) => t.id === tabIdOrKey || t.key === tabIdOrKey);
+		const normalized = tabIdOrKey === "forge" ? "prof" : tabIdOrKey;
+		const match = CUTE_SIDEBAR_TABS.find((t) => t.id === normalized || t.key === normalized);
 		if (match) return match;
 	}
 	return CUTE_SIDEBAR_TABS[0];
@@ -263,6 +276,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const railV = cuteGlyphs(theme).v;
 	const state = sidebarState(tui);
+	if (!state.parts.has("cute-profiles")) {
+		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme);
+		state.parts.set("cute-profiles", profilesCard);
+	}
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
 	let stopped = false;
@@ -396,7 +413,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
 					const localIndex = targetLine - mapping.startLine;
 					if (typeof mapping.component?.handleRailClick === "function") {
-						const handled = mapping.component.handleRailClick(localIndex, event.button);
+						const localX = event.x - layout.railPadding;
+						const handled = mapping.component.handleRailClick(localIndex, event.button, localX);
 						if (handled) {
 							tui.requestRender();
 							return { handled: true, render: true };
@@ -429,16 +447,39 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			state.activeTabId = activeTab.id;
 
 			const targetCardKeys = !tabsEnabled || activeTab.id === "all"
-				? ["footer", "context", "engram", "usage", "gitGraph", "tools", "agents", "todo"]
+				? SIDEBAR_TAB_CARD_MAP.all
 				: activeTab.cards;
 
 			const sectionData = targetCardKeys
 				.map((key) => {
-					const component = state.parts.get(key);
+					let component = state.parts.get(key);
+					if (
+						!component &&
+						(key === "cute-profiles" || key === "cute-profiles-extended" || key === "agents" || key === "profiles")
+					) {
+						component =
+							state.parts.get("cute-profiles") ||
+							state.parts.get("cute-profiles-extended") ||
+							state.parts.get("agents") ||
+							state.parts.get("profiles");
+						if (!component) {
+							component = new CinlodevProfilesExtendedCard(tui, theme);
+							state.parts.set("cute-profiles", component);
+						}
+					}
 					const rawLines = [...(component?.render(netWidth) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
 					const lines =
-						key !== "footer" && key !== "context" && key !== "engram" && key !== "usage" && key !== "gitGraph" && key !== "tools"
+						key !== "footer" &&
+						key !== "context" &&
+						key !== "engram" &&
+						key !== "usage" &&
+						key !== "gitGraph" &&
+						key !== "tools" &&
+						key !== "cute-profiles" &&
+						key !== "cute-profiles-extended" &&
+						key !== "agents" &&
+						key !== "profiles"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
 							: rawLines;
 					return { key, component, lines };
