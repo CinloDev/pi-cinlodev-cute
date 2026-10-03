@@ -471,12 +471,14 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 	handleRailWheel(wheelDelta: number): boolean {
 		if (wheelDelta === 0) return false;
-		const profiles = listAvailableProfiles(this.cwd);
-		if (profiles.length <= 1) return false;
-		const activeIdx = Math.max(0, profiles.findIndex((p) => p.active));
+		const clusters = ["cinlo1", "cinlo2", "cinlo3", "cinlo4"];
+		const activeDetails = getActiveProfileDetails(this.cwd);
+		const activeName = (activeDetails?.name || "").toLowerCase();
+		let activeIdx = clusters.findIndex((name) => name.toLowerCase() === activeName);
+		if (activeIdx === -1) activeIdx = 0;
 		const dir = wheelDelta > 0 ? 1 : -1;
-		const nextIdx = (activeIdx + dir + profiles.length) % profiles.length;
-		switchProfile(profiles[nextIdx].name, this.ctx, this.pi, this.cwd).then(() => {
+		const nextIdx = (activeIdx + dir + clusters.length) % clusters.length;
+		switchProfile(clusters[nextIdx], this.ctx, this.pi, this.cwd).then(() => {
 			this.tui?.requestRender();
 		});
 		return true;
@@ -524,97 +526,79 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 		this.switcherHitboxes = [];
 
-		const allProfiles = listAvailableProfiles(this.cwd);
-		const primaryProfiles = allProfiles.filter((p) => /^cinlo[1-4]$/i.test(p.name));
-		primaryProfiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-		const otherProfiles = allProfiles.filter((p) => !/^cinlo[1-4]$/i.test(p.name));
-		const profiles = primaryProfiles.length > 0 ? [...primaryProfiles, ...otherProfiles] : allProfiles;
+		const PRIMARY_CLUSTERS = ["cinlo1", "cinlo2", "cinlo3", "cinlo4"];
+		const activeDetails = getActiveProfileDetails(this.cwd) || {
+			name: "cinlo1",
+			default_model: "default",
+			default_effort: "high",
+		};
+		const activeName = (activeDetails.name || "").toLowerCase();
+		const matchedCluster = PRIMARY_CLUSTERS.find((c) => c.toLowerCase() === activeName);
+		const currentActive = matchedCluster || PRIMARY_CLUSTERS[0];
 
-		// 1. Profile switcher buttons at top
-		interface SwitcherBtn {
-			name: string;
-			styled: string;
-			len: number;
-		}
-
-		const buttons: SwitcherBtn[] = profiles.map((p, idx) => {
+		const clusterButtons = PRIMARY_CLUSTERS.map((name, idx) => {
 			const num = idx + 1;
-			const dot = p.active ? "●" : "○";
-			const raw = `[${dot} ${num}: ${p.name}]`;
-			const styled = p.active
+			const isActive = name.toLowerCase() === currentActive.toLowerCase();
+			const dot = isActive ? "●" : "○";
+			const raw = `[${dot} ${num}: ${name}]`;
+			const styled = isActive
 				? c.pinkBright(c.bold(raw))
-				: `${c.dim(`[○ ${num}: `)}${c.muted(p.name)}${c.dim("]")}`;
+				: `${c.dim(`[○ ${num}: `)}${c.muted(name)}${c.dim("]")}`;
 			return {
-				name: p.name,
+				name,
 				styled,
 				len: calcVisibleWidth(raw),
 			};
 		});
 
-		const btnLines: SwitcherBtn[][] = [];
-		let currentLine: SwitcherBtn[] = [];
-		let currentLineLen = 0;
-
-		for (const btn of buttons) {
-			const needed = currentLine.length === 0 ? btn.len : currentLineLen + 1 + btn.len;
-			if (currentLine.length > 0 && needed > innerWidth) {
-				btnLines.push(currentLine);
-				currentLine = [btn];
-				currentLineLen = btn.len;
-			} else {
-				currentLine.push(btn);
-				currentLineLen = needed;
-			}
-		}
-		if (currentLine.length > 0) {
-			btnLines.push(currentLine);
-		}
-
 		const lines: string[] = [top];
 
-		for (const lineBtns of btnLines) {
-			const lineIndex = lines.length;
-			let col = 0;
-			const parts: string[] = [];
+		// Line 1: [● 1: cinlo1] [○ 2: cinlo2]
+		const line1Index = lines.length;
+		const b1 = clusterButtons[0];
+		const b2 = clusterButtons[1];
+		this.switcherHitboxes.push({
+			profileName: b1.name,
+			lineIndex: line1Index,
+			startX: 2,
+			endX: 2 + b1.len,
+		});
+		this.switcherHitboxes.push({
+			profileName: b2.name,
+			lineIndex: line1Index,
+			startX: 2 + b1.len + 1,
+			endX: 2 + b1.len + 1 + b2.len,
+		});
+		lines.push(boxLine(`${b1.styled} ${b2.styled}`));
 
-			for (let i = 0; i < lineBtns.length; i++) {
-				const btn = lineBtns[i];
-				if (i > 0) {
-					parts.push(" ");
-					col += 1;
-				}
-				const startX = 2 + col;
-				const endX = startX + btn.len;
-				this.switcherHitboxes.push({
-					profileName: btn.name,
-					lineIndex,
-					startX,
-					endX,
-				});
-				parts.push(btn.styled);
-				col += btn.len;
-			}
-
-			lines.push(boxLine(parts.join("")));
-		}
+		// Line 2: [○ 3: cinlo3] [○ 4: cinlo4]
+		const line2Index = lines.length;
+		const b3 = clusterButtons[2];
+		const b4 = clusterButtons[3];
+		this.switcherHitboxes.push({
+			profileName: b3.name,
+			lineIndex: line2Index,
+			startX: 2,
+			endX: 2 + b3.len,
+		});
+		this.switcherHitboxes.push({
+			profileName: b4.name,
+			lineIndex: line2Index,
+			startX: 2 + b3.len + 1,
+			endX: 2 + b3.len + 1 + b4.len,
+		});
+		lines.push(boxLine(`${b3.styled} ${b4.styled}`));
 
 		// Divider between switchers and agents
 		lines.push(divider);
 
-		const activeDetails = getActiveProfileDetails(this.cwd) || {
-			name: profiles.find((p) => p.active)?.name || "default",
-			default_model: "default",
-			default_effort: "high",
-		};
-
 		triggerUsageRefresh(this.ctx, this.tui, 15000);
 		const cachedAccounts = getCachedAccounts();
 
-		const renderQuotaGauge = (
+		const getAccountQuota = (
 			account: string,
 			model: string,
-			barCells = 10,
-		): { hasQuota: boolean; quotaStr: string } => {
+		): { hasQuota: boolean; pct: number; threshold: any } => {
 			let matching: any;
 			if (cachedAccounts && cachedAccounts.length > 0) {
 				const accLower = account.toLowerCase();
@@ -629,7 +613,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 			if (!matching || !matching.pools || matching.pools.length === 0) {
 				return {
 					hasQuota: false,
-					quotaStr: `${c.dim("[───]")} ${c.dim("sin cuota")}`,
+					pct: 0,
+					threshold: getQuotaThreshold(0, c),
 				};
 			}
 
@@ -645,16 +630,24 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 			const pct = Math.round(pool.availablePercent);
 			const threshold = getQuotaThreshold(pool.availablePercent, c);
-			const cells = Math.max(3, barCells);
-			const filledCount = Math.round((pct / 100) * cells);
-			const emptyCount = Math.max(0, cells - filledCount);
-			const barStr = `${threshold.color(g.gaugeFilled.repeat(filledCount))}${c.dim(g.gaugeEmpty.repeat(emptyCount))}`;
-			const pctStr = `\x1b[1m${threshold.color(`${pct}%`)}\x1b[22m`;
 
 			return {
 				hasQuota: true,
-				quotaStr: `${barStr} ${pctStr}`,
+				pct,
+				threshold,
 			};
+		};
+
+		const cellWidth = Math.max(1, calcVisibleWidth(g.gaugeFilled) || 1);
+		const barCells = Math.max(4, Math.floor(innerWidth / cellWidth));
+
+		const renderFullGaugeBar = (quota: { hasQuota: boolean; pct: number; threshold: any }): string => {
+			if (!quota.hasQuota) {
+				return c.dim(g.gaugeEmpty.repeat(barCells));
+			}
+			const filled = Math.min(barCells, Math.max(0, Math.round((quota.pct / 100) * barCells)));
+			const empty = Math.max(0, barCells - filled);
+			return `${quota.threshold.color(g.gaugeFilled.repeat(filled))}${c.dim(g.gaugeEmpty.repeat(empty))}`;
 		};
 
 		// 2. Host row
@@ -663,12 +656,23 @@ export class CinlodevProfilesExtendedCard implements Component {
 		const hostAccount = (activeDetails as any).default_account || extractAccountFromModel(hostModel) || "host";
 		const shortHost = shortModelName(hostModel).replace(/-high$/, "");
 
-		// Line 1: 🎯 host / orquestador · <shortModel> (<effort>)
-		lines.push(boxLine(`${c.pink("🎯")} ${c.bold("host / orquestador")} ${c.dim("·")} ${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`));
+		// Line 1: 🎯 host / orquestador (left) + <model> (<effort>) (right)
+		lines.push(
+			boxLine(
+				`${c.pink("🎯")} ${c.bold("host / orquestador")}`,
+				`${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`,
+			),
+		);
 
-		// Line 2: @<account>  <gaugeBar> <pct>%
-		const hostQuota = renderQuotaGauge(hostAccount, hostModel, 10);
-		lines.push(boxLine(c.mint(`@${hostAccount}`), hostQuota.quotaStr));
+		// Line 2: @<account> (left) + <pct>% (right)
+		const hostQuota = getAccountQuota(hostAccount, hostModel);
+		const hostRight = hostQuota.hasQuota
+			? c.bold(hostQuota.threshold.color(`${hostQuota.pct}%`))
+			: c.dim("sin cuota");
+		lines.push(boxLine(c.mint(`@${hostAccount}`), hostRight));
+
+		// Line 3: Full-width quota gauge bar
+		lines.push(boxLine(renderFullGaugeBar(hostQuota)));
 
 		// 3. Flat agent rows
 		const FLAT_AGENTS = [
@@ -692,29 +696,32 @@ export class CinlodevProfilesExtendedCard implements Component {
 		const allAgentIds = [...FLAT_AGENTS, ...extraAgents];
 
 		for (const agentId of allAgentIds) {
+			lines.push(boxLine(""));
+
 			const agentCfg = activeDetails.model_profiles?.[agentId];
 			const model = agentCfg?.model || hostModel;
 			const effort = agentCfg?.effort || hostEffort;
 			const account = (agentCfg as any)?.account || extractAccountFromModel(agentCfg?.model) || hostAccount;
 			const shortAgent = shortModelName(model).replace(/-high$/, "");
 
-			const agentQuota = renderQuotaGauge(account, model, 10);
+			const agentQuota = getAccountQuota(account, model);
 
-			let agentLine1 = `• ${c.text(agentId)}`;
-			if (agentCfg?.model && shortAgent !== shortHost) {
-				const withModel = `${agentLine1} ${c.dim("·")} ${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
-				agentLine1 = calcVisibleWidth(withModel) <= innerWidth ? withModel : `${agentLine1} ${c.dim(`(${effort})`)}`;
-			} else {
-				agentLine1 = `${agentLine1} ${c.dim(`(${effort})`)}`;
-			}
+			// Line 1: • <agent-id> (left) + <model> (<effort>) (right)
+			lines.push(
+				boxLine(
+					`• ${c.text(agentId)}`,
+					`${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`,
+				),
+			);
 
-			const inlineRight = `${c.mint(`@${account}`)}  ${agentQuota.quotaStr}`;
-			if (innerWidth >= 54 && calcVisibleWidth(agentLine1) + calcVisibleWidth(inlineRight) + 2 <= innerWidth) {
-				lines.push(boxLine(agentLine1, inlineRight));
-			} else {
-				lines.push(boxLine(agentLine1));
-				lines.push(boxLine(`   ${c.mint(`@${account}`)}`, agentQuota.quotaStr));
-			}
+			// Line 2: @<account> (left) + <pct>% (right)
+			const agentRight = agentQuota.hasQuota
+				? c.bold(agentQuota.threshold.color(`${agentQuota.pct}%`))
+				: c.dim("sin cuota");
+			lines.push(boxLine(c.mint(`@${account}`), agentRight));
+
+			// Line 3: Full-width quota gauge bar
+			lines.push(boxLine(renderFullGaugeBar(agentQuota)));
 		}
 
 		// 4. Task Manager status summary if available

@@ -2648,11 +2648,11 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 	try {
 		const projDir = path.join(tmpDir, ".pi", "profiles");
 		fs.mkdirSync(projDir, { recursive: true });
-		fs.writeFileSync(path.join(projDir, ".active"), "cluster-a", "utf8");
+		fs.writeFileSync(path.join(projDir, ".active"), "cinlo1", "utf8");
 		fs.writeFileSync(
-			path.join(projDir, "cluster-a.json"),
+			path.join(projDir, "cinlo1.json"),
 			JSON.stringify({
-				name: "cluster-a",
+				name: "cinlo1",
 				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
 				default_effort: "high",
 				model_profiles: {
@@ -2663,11 +2663,29 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 			"utf8",
 		);
 		fs.writeFileSync(
-			path.join(projDir, "cluster-b.json"),
+			path.join(projDir, "cinlo2.json"),
 			JSON.stringify({
-				name: "cluster-b",
+				name: "cinlo2",
 				default_model: "cpamc/nekocin01/gemini-3.8-flash-high",
 				default_effort: "medium",
+			}),
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(projDir, "cinlo3.json"),
+			JSON.stringify({
+				name: "cinlo3",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "low",
+			}),
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(projDir, "cinlo4.json"),
+			JSON.stringify({
+				name: "cinlo4",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "high",
 			}),
 			"utf8",
 		);
@@ -2715,10 +2733,20 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		assert.ok(lines.length > 0, "Card should render lines");
 		const fullText = lines.join("\n");
 
-		// 1. Top profile switcher buttons
-		assert.ok(fullText.includes("cluster-a"), "Should render cluster-a in switcher");
-		assert.ok(fullText.includes("cluster-b"), "Should render cluster-b in switcher");
+		// 1. Top profile switcher buttons - exactly the 4 clusters in 2 lines
+		assert.ok(fullText.includes("1: cinlo1"), "Should render 1: cinlo1 in switcher");
+		assert.ok(fullText.includes("2: cinlo2"), "Should render 2: cinlo2 in switcher");
+		assert.ok(fullText.includes("3: cinlo3"), "Should render 3: cinlo3 in switcher");
+		assert.ok(fullText.includes("4: cinlo4"), "Should render 4: cinlo4 in switcher");
 		assert.ok(fullText.includes("●") && fullText.includes("○"), "Should render active/inactive dots");
+
+		// Verify 2 clean lines for clusters:
+		// Line 1: [● 1: cinlo1] [○ 2: cinlo2]
+		// Line 2: [○ 3: cinlo3] [○ 4: cinlo4]
+		const lineWith1and2 = lines.find((l) => l.includes("cinlo1") && l.includes("cinlo2"));
+		assert.ok(lineWith1and2, "Line 1 should contain cinlo1 and cinlo2");
+		const lineWith3and4 = lines.find((l) => l.includes("cinlo3") && l.includes("cinlo4"));
+		assert.ok(lineWith3and4, "Line 2 should contain cinlo3 and cinlo4");
 
 		// 2. Real quota bar for ranchesca and nekocin01, graceful fallback for cinlo_dig
 		assert.ok(fullText.includes("ranchesca"), "Should list ranchesca account");
@@ -2727,7 +2755,7 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		assert.ok(fullText.includes("30%"), "Should show 30% quota for nekocin01");
 		assert.ok(fullText.includes("cinlo_dig"), "Should list cinlo_dig account");
 
-		// 3. Flat subagent list structure
+		// 3. Flat subagent list structure & 3 lines per agent with full-width bars
 		assert.ok(/host \/ orquestador/i.test(fullText), "Should render Host orchestrator");
 		assert.ok(fullText.includes("gentle-ai-explore"), "Should render gentle-ai-explore");
 		assert.ok(fullText.includes("gentle-ai-worker"), "Should render gentle-ai-worker");
@@ -2738,26 +2766,48 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		assert.ok(!fullText.includes("Judgment Day"), "Should not contain old collapsible category Judgment Day");
 		assert.ok(fullText.includes("sin cuota"), "Should show sin cuota fallback for cinlo_dig");
 		assert.ok(fullText.includes("▰"), "Should render gauge filled glyph");
+		assert.ok(fullText.includes("▱"), "Should render gauge empty glyph");
 
-		// 4. Task Manager status summary
+		// 4. Full-width bar check: lines spanning full innerWidth
+		const innerWidth = 52 - 4; // 48
+		const fullGaugeLines = lines.filter((l) => {
+			const cleaned = l.replace(/\x1b\[[0-9;]*m/g, "");
+			return (cleaned.includes("▰") || cleaned.includes("▱")) && !cleaned.includes("@") && !cleaned.includes("%");
+		});
+		assert.ok(fullGaugeLines.length >= 3, "Should have dedicated full-width gauge lines below accounts");
+		// Check that fallback gauge for unavailable quota is entirely empty glyphs
+		const fallbackGauge = fullGaugeLines.find((l) => {
+			const cleaned = l.replace(/\x1b\[[0-9;]*m/g, "");
+			return cleaned.includes("▱".repeat(innerWidth));
+		});
+		assert.ok(fallbackGauge, "Should have a gauge line with full empty glyphs for account without quota");
+
+		// Check breathing room spacer lines between agents
+		const emptySpacerLines = lines.filter((l) => {
+			const cleaned = l.replace(/\x1b\[[0-9;]*m/g, "");
+			return cleaned.startsWith("║") && cleaned.endsWith("║") && cleaned.slice(1, -1).trim() === "";
+		});
+		assert.ok(emptySpacerLines.length >= 12, "Should have empty spacer lines between agents for breathing room");
+
+		// 5. Task Manager status summary
 		assert.ok(fullText.includes("Task Manager"), "Should render Task Manager status");
 		assert.ok(fullText.includes("1/3"), "Should render 1/3 completed tasks");
 
-		// 5. Click switcher hitbox to activate cluster-b
+		// 6. Click switcher hitbox to activate cinlo2
 		const hitboxes = card.getSwitcherHitboxes();
-		assert.ok(hitboxes.length >= 2, "Should have hitboxes for cluster-a and cluster-b");
-		const targetHitbox = hitboxes.find((h) => h.profileName === "cluster-b");
-		assert.ok(targetHitbox, "Hitbox for cluster-b must exist");
+		assert.equal(hitboxes.length, 4, "Should have exactly 4 hitboxes for the 4 clusters");
+		const targetHitbox = hitboxes.find((h) => h.profileName === "cinlo2");
+		assert.ok(targetHitbox, "Hitbox for cinlo2 must exist");
 
 		renderRequested = false;
 		const clickHandled = card.handleRailClick(targetHitbox.lineIndex, "left", targetHitbox.startX + 1);
-		assert.ok(clickHandled, "Click on cluster-b button should be handled");
+		assert.ok(clickHandled, "Click on cinlo2 button should be handled");
 
 		// Wait briefly for switchProfile async file write
 		await new Promise((r) => setTimeout(r, 50));
 		assert.ok(renderRequested, "requestRender should be called on profile switch");
 		const activeAfter = fs.readFileSync(path.join(projDir, ".active"), "utf8").trim();
-		assert.equal(activeAfter, "cluster-b", "Active profile should be switched to cluster-b");
+		assert.equal(activeAfter, "cinlo2", "Active profile should be switched to cinlo2");
 
 		// 6. Test wheel cycling on card
 		renderRequested = false;
