@@ -7,11 +7,13 @@ import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, isReviewComponent, looksLikeReviewLines, extractReviewHeader, formatReviewOutputLines } from "../src/cute-transcript.ts";
 import { loadCuteStrings, resetCuteStringsCache, detectSystemUser } from "../src/cute-strings.ts";
-import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll } from "../src/cute-layout.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { isHerdrSession, loadCuteLayout, resetCuteLayoutCache, resolveEdgeInsets, tuneTuiScroll, mergeLayout, mergeSidebar } from "../src/cute-layout.ts";
+import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installSidebar, sidebarState, CUTE_LAYOUT_WRAPPER, SIDEBAR_TAB_CARD_MAP } from "../src/sidebar.ts";
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
-import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL } from "../src/cute-profiles.ts";
+import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
@@ -226,7 +228,7 @@ test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to d
 
 	const warningLines = [
 		"\u001b[33m╭─\u001b[39m ✿ Gentle AI · dev binary override · field-test only \u001b[35m──────────────────╮\u001b[39m",
-		"\u001b[33m│\u001b[39m /home/cinlodev/go/bin/gentle-ai · sha256:882bfd7a9d5c16f1              \u001b[35m│\u001b[39m",
+		"\u001b[33m│\u001b[39m /home/user/go/bin/gentle-ai · sha256:882bfd7a9d5c16f1                 \u001b[35m│\u001b[39m",
 		"\u001b[33m╰\u001b[39m\u001b[35m────────────────────────────────────────────────────────────────────────╯\u001b[39m",
 		"",
 	];
@@ -242,7 +244,7 @@ test("transformTranscriptLines - adapts Gentle AI warning card (dev binary) to d
 	assert.ok(transformed[0].includes("[warning]"));
 
 	assert.ok(transformed[1].includes("║"));
-	assert.ok(transformed[1].includes("/home/cinlodev/go/bin/gentle-ai"));
+	assert.ok(transformed[1].includes("/home/user/go/bin/gentle-ai"));
 	assert.ok(transformed[1].includes("[warning]"));
 
 	assert.ok(transformed[2].includes("╚"));
@@ -1999,14 +2001,14 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 
 	// 3. Parse raw usage to accounts with prefixes
 	const prefixMap = new Map([
-		["cinlodigital@gmail.com", "cinlo_dig"],
+		["testuser@example.com", "test_user"],
 	]);
 	const rawGroups = [
 		{
 			provider: "antigravity",
 			accounts: [
 				{
-					account: "cinlodigital@gmail.com",
+					account: "testuser@example.com",
 					pools: [
 						{ label: "Gemini Models (weekly)", availablePercentage: 84, resetAt: in3h },
 						{ label: "Gemini Models (5h)", availablePercentage: 100, resetAt: in3h },
@@ -2021,38 +2023,38 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	const accounts = parseRawUsageToAccounts(rawGroups, prefixMap);
 	assert.equal(accounts.length, 1);
 	assert.equal(accounts[0].provider, "antigravity");
-	assert.equal(accounts[0].prefix, "cinlo_dig", "Must use prefix instead of email");
+	assert.equal(accounts[0].prefix, "test_user", "Must use prefix instead of email");
 	assert.equal(accounts[0].pools.length, 4, "Must hold all 4 quota pools");
 	assert.equal(accounts[0].pools[0].availablePercent, 84);
 
 	// 4. Provider-isolated prefix mapping without collisions
 	const collidingPrefixMap = new Map([
-		["antigravity:cinlodev@gmail.com", "cinlodev"],
-		["codex:cinlodev@gmail.com", "codex_cinlodev"],
-		["cinlodev@gmail.com", "fallback_should_not_be_used"],
+		["antigravity:user@example.com", "user_main"],
+		["codex:user@example.com", "codex_user"],
+		["user@example.com", "fallback_should_not_be_used"],
 	]);
 	const multiProviderGroups = [
 		{
 			provider: "antigravity",
-			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Gemini", availablePercentage: 100 }] }],
+			accounts: [{ account: "user@example.com", pools: [{ label: "Gemini", availablePercentage: 100 }] }],
 		},
 		{
 			provider: "codex",
-			accounts: [{ account: "cinlodev@gmail.com", pools: [{ label: "Codex", availablePercentage: 50 }] }],
+			accounts: [{ account: "user@example.com", pools: [{ label: "Codex", availablePercentage: 50 }] }],
 		},
 	];
 	const multiAccounts = parseRawUsageToAccounts(multiProviderGroups, collidingPrefixMap);
-	assert.equal(multiAccounts[0].prefix, "cinlodev", "Antigravity account must get provider-scoped prefix");
-	assert.equal(multiAccounts[1].prefix, "codex_cinlodev", "Codex account must get provider-scoped prefix");
+	assert.equal(multiAccounts[0].prefix, "user_main", "Antigravity account must get provider-scoped prefix");
+	assert.equal(multiAccounts[1].prefix, "codex_user", "Codex account must get provider-scoped prefix");
 
 	// 5. prioritizeActiveAccount puts active prefix at index 0
 	const mockAccounts = [
 		{ provider: "codex", prefix: "codex", pools: [] },
-		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
-		{ provider: "antigravity", prefix: "cin82", pools: [] },
+		{ provider: "antigravity", prefix: "test_user", pools: [] },
+		{ provider: "antigravity", prefix: "acc_active", pools: [] },
 	];
-	const prioritized = prioritizeActiveAccount(mockAccounts, "cin82");
-	assert.equal(prioritized[0].prefix, "cin82", "Active orchestrator prefix must be at index 0");
+	const prioritized = prioritizeActiveAccount(mockAccounts, "acc_active");
+	assert.equal(prioritized[0].prefix, "acc_active", "Active orchestrator prefix must be at index 0");
 });
 
 test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge rendering", () => {
@@ -2123,8 +2125,8 @@ test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge r
 	// 6. Mouse wheel and bidirectional click navigation (with cached accounts)
 	renderRequested = 0;
 	setCachedAccountsForTesting([
-		{ provider: "antigravity", prefix: "cin82", pools: [] },
-		{ provider: "antigravity", prefix: "cinlo_dig", pools: [] },
+		{ provider: "antigravity", prefix: "acc_active", pools: [] },
+		{ provider: "antigravity", prefix: "test_user", pools: [] },
 	]);
 	card.handleClick(0, "left"); // forward
 	assert.equal(renderRequested, 1);
@@ -2154,9 +2156,9 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 
 	// 3. resolveDashboardUrl
 	assert.equal(resolveDashboardUrl(null), DEFAULT_ENGRAM_DASHBOARD);
-	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }), "https://engram.cinlodev.com/dashboard/");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.example.com" }), "https://engram.example.com/dashboard/");
 	assert.equal(resolveDashboardUrl({ serverUrl: "https://myengram.dev///" }), "https://myengram.dev/dashboard/");
-	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.cinlodev.com" }, "dypos"), "https://engram.cinlodev.com/dashboard/projects/dypos");
+	assert.equal(resolveDashboardUrl({ serverUrl: "https://engram.example.com" }, "dypos"), "https://engram.example.com/dashboard/projects/dypos");
 
 	// 4. CinlodevEngramCard component
 	let renderCount = 0;
@@ -2196,4 +2198,607 @@ test("cute-engram - detectProjectName, formatRelativeTime, resolveDashboardUrl, 
 	// Invalid line index returns false
 	assert.equal(card.handleClick(999), false);
 });
+
+test("sidebar tabs - loadCuteLayout contains tabs defaults and mergeLayout respects overrides", () => {
+	resetAll();
+	const layout = loadCuteLayout();
+	assert.equal(layout.sidebar.tabsEnabled, true);
+	assert.equal(layout.sidebar.defaultTab, "1");
+
+	// Overrides via mergeLayout with string
+	const mergedString = mergeLayout({
+		sidebar: {
+			defaultTab: "2",
+			tabsEnabled: false,
+		},
+	});
+	assert.equal(mergedString.sidebar.defaultTab, "2");
+	assert.equal(mergedString.sidebar.tabsEnabled, false);
+
+	// Overrides via mergeLayout with number
+	const mergedNumber = mergeLayout({
+		sidebar: {
+			defaultTab: 4,
+		},
+	});
+	assert.equal(mergedNumber.sidebar.defaultTab, "4");
+
+	// Overrides via mergeSidebar directly
+	const sidebarDirect = mergeSidebar(layout.sidebar, {
+		defaultTab: 5,
+		tabsEnabled: true,
+	});
+	assert.equal(sidebarDirect.defaultTab, "5");
+	assert.equal(sidebarDirect.tabsEnabled, true);
+
+	// Whitespace string preserves base
+	const preserved = mergeSidebar(layout.sidebar, {
+		defaultTab: "   ",
+	});
+	assert.equal(preserved.defaultTab, "1");
+});
+
+test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty hitboxes, and respects width", () => {
+	// 1. Unthemed generation check for tab contents
+	const unthemedBar = renderCuteSidebarTabBar(50, "1");
+	assert.ok(unthemedBar.line.length > 0);
+	assert.ok(unthemedBar.divider.length > 0);
+	assert.equal(visibleWidth(unthemedBar.line), 50);
+	assert.equal(visibleWidth(unthemedBar.divider), 50);
+
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:USAGE, 4:prof, 5:MEM, 0:ALL
+	assert.ok(unthemedBar.line.includes("1:MAIN"));
+	assert.ok(unthemedBar.line.includes("2:GIT"));
+	assert.ok(unthemedBar.line.includes("3:USAGE"));
+	assert.ok(unthemedBar.line.includes("4:prof"));
+	assert.ok(unthemedBar.line.includes("5:MEM"));
+	assert.ok(unthemedBar.line.includes("0:ALL"));
+
+	// Non-empty hitboxes
+	assert.equal(unthemedBar.hitboxes.length, 6);
+	for (const h of unthemedBar.hitboxes) {
+		assert.ok(h.id);
+		assert.ok(h.key);
+		assert.ok(h.label);
+		assert.ok(h.startX < h.endX);
+		assert.ok(h.endX <= 50);
+	}
+
+	// 2. Themed generation check
+	const mockTheme = {
+		fg: (role: string, text: string) => `\x1b[38;5;200m${text}\x1b[0m`,
+	} as any;
+	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
+	assert.equal(visibleWidth(themedBar.line), 50);
+	assert.equal(visibleWidth(themedBar.divider), 50);
+	assert.equal(themedBar.hitboxes.length, 6);
+
+	// 3. Narrow rail edge case: visibleWidth must never exceed width
+	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
+	assert.ok(visibleWidth(narrowBar.line) <= 20, `Narrow line visible width ${visibleWidth(narrowBar.line)} must be <= 20`);
+	assert.ok(visibleWidth(narrowBar.divider) <= 20);
+	for (const h of narrowBar.hitboxes) {
+		assert.ok(h.startX < 20);
+		assert.ok(h.endX <= 20);
+	}
+
+	// 4. Very narrow rail (width = 5)
+	const tinyBar = renderCuteSidebarTabBar(5, "1");
+	assert.ok(visibleWidth(tinyBar.line) <= 5);
+
+	// 5. Zero width
+	const zeroBar = renderCuteSidebarTabBar(0, "1");
+	assert.equal(visibleWidth(zeroBar.line), 0);
+	assert.equal(zeroBar.hitboxes.length, 0);
+});
+
+test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
+	// Resolves by key ("1" -> "main", "2" -> "git", etc.)
+	assert.equal(resolveSidebarTab("1").id, "main");
+	assert.equal(resolveSidebarTab("2").id, "git");
+	assert.equal(resolveSidebarTab("3").id, "usage");
+	assert.equal(resolveSidebarTab("4").id, "prof");
+	assert.equal(resolveSidebarTab("5").id, "mem");
+	assert.equal(resolveSidebarTab("0").id, "all");
+
+	// Resolves by id
+	assert.equal(resolveSidebarTab("main").id, "main");
+	assert.equal(resolveSidebarTab("git").id, "git");
+	assert.equal(resolveSidebarTab("usage").id, "usage");
+	assert.equal(resolveSidebarTab("prof").id, "prof");
+	assert.equal(resolveSidebarTab("forge").id, "prof", "forge should be backward compatible alias for prof");
+	assert.equal(resolveSidebarTab("mem").id, "mem");
+	assert.equal(resolveSidebarTab("all").id, "all");
+
+	// SIDEBAR_TAB_CARD_MAP checks
+	assert.ok(SIDEBAR_TAB_CARD_MAP.prof.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.prof must include cute-profiles");
+	assert.ok(SIDEBAR_TAB_CARD_MAP.forge.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.forge alias must include cute-profiles");
+
+	// Fallback to main on undefined or invalid
+	assert.equal(resolveSidebarTab(undefined).id, "main");
+	assert.equal(resolveSidebarTab("").id, "main");
+	assert.equal(resolveSidebarTab("invalid").id, "main");
+
+	// Tab properties
+	for (const tab of CUTE_SIDEBAR_TABS) {
+		assert.ok(tab.id);
+		assert.ok(tab.key);
+		assert.ok(tab.label);
+		assert.ok(Array.isArray(tab.cards) && tab.cards.length > 0);
+	}
+});
+
+test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	let renderRequests = 0;
+	const mockLayoutRoot: any = {
+		render: () => ["line1", "line2"],
+		invalidate: () => {},
+	};
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockLayoutRoot, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+		// Call replacement to trigger prepare() and mount rail
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.ok(nodeResult.entries.length >= 2, "Should mount rail entries");
+
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "ScrollView component must be mounted");
+		const scroll = scrollEntry.component;
+
+		// Initial tab should resolve to defaultTab ("1" -> "main")
+		assert.equal(state.activeTabId, "main");
+
+		const layout = loadCuteLayout().sidebar;
+		const netWidth = layout.railWidth - 2 * layout.railPadding;
+		const { hitboxes } = renderCuteSidebarTabBar(netWidth, "main");
+		const gitHitbox = hitboxes.find((h) => h.id === "git");
+		assert.ok(gitHitbox, "Git hitbox must exist");
+
+		// Click on TabBar at line 3 (with branding separator: line 0 top pad, line 1 banner, line 2 blank, line 3 tab bar) over Git tab hitbox
+		const clickResult = scroll.handleMouse({
+			type: "click",
+			button: "left",
+			x: gitHitbox.startX + layout.railPadding + 1,
+			y: 3,
+		});
+		assert.ok(clickResult.handled, "Click on tab bar should be handled");
+		assert.equal(state.activeTabId, "git", "Active tab should switch to git after click");
+		assert.ok(renderRequests > 0, "requestRender should be called on click");
+
+		const prevRenderCount = renderRequests;
+
+		// Wheel forward (wheelDelta > 0) -> cycles from git (index 1) to usage (index 2)
+		const wheelResult = scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: 1,
+			x: 10,
+			y: 3,
+		});
+		assert.ok(wheelResult.handled, "Wheel on tab bar should be handled");
+		assert.equal(state.activeTabId, "usage", "Wheel delta +1 should cycle tab from git to usage");
+		assert.ok(renderRequests > prevRenderCount, "requestRender should be called on wheel");
+
+		// Wheel backward (wheelDelta < 0) -> cycles back from usage (index 2) to git (index 1)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 3,
+		});
+		assert.equal(state.activeTabId, "git", "Wheel delta -1 should cycle tab back to git");
+
+		// Wheel backward again -> from git (index 1) to main (index 0)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 3,
+		});
+		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
+
+		// Wheel backward from main (index 0) wraps to all (index 5)
+		scroll.handleMouse({
+			type: "wheel",
+			wheelDelta: -1,
+			x: 10,
+			y: 3,
+		});
+		assert.equal(state.activeTabId, "all", "Wheel delta -1 from index 0 should wrap to all");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("sidebar integration - gentle-shell wrapper cooperative coexistence (header preserved, foreign rail replaced, CUTE_LAYOUT_WRAPPER marked, idempotent)", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const foreignHeader: any = {
+		render: () => ["LIVE HEADER"],
+		invalidate: () => {},
+	};
+	const foreignLeft: any = {
+		render: () => ["transcript line 1", "dock line"],
+		invalidate: () => {},
+	};
+	const foreignRail: any = {
+		render: () => ["gentle shell monolithic rail"],
+		invalidate: () => {},
+	};
+
+	const foreignHstackNode = {
+		type: "hstack",
+		entries: [
+			{ component: foreignLeft, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: foreignRail, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	};
+
+	const foreignBodyComponent: any = {
+		render: () => [],
+		invalidate: () => {},
+		[NODE]: () => foreignHstackNode,
+	};
+
+	const mockLayoutRoot: any = {
+		render: () => ["root"],
+		invalidate: () => {},
+	};
+
+	// Simulate gentle-shell layout wrapper: vstack [header, body]
+	mockLayoutRoot[NODE] = () => ({
+		type: "vstack",
+		entries: [
+			{ component: foreignHeader, basis: 2, grow: 0, shrink: 0, minSize: 2 },
+			{ component: foreignBodyComponent, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		],
+	});
+
+	let renderRequests = 0;
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		// 1. CUTE_LAYOUT_WRAPPER marker must be present on root[NODE]
+		assert.equal(typeof mockLayoutRoot[NODE], "function");
+		assert.equal((mockLayoutRoot[NODE] as any)[CUTE_LAYOUT_WRAPPER], true);
+
+		// 2. Unpack layout node
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.equal(nodeResult.type, "vstack", "Top-level layout should be vstack preserving header");
+		assert.equal(nodeResult.entries.length, 2, "vstack must have 2 entries: header and cute container");
+
+		// Header entry is preserved at top
+		assert.equal(nodeResult.entries[0].component, foreignHeader, "Header entry component must be preserved");
+
+		// Body entry wraps cuteHstack
+		const cuteContainer = nodeResult.entries[1].component;
+		assert.ok(cuteContainer, "Cute container component must exist");
+		assert.equal(typeof cuteContainer[NODE], "function", "Cute container must have [NODE]");
+
+		const cuteHstack = cuteContainer[NODE]();
+		assert.equal(cuteHstack.type, "hstack", "Cute container node must be hstack");
+
+		// foreignRail should be discarded, foreignLeft should be preserved
+		const hasForeignRail = cuteHstack.entries.some((e: any) => e.component === foreignRail);
+		assert.equal(hasForeignRail, false, "Monolithic gentle-shell rail must be discarded");
+
+		const hasForeignLeft = cuteHstack.entries.some((e: any) => e.component === foreignLeft);
+		assert.equal(hasForeignLeft, true, "Prepared left component (transcript/dock) must be preserved");
+
+		// CUTE tabbed rail (ScrollView with handleMouse) must be mounted
+		const scrollEntry = cuteHstack.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "CUTE tabbed ScrollView must be mounted in place of foreign rail");
+
+		// 3. Idempotency: re-attaching does not double-wrap or overwrite
+		const currentWrapper = mockLayoutRoot[NODE];
+		const cleanup2 = installSidebar(mockTui);
+		assert.equal(mockLayoutRoot[NODE], currentWrapper, "Re-attaching must not double-wrap root[NODE]");
+		cleanup2();
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("sidebar integration - direct hstack without header discards foreign rail and preserves left", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const foreignLeft: any = {
+		render: () => ["transcript line 1"],
+		invalidate: () => {},
+	};
+	const foreignRail: any = {
+		render: () => ["foreign rail"],
+		invalidate: () => {},
+	};
+
+	const mockLayoutRoot: any = {
+		render: () => ["root"],
+		invalidate: () => {},
+	};
+
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: foreignLeft, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: foreignRail, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		assert.equal((mockLayoutRoot[NODE] as any)[CUTE_LAYOUT_WRAPPER], true);
+
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.equal(nodeResult.type, "hstack", "Layout should be hstack without header");
+
+		const hasForeignRail = nodeResult.entries.some((e: any) => e.component === foreignRail);
+		assert.equal(hasForeignRail, false, "Foreign rail must be discarded");
+
+		const hasForeignLeft = nodeResult.entries.some((e: any) => e.component === foreignLeft);
+		assert.equal(hasForeignLeft, true, "Foreign left must be used as main left");
+
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "CUTE tabbed ScrollView must be mounted");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("cute-profiles - extractAccountFromModel parses accounts from model strings", () => {
+	assert.equal(extractAccountFromModel("cpamc/ranchesca/gemini-3.8-flash-high"), "ranchesca");
+	assert.equal(extractAccountFromModel("cpamc/nekocin01/gemini-3.8-flash-high"), "nekocin01");
+	assert.equal(extractAccountFromModel("cpamc/cinlo_dig/gemini-3.8-flash-high"), "cinlo_dig");
+	assert.equal(extractAccountFromModel("cpam/cin82/claude-3-5-sonnet"), "cin82");
+	assert.equal(extractAccountFromModel("proxy/neko02/gpt-4o"), "neko02");
+	assert.equal(extractAccountFromModel("anthropic/claude-3-5-sonnet"), null);
+	assert.equal(extractAccountFromModel(""), null);
+	assert.equal(extractAccountFromModel(undefined), null);
+});
+
+test("cute-profiles - extractUniqueAccounts collects unique accounts in order from profile", () => {
+	const sampleProfile = {
+		name: "cinlo1",
+		default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+		default_effort: "high",
+		model_profiles: {
+			"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+			"gentle-ai-explore": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "low" },
+			"gentle-ai-verify": { model: "cpamc/cin82/gemini-3.8-flash-high", effort: "low" },
+			"jd-judge-a": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "high" },
+			"jd-judge-b": { model: "cpamc/neko02/gemini-3.8-flash-high", effort: "high" },
+			"jd-fix-agent": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+			"review-risk": { model: "cpamc/cin82/gemini-3.8-flash-high", effort: "high" },
+		},
+	};
+
+	const accounts = extractUniqueAccounts(sampleProfile as any);
+	assert.deepEqual(accounts, ["ranchesca", "nekocin01", "cinlo_dig", "cin82", "neko02"]);
+});
+
+test("cute-profiles - loadProfileDetails loads from temporary project directory", () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profile-load-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(projDir, "test-cluster.json"),
+			JSON.stringify({
+				name: "test-cluster",
+				description: "Test Cluster",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "high",
+				model_profiles: {
+					"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+				},
+			}),
+			"utf8",
+		);
+
+		const loaded = loadProfileDetails("test-cluster", tmpDir);
+		assert.ok(loaded);
+		assert.equal(loaded?.name, "test-cluster");
+		assert.equal(loaded?.default_model, "cpamc/ranchesca/gemini-3.8-flash-high");
+		assert.ok(loaded?.model_profiles?.["gentle-ai-worker"]);
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, subagent tree, and handles clicks", async () => {
+	resetAll();
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profile-card-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "cluster-a", "utf8");
+		fs.writeFileSync(
+			path.join(projDir, "cluster-a.json"),
+			JSON.stringify({
+				name: "cluster-a",
+				default_model: "cpamc/ranchesca/gemini-3.8-flash-high",
+				default_effort: "high",
+				model_profiles: {
+					"gentle-ai-worker": { model: "cpamc/nekocin01/gemini-3.8-flash-high", effort: "high" },
+					"gentle-ai-explore": { model: "cpamc/cinlo_dig/gemini-3.8-flash-high", effort: "low" },
+				},
+			}),
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(projDir, "cluster-b.json"),
+			JSON.stringify({
+				name: "cluster-b",
+				default_model: "cpamc/nekocin01/gemini-3.8-flash-high",
+				default_effort: "medium",
+			}),
+			"utf8",
+		);
+
+		// Also write task-manager.json
+		fs.writeFileSync(
+			path.join(tmpDir, ".pi", "task-manager.json"),
+			JSON.stringify({
+				todos: [
+					{ id: "1", title: "Implement feature", status: "completed" },
+					{ id: "2", title: "Write tests", status: "in_progress" },
+					{ id: "3", title: "Review PR", status: "pending" },
+				],
+			}),
+			"utf8",
+		);
+
+		// Set cached quota accounts for testing
+		setCachedAccountsForTesting([
+			{
+				provider: "antigravity",
+				prefix: "ranchesca",
+				pools: [
+					{ label: "Gemini 5h", availablePercent: 85, used: 15, total: 100, unlimited: false, resetAt: "in 2 hours" },
+				],
+			},
+			{
+				provider: "antigravity",
+				prefix: "nekocin01",
+				pools: [
+					{ label: "Gemini 5h", availablePercent: 30, used: 70, total: 100, unlimited: false, resetAt: "in 1 hour" },
+				],
+			},
+		]);
+
+		let renderRequested = false;
+		const mockTui: any = {
+			requestRender: () => {
+				renderRequested = true;
+			},
+		};
+
+		const card = new CinlodevProfilesExtendedCard(mockTui, undefined, tmpDir);
+		const lines = card.render(52);
+		assert.ok(lines.length > 0, "Card should render lines");
+		const fullText = lines.join("\n");
+
+		// 1. Top profile switcher buttons
+		assert.ok(fullText.includes("cluster-a"), "Should render cluster-a in switcher");
+		assert.ok(fullText.includes("cluster-b"), "Should render cluster-b in switcher");
+		assert.ok(fullText.includes("●") && fullText.includes("○"), "Should render active/inactive dots");
+
+		// 2. Real quota bar for ranchesca and nekocin01, graceful fallback for cinlo_dig
+		assert.ok(fullText.includes("ranchesca"), "Should list ranchesca account");
+		assert.ok(fullText.includes("85%"), "Should show 85% quota for ranchesca");
+		assert.ok(fullText.includes("nekocin01"), "Should list nekocin01 account");
+		assert.ok(fullText.includes("30%"), "Should show 30% quota for nekocin01");
+		assert.ok(fullText.includes("cinlo_dig"), "Should list cinlo_dig account");
+
+		// 3. Flat subagent list structure
+		assert.ok(/host \/ orquestador/i.test(fullText), "Should render Host orchestrator");
+		assert.ok(fullText.includes("gentle-ai-explore"), "Should render gentle-ai-explore");
+		assert.ok(fullText.includes("gentle-ai-worker"), "Should render gentle-ai-worker");
+		assert.ok(fullText.includes("jd-judge-a"), "Should render jd-judge-a");
+		assert.ok(fullText.includes("review-risk"), "Should render review-risk");
+		assert.ok(fullText.includes("research-scout"), "Should render research-scout");
+		assert.ok(!fullText.includes("ODD Core"), "Should not contain old collapsible category ODD Core");
+		assert.ok(!fullText.includes("Judgment Day"), "Should not contain old collapsible category Judgment Day");
+		assert.ok(fullText.includes("sin cuota"), "Should show sin cuota fallback for cinlo_dig");
+		assert.ok(fullText.includes("▰"), "Should render gauge filled glyph");
+
+		// 4. Task Manager status summary
+		assert.ok(fullText.includes("Task Manager"), "Should render Task Manager status");
+		assert.ok(fullText.includes("1/3"), "Should render 1/3 completed tasks");
+
+		// 5. Click switcher hitbox to activate cluster-b
+		const hitboxes = card.getSwitcherHitboxes();
+		assert.ok(hitboxes.length >= 2, "Should have hitboxes for cluster-a and cluster-b");
+		const targetHitbox = hitboxes.find((h) => h.profileName === "cluster-b");
+		assert.ok(targetHitbox, "Hitbox for cluster-b must exist");
+
+		renderRequested = false;
+		const clickHandled = card.handleRailClick(targetHitbox.lineIndex, "left", targetHitbox.startX + 1);
+		assert.ok(clickHandled, "Click on cluster-b button should be handled");
+
+		// Wait briefly for switchProfile async file write
+		await new Promise((r) => setTimeout(r, 50));
+		assert.ok(renderRequested, "requestRender should be called on profile switch");
+		const activeAfter = fs.readFileSync(path.join(projDir, ".active"), "utf8").trim();
+		assert.equal(activeAfter, "cluster-b", "Active profile should be switched to cluster-b");
+
+		// 6. Test wheel cycling on card
+		renderRequested = false;
+		const wheelHandled = card.handleRailWheel(1);
+		assert.ok(wheelHandled, "handleRailWheel should return true");
+		await new Promise((r) => setTimeout(r, 50));
+		assert.ok(renderRequested, "requestRender should be called on wheel");
+
+		// 7. Click outside hitboxes returns false
+		const missClick = card.handleRailClick(targetHitbox.lineIndex, "left", 999);
+		assert.equal(missClick, false, "Click outside hitbox bounds should return false");
+
+		// 8. Narrow width rendering safety (width = 30)
+		const narrowLines = card.render(30);
+		assert.ok(narrowLines.length > 0);
+		for (const line of narrowLines) {
+			assert.ok(visibleWidth(line) <= 30, `Line width ${visibleWidth(line)} should be <= 30`);
+		}
+	} finally {
+		setCachedAccountsForTesting(null);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetAll();
+	}
+});
+
+test("cute-profiles - edge cases for account extraction and empty profiles", () => {
+	// Malformed model strings
+	assert.equal(extractAccountFromModel("cpamc//model"), null);
+	assert.equal(extractAccountFromModel("cpamc/ranchesca"), null);
+	assert.equal(extractAccountFromModel("   "), null);
+
+	// Empty profile
+	const emptyProfile: any = {};
+	assert.deepEqual(extractUniqueAccounts(emptyProfile), []);
+
+	// Profile with empty model_profiles
+	const minimalProfile: any = { name: "min", model_profiles: {} };
+	assert.deepEqual(extractUniqueAccounts(minimalProfile), []);
+
+	// Non-existent profile details load
+	assert.equal(loadProfileDetails("does-not-exist-xyz", "/tmp"), null);
+});
+
 

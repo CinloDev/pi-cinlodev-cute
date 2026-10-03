@@ -2,6 +2,26 @@
   "name": "pi-cinlodev-cute",
   "version": "1.0.0",
   "description": "Exclusive Cinlodev CUTE visual theme pack, Gentlewoman dashboard, persistent HUD, and double-line violet editor for Pi Coding Agent",
+  "author": "CinloDev",
+  "license": "MIT",
+  "homepage": "https://github.com/CinloDev/pi-cinlodev-cute#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CinloDev/pi-cinlodev-cute.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CinloDev/pi-cinlodev-cute/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-theme",
+    "pi-extension",
+    "dracula",
+    "tui",
+    "theme",
+    "gentle-ai",
+    "cinlodev-cute"
+  ],
   "type": "module",
   "main": "./index.ts",
   "files": [

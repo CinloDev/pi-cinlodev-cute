@@ -1,9 +1,10 @@
-import { ScrollView, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import { ScrollView, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, frameFg, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
+import { cuteGlyphs, frameFg, safeFg, bolden, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
+import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -66,6 +67,9 @@ type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: str
 type LayoutRoot = Component & { [NODE]?: () => LayoutNode };
 type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };
 
+// Marker symbol to avoid double-wrapping layoutRoot
+export const CUTE_LAYOUT_WRAPPER = Symbol.for("pi-cinlodev-cute.layout-wrapper");
+
 // State symbol shared across extensions on tui.terminal
 const STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
 
@@ -73,6 +77,141 @@ export interface SidebarState {
 	active: boolean;
 	ownsHost?: () => boolean;
 	parts: Map<string, Component>;
+	activeTabId?: string;
+}
+
+export interface CuteSidebarTab {
+	id: string;
+	key: string;
+	label: string;
+	title?: string;
+	cards: string[];
+}
+
+export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
+	main: ["footer", "context", "todo"],
+	git: ["gitGraph"],
+	usage: ["usage"],
+	prof: ["cute-profiles"],
+	forge: ["cute-profiles"],
+	mem: ["engram", "tools"],
+	all: ["footer", "context", "engram", "usage", "gitGraph", "tools", "cute-profiles", "todo"],
+};
+
+export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
+	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
+	{ id: "git", key: "2", label: "GIT", title: "Git Graph", cards: SIDEBAR_TAB_CARD_MAP.git },
+	{ id: "usage", key: "3", label: "USAGE", title: "Quotas & Usage", cards: SIDEBAR_TAB_CARD_MAP.usage },
+	{ id: "prof", key: "4", label: "prof", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
+	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
+	{ id: "all", key: "0", label: "ALL", title: "All Cards", cards: SIDEBAR_TAB_CARD_MAP.all },
+];
+
+export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
+	if (tabIdOrKey) {
+		const normalized = tabIdOrKey === "forge" ? "prof" : tabIdOrKey;
+		const match = CUTE_SIDEBAR_TABS.find((t) => t.id === normalized || t.key === normalized);
+		if (match) return match;
+	}
+	return CUTE_SIDEBAR_TABS[0];
+}
+
+export interface TabHitbox {
+	id: string;
+	key: string;
+	label: string;
+	startX: number;
+	endX: number;
+}
+
+export function renderCuteSidebarTabBar(
+	width: number,
+	activeTabId: string,
+	theme?: Theme,
+): { line: string; divider: string; hitboxes: TabHitbox[] } {
+	const activeTab = resolveSidebarTab(activeTabId);
+	const hitboxes: TabHitbox[] = [];
+
+	const dim = (s: string): string => (theme ? safeFg(theme, "dim", s) : s);
+	const muted = (s: string): string => (theme ? safeFg(theme, "muted", s) : s);
+	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
+	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
+
+	const compactActive = width < 44;
+
+	const tabVisuals = CUTE_SIDEBAR_TABS.map((tab) => {
+		const isActive = tab.id === activeTab.id;
+		if (isActive) {
+			const label = compactActive
+				? `[${tab.key}:${tab.label}]`
+				: `[ ${tab.key}:${tab.label} ]`;
+			const styled = pinkBright(bolden(theme, label));
+			return { tab, isActive, styled, len: visibleWidth(label) };
+		} else {
+			const label = `${tab.key}:${tab.label}`;
+			const styled = `${dim(tab.key)}${dim(":")}${muted(tab.label)}`;
+			return { tab, isActive, styled, len: visibleWidth(label) };
+		}
+	});
+
+	const totalTabLen = tabVisuals.reduce((acc, t) => acc + t.len, 0);
+	const gapsCount = CUTE_SIDEBAR_TABS.length - 1;
+	const remaining = Math.max(0, width - totalTabLen);
+	const baseGap = gapsCount > 0 ? Math.floor(remaining / gapsCount) : 0;
+	let extraSpaces = gapsCount > 0 ? remaining % gapsCount : 0;
+
+	let currentX = 0;
+	const parts: string[] = [];
+
+	for (let i = 0; i < tabVisuals.length; i++) {
+		const item = tabVisuals[i];
+		const startX = currentX;
+		const endX = currentX + item.len;
+		hitboxes.push({
+			id: item.tab.id,
+			key: item.tab.key,
+			label: item.tab.label,
+			startX,
+			endX,
+		});
+		parts.push(item.styled);
+		currentX = endX;
+
+		if (i < gapsCount) {
+			const gap = baseGap + (extraSpaces > 0 ? 1 : 0);
+			if (extraSpaces > 0) extraSpaces--;
+			if (gap > 0) {
+				parts.push(" ".repeat(gap));
+				currentX += gap;
+			}
+		}
+	}
+
+	if (currentX < width) {
+		parts.push(" ".repeat(width - currentX));
+	}
+
+	const glyphs = cuteGlyphs(theme);
+	const sepChar = glyphs.frameStyle === "ascii" || glyphs.h === "-" ? "-" : "─";
+	const divider = subtle(sepChar.repeat(Math.max(0, width)));
+
+	let line = parts.join("");
+	if (width < totalTabLen || visibleWidth(line) > width) {
+		line = truncateToWidth(line, Math.max(0, width));
+	}
+
+	const validHitboxes = hitboxes
+		.filter((h) => h.startX < width)
+		.map((h) => ({
+			...h,
+			endX: Math.min(h.endX, width),
+		}));
+
+	return {
+		line,
+		divider,
+		hitboxes: validHitboxes,
+	};
 }
 
 export function sidebarState(tui: TUI): SidebarState {
@@ -137,6 +276,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const railV = cuteGlyphs(theme).v;
 	const state = sidebarState(tui);
+	if (!state.parts.has("cute-profiles")) {
+		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme);
+		state.parts.set("cute-profiles", profilesCard);
+	}
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
 	let stopped = false;
@@ -149,6 +292,9 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		lineCount: number;
 	}
 	let sectionMappings: SectionMapping[] = [];
+	let tabHitboxes: TabHitbox[] = [];
+	let tabBarLineIndex = -1;
+	let tabBarDividerLineIndex = -1;
 	state.active = false;
 	state.ownsHost = () => !stopped && host.mode === "fullscreen" && !!host.layoutRoot && roots.has(host.layoutRoot);
 
@@ -184,9 +330,26 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	scroll.handleMouse = (event) => {
 		const scrollTop = (scroll as any).currentScrollTop ?? 0;
 		const targetLine = event.y + scrollTop;
+		const layout = loadCuteLayout().sidebar;
 
-		// 1. Wheel scroll over interactive rail cards (fast account switcher)
+		// 0. Wheel over TabBar to cycle tabs
 		if (event.type === "wheel") {
+			if (
+				layout.tabsEnabled !== false &&
+				tabBarLineIndex >= 0 &&
+				(targetLine === tabBarLineIndex || targetLine === tabBarDividerLineIndex) &&
+				event.wheelDelta !== 0
+			) {
+				const currentTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
+				const currentIndex = CUTE_SIDEBAR_TABS.findIndex((t) => t.id === currentTab.id);
+				const delta = event.wheelDelta > 0 ? 1 : -1;
+				const nextIndex = (currentIndex + delta + CUTE_SIDEBAR_TABS.length) % CUTE_SIDEBAR_TABS.length;
+				state.activeTabId = CUTE_SIDEBAR_TABS[nextIndex].id;
+				tui.requestRender();
+				return { handled: true, render: true };
+			}
+
+			// 1. Wheel scroll over interactive rail cards (fast account switcher)
 			for (const mapping of sectionMappings) {
 				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
 					if (typeof mapping.component?.handleRailWheel === "function") {
@@ -213,13 +376,45 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			};
 		}
 
-		// 2. Click on rail cards (left click / right click)
+		// 2. Click on rail cards or TabBar (left click / right click)
 		if (event.type === "click") {
+			// TabBar click handling
+			if (
+				layout.tabsEnabled !== false &&
+				tabBarLineIndex >= 0 &&
+				(targetLine === tabBarLineIndex || targetLine === tabBarDividerLineIndex) &&
+				(!event.button || event.button === "left" || event.button === 0)
+			) {
+				const localX = event.x - layout.railPadding;
+				let clickedTab = tabHitboxes.find((h) => localX >= h.startX && localX < h.endX);
+				if (!clickedTab && tabHitboxes.length > 0) {
+					for (let i = 0; i < tabHitboxes.length; i++) {
+						const h = tabHitboxes[i];
+						const next = tabHitboxes[i + 1];
+						if (next && localX >= h.endX && localX < next.startX) {
+							const mid = (h.endX + next.startX) / 2;
+							clickedTab = localX < mid ? h : next;
+							break;
+						}
+					}
+				}
+				if (clickedTab) {
+					state.activeTabId = clickedTab.id;
+					const footerComp = state.parts.get("footer") as any;
+					if (typeof footerComp?.isProfileDropdownOpen === "function" && footerComp.isProfileDropdownOpen()) {
+						footerComp.closeProfileDropdown();
+					}
+					tui.requestRender();
+					return { handled: true, render: true };
+				}
+			}
+
 			for (const mapping of sectionMappings) {
 				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
 					const localIndex = targetLine - mapping.startLine;
 					if (typeof mapping.component?.handleRailClick === "function") {
-						const handled = mapping.component.handleRailClick(localIndex, event.button);
+						const localX = event.x - layout.railPadding;
+						const handled = mapping.component.handleRailClick(localIndex, event.button, localX);
 						if (handled) {
 							tui.requestRender();
 							return { handled: true, render: true };
@@ -246,44 +441,124 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const sectionData = ["footer", "context", "engram", "usage", "gitGraph", "tools", "agents", "todo"]
+			const netWidth = contentWidth - layout.railPadding * 2;
+			const tabsEnabled = layout.tabsEnabled !== false;
+			const activeTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
+			state.activeTabId = activeTab.id;
+
+			const targetCardKeys = !tabsEnabled || activeTab.id === "all"
+				? SIDEBAR_TAB_CARD_MAP.all
+				: activeTab.cards;
+
+			const sectionData = targetCardKeys
 				.map((key) => {
-					const component = state.parts.get(key);
-					const rawLines = [...(component?.render(contentWidth - layout.railPadding * 2) ?? [])];
+					let component = state.parts.get(key);
+					if (
+						!component &&
+						(key === "cute-profiles" || key === "cute-profiles-extended" || key === "agents" || key === "profiles")
+					) {
+						component =
+							state.parts.get("cute-profiles") ||
+							state.parts.get("cute-profiles-extended") ||
+							state.parts.get("agents") ||
+							state.parts.get("profiles");
+						if (!component) {
+							component = new CinlodevProfilesExtendedCard(tui, theme);
+							state.parts.set("cute-profiles", component);
+						}
+					}
+					const rawLines = [...(component?.render(netWidth) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
 					const lines =
-						key !== "footer" && key !== "context" && key !== "engram" && key !== "usage" && key !== "gitGraph" && key !== "tools"
+						key !== "footer" &&
+						key !== "context" &&
+						key !== "engram" &&
+						key !== "usage" &&
+						key !== "gitGraph" &&
+						key !== "tools" &&
+						key !== "cute-profiles" &&
+						key !== "cute-profiles-extended" &&
+						key !== "agents" &&
+						key !== "profiles"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
 							: rawLines;
 					return { key, component, lines };
 				})
 				.filter((s) => s.lines.length > 0);
 
-			const branding = renderCUTESidebarBanner(contentWidth - layout.railPadding * 2, theme);
+			const branding = renderCUTESidebarBanner(netWidth, theme);
 
 			railLines = [""];
 			sectionMappings = [];
+			tabHitboxes = [];
+			tabBarLineIndex = -1;
+			tabBarDividerLineIndex = -1;
 
-			if (sectionData.length && branding.length) {
+			if (!tabsEnabled) {
+				if (sectionData.length && branding.length) {
+					railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
+					railLines.push("");
+				}
+
+				for (let i = 0; i < sectionData.length; i++) {
+					if (i > 0) {
+						railLines.push("");
+					}
+					const s = sectionData[i];
+					const startLine = railLines.length;
+					for (const line of s.lines) {
+						railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
+					}
+					sectionMappings.push({
+						key: s.key,
+						component: s.component,
+						startLine,
+						lineCount: s.lines.length,
+					});
+				}
+
+				if (!railLines.length || !sectionData.length || railLines.some((line) => visibleWidth(line) > contentWidth)) return false;
+				state.active = true;
+				return true;
+			}
+
+			// Tabs enabled flow
+			if (branding.length) {
 				railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
 				railLines.push("");
 			}
 
-			for (let i = 0; i < sectionData.length; i++) {
-				if (i > 0) {
-					railLines.push("");
+			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme);
+			tabBarLineIndex = railLines.length;
+			railLines.push(" ".repeat(layout.railPadding) + tabLine + " ".repeat(layout.railPadding));
+			tabBarDividerLineIndex = railLines.length;
+			railLines.push(" ".repeat(layout.railPadding) + dividerLine + " ".repeat(layout.railPadding));
+			tabHitboxes = hitboxes;
+
+			if (sectionData.length === 0) {
+				railLines.push("");
+				const dim = (s: string): string => (theme ? safeFg(theme, "dim", s) : s);
+				const emptyMsg = dim("Sin información disponible en esta pestaña.");
+				const pad = Math.max(0, Math.floor((netWidth - visibleWidth(emptyMsg)) / 2));
+				railLines.push(" ".repeat(layout.railPadding + pad) + emptyMsg);
+			} else {
+				railLines.push("");
+				for (let i = 0; i < sectionData.length; i++) {
+					if (i > 0) {
+						railLines.push("");
+					}
+					const s = sectionData[i];
+					const startLine = railLines.length;
+					for (const line of s.lines) {
+						railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
+					}
+					sectionMappings.push({
+						key: s.key,
+						component: s.component,
+						startLine,
+						lineCount: s.lines.length,
+					});
 				}
-				const s = sectionData[i];
-				const startLine = railLines.length;
-				for (const line of s.lines) {
-					railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
-				}
-				sectionMappings.push({
-					key: s.key,
-					component: s.component,
-					startLine,
-					lineCount: s.lines.length,
-				});
 			}
 
 			if (!railLines.length || railLines.some((line) => visibleWidth(line) > contentWidth)) return false;
@@ -307,7 +582,9 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				state.active = false;
 				return;
 			}
-			if (roots.has(root)) return;
+			if (typeof root[NODE] === "function" && (root[NODE] as any)[CUTE_LAYOUT_WRAPPER]) {
+				return;
+			}
 			const original = root[NODE]!;
 			const descriptor = Object.getOwnPropertyDescriptor(root, NODE);
 			const transcript = findTranscript(root);
@@ -451,8 +728,30 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					}
 				}
 
+				const node: any = original.call(root);
+
 				if (!hasLeftBorder && !active && insetLeft === 0 && insetRight === 0) {
-					return original.call(root);
+					return node;
+				}
+
+				let headerEntry: any = undefined;
+				let mainLeftComponent: Component = left;
+
+				if (node && node.type === "vstack" && Array.isArray(node.entries) && node.entries.length >= 2) {
+					const secondComponent = node.entries[1]?.component;
+					if (secondComponent && typeof secondComponent[NODE] === "function") {
+						const subnode = secondComponent[NODE]();
+						if (subnode && subnode.type === "hstack" && Array.isArray(subnode.entries) && subnode.entries.length > 0) {
+							headerEntry = node.entries[0];
+							if (subnode.entries[0]?.component) {
+								mainLeftComponent = subnode.entries[0].component;
+							}
+						}
+					}
+				} else if (node && node.type === "hstack" && Array.isArray(node.entries) && node.entries.length === 2) {
+					if (node.entries[0]?.component) {
+						mainLeftComponent = node.entries[0].component;
+					}
 				}
 
 				const edgeSpacer = (): Component => ({
@@ -483,7 +782,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					});
 				}
 				entries.push({
-					component: left,
+					component: mainLeftComponent,
 					basis: 0,
 					grow: 1,
 					shrink: 1,
@@ -515,14 +814,37 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					});
 				}
 
-				return {
+				const cuteHstack: any = {
 					type: "hstack",
 					gap: layout.gap,
 					align: "stretch",
 					entries,
 				};
+
+				if (headerEntry) {
+					return {
+						type: "vstack",
+						entries: [
+							headerEntry,
+							{
+								component: {
+									render: () => [],
+									invalidate() {},
+									[NODE]: () => cuteHstack,
+								},
+								basis: 0,
+								grow: 1,
+								shrink: 1,
+								minSize: 1,
+							},
+						],
+					};
+				}
+
+				return cuteHstack;
 			};
 
+			(replacement as any)[CUTE_LAYOUT_WRAPPER] = true;
 			root[NODE] = replacement;
 			roots.add(root);
 			tui.requestRender();
