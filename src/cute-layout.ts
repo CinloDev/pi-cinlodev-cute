@@ -28,6 +28,10 @@ export interface CuteSidebarLayout {
 	minColumnsWithBorder: number;
 	/** Poll interval for sidebar attach in milliseconds. */
 	attachMs: number;
+	/** Whether the tabs navigation in the sidebar is enabled. Default true. */
+	tabsEnabled?: boolean;
+	/** Default active tab id or key (e.g. "1" or "main"). Default "1". */
+	defaultTab?: string;
 }
 
 export interface CuteFooterLayout {
@@ -122,6 +126,13 @@ export interface CuteToolsLayout {
 	minWidth: number;
 }
 
+export interface CuteProfilesLayout {
+	/** Whether the Profiles & Clusters card in the sidebar is enabled. */
+	enabled: boolean;
+	/** Minimum width in cells for the profiles card. */
+	minWidth: number;
+}
+
 export interface CuteTerminalLayout {
 	/** Columns always kept clear on the left edge (was 0: full-bleed). */
 	insetLeft: number;
@@ -143,6 +154,7 @@ export interface CuteLayout {
 	scroll: CuteScrollLayout;
 	gitGraph: CuteGitGraphLayout;
 	tools: CuteToolsLayout;
+	profiles: CuteProfilesLayout;
 	terminal: CuteTerminalLayout;
 }
 
@@ -159,6 +171,8 @@ const DEFAULTS: CuteLayout = {
 		fallbackRows: 50,
 		minColumnsWithBorder: 40,
 		attachMs: 100,
+		tabsEnabled: true,
+		defaultTab: "1",
 	},
 	footer: {
 		minWidth: 20,
@@ -210,6 +224,10 @@ const DEFAULTS: CuteLayout = {
 		enabled: true,
 		minWidth: 30,
 	},
+	profiles: {
+		enabled: true,
+		minWidth: 30,
+	},
 	terminal: {
 		insetLeft: 0,
 		insetRight: 0,
@@ -240,6 +258,27 @@ function mergeSection<T extends Record<string, number>>(currentSection: T, raw: 
 	return base;
 }
 
+export function mergeSidebar(currentSection: CuteSidebarLayout, raw: unknown): CuteSidebarLayout {
+	const base = { ...currentSection };
+	if (!isRecord(raw)) return base;
+	base.breakpoint = pickNumber(raw.breakpoint, base.breakpoint);
+	base.railWidth = pickNumber(raw.railWidth, base.railWidth);
+	base.railPadding = pickNumber(raw.railPadding, base.railPadding);
+	base.gap = pickNumber(raw.gap, base.gap);
+	base.leftBorderWidth = pickNumber(raw.leftBorderWidth, base.leftBorderWidth);
+	base.middleDividerWidth = pickNumber(raw.middleDividerWidth, base.middleDividerWidth);
+	base.fallbackRows = pickNumber(raw.fallbackRows, base.fallbackRows);
+	base.minColumnsWithBorder = pickNumber(raw.minColumnsWithBorder, base.minColumnsWithBorder);
+	base.attachMs = pickNumber(raw.attachMs, base.attachMs);
+	base.tabsEnabled = pickBoolean(raw.tabsEnabled, base.tabsEnabled ?? true);
+	if (typeof raw.defaultTab === "string" && raw.defaultTab.trim()) {
+		base.defaultTab = raw.defaultTab.trim();
+	} else if (typeof raw.defaultTab === "number") {
+		base.defaultTab = String(raw.defaultTab);
+	}
+	return base;
+}
+
 function mergeGitGraphSection(currentSection: CuteGitGraphLayout, raw: unknown): CuteGitGraphLayout {
 	const base = { ...currentSection };
 	if (!isRecord(raw)) return base;
@@ -259,7 +298,15 @@ function mergeToolsSection(currentSection: CuteToolsLayout, raw: unknown): CuteT
 	return base;
 }
 
-function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayout {
+function mergeProfilesSection(currentSection: CuteProfilesLayout, raw: unknown): CuteProfilesLayout {
+	const base = { ...currentSection };
+	if (!isRecord(raw)) return base;
+	base.enabled = pickBoolean(raw.enabled, base.enabled);
+	base.minWidth = pickNumber(raw.minWidth, base.minWidth);
+	return base;
+}
+
+export function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayout {
 	const base: CuteLayout = {
 		sidebar: { ...baseSource.sidebar },
 		footer: { ...baseSource.footer },
@@ -270,10 +317,11 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 		scroll: { ...baseSource.scroll },
 		gitGraph: { ...baseSource.gitGraph },
 		tools: { ...baseSource.tools },
+		profiles: { ...baseSource.profiles },
 		terminal: { ...baseSource.terminal },
 	};
 	if (!isRecord(raw)) return base;
-	base.sidebar = mergeSection(base.sidebar, raw.sidebar);
+	base.sidebar = mergeSidebar(base.sidebar, raw.sidebar);
 	base.footer = mergeSection(base.footer, raw.footer);
 	base.hud = mergeSection(base.hud, raw.hud);
 	base.todos = mergeSection(base.todos, raw.todos);
@@ -282,6 +330,7 @@ function mergeLayout(raw: unknown, baseSource: CuteLayout = DEFAULTS): CuteLayou
 	base.scroll = mergeSection(base.scroll, raw.scroll);
 	base.gitGraph = mergeGitGraphSection(base.gitGraph, raw.gitGraph);
 	base.tools = mergeToolsSection(base.tools, raw.tools);
+	base.profiles = mergeProfilesSection(base.profiles, raw.profiles);
 	base.terminal = mergeSection(base.terminal, raw.terminal);
 	return base;
 }

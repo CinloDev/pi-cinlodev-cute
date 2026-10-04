@@ -509,7 +509,7 @@ export function detectSystemUser(): string {
 			return detectedUser;
 		}
 	} catch {}
-	detectedUser = "Cinlo";
+	detectedUser = "Developer";
 	return detectedUser;
 }
 

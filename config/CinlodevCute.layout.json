@@ -9,7 +9,9 @@
 		"middleDividerWidth": 2,
 		"fallbackRows": 50,
 		"minColumnsWithBorder": 40,
-		"attachMs": 100
+		"attachMs": 100,
+		"tabsEnabled": true,
+		"defaultTab": "1"
 	},
 	"footer": {
 		"minWidth": 20,
@@ -58,6 +60,10 @@
 		"minWidth": 30
 	},
 	"tools": {
+		"enabled": true,
+		"minWidth": 30
+	},
+	"profiles": {
 		"enabled": true,
 		"minWidth": 30
 	},
