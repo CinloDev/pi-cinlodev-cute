@@ -16,10 +16,10 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
-import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD } from "../src/cute-engram.ts";
+import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
 
 function resetAll() {
@@ -2247,11 +2247,11 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.equal(visibleWidth(unthemedBar.line), 50);
 	assert.equal(visibleWidth(unthemedBar.divider), 50);
 
-	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:prof, 5:MEM
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:PROF, 5:MEM
 	assert.ok(unthemedBar.line.includes("1:MAIN"));
 	assert.ok(unthemedBar.line.includes("2:GIT"));
 	assert.ok(unthemedBar.line.includes("3:AGENTS"));
-	assert.ok(unthemedBar.line.includes("4:prof"));
+	assert.ok(unthemedBar.line.includes("4:PROF"));
 	assert.ok(unthemedBar.line.includes("5:MEM"));
 
 	// Non-empty hitboxes (5 tabs: MAIN, GIT, AGENTS, prof, MEM)
@@ -3072,6 +3072,94 @@ test("cute-agents - CinlodevAgentsCard rendering, views, and mouse interactions"
 	// 5. Invalidation
 	card.invalidate();
 });
+
+test("cute-git-graph - CinlodevWorkingTreeCard rendering and toggle", () => {
+	resetAll();
+	const mockCtx: any = { cwd: process.cwd() };
+	let renderRequested = false;
+	const mockTui: any = {
+		requestRender: () => {
+			renderRequested = true;
+		},
+	};
+
+	const changes = fetchGitFileChanges(process.cwd());
+	assert.ok(Array.isArray(changes));
+
+	const card = new CinlodevWorkingTreeCard(mockCtx, mockTui, undefined);
+
+	// 1. Render in width 50
+	const lines = card.render(50);
+	assert.ok(lines.length >= 3);
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), 50);
+	}
+	assert.ok(lines[0].includes("Working Tree"));
+
+	// 2. Click toggles expanded/collapsed
+	renderRequested = false;
+	assert.ok(card.handleClick());
+	assert.ok(renderRequested);
+
+	// 3. Render collapsed in width 30
+	const collapsed = card.render(30);
+	for (const line of collapsed) {
+		assert.equal(visibleWidth(line), 30);
+	}
+
+	// 4. Invalidation
+	card.invalidate();
+});
+
+test("cute-engram - parseEngramSearchOutput and CinlodevEngramHandoffCard", () => {
+	resetAll();
+	const sampleSearchOutput = `
+Found 1 memories:
+
+[1] #2433 (session_summary) — PR #119: Reemplazo de tab USAGE por AGENTS
+    Replaced redundant USAGE sidebar tab (3) with dedicated AGENTS (3) tab.
+    95/95 unit tests passing.
+    2026-10-04 03:52:58 | project: pi-cinlodev-cute | scope: project
+`;
+
+	const parsed = parseEngramSearchOutput(sampleSearchOutput);
+	assert.ok(parsed);
+	assert.equal(parsed.id, "2433");
+	assert.equal(parsed.type, "session_summary");
+	assert.ok(parsed.title?.includes("PR #119"));
+	assert.ok(parsed.content?.includes("Replaced redundant USAGE"));
+	assert.equal(parsed.date, "2026-10-04 03:52:58");
+
+	const mockCtx: any = { cwd: process.cwd() };
+	let renderRequested = false;
+	const mockTui: any = {
+		requestRender: () => {
+			renderRequested = true;
+		},
+	};
+
+	const card = new CinlodevEngramHandoffCard(mockCtx, mockTui, undefined);
+	// Set mock cached handoff for rendering test
+	(card as any).cachedHandoff = parsed;
+
+	const lines = card.render(50);
+	assert.ok(lines.length > 3);
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), 50);
+	}
+	assert.ok(lines[0].includes("Active Handoff"));
+	assert.ok(lines.some((l) => l.includes("#2433")));
+
+	// Click invalidates
+	renderRequested = false;
+	assert.ok(card.handleClick());
+	assert.ok(renderRequested);
+
+	// Tab mappings check
+	assert.ok(SIDEBAR_TAB_CARD_MAP.git.includes("workingTree"), "git tab must include workingTree");
+	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("engramHandoff"), "mem tab must include engramHandoff");
+});
+
 
 
 

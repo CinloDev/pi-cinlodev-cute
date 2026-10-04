@@ -6,6 +6,8 @@ import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
+import { CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -91,27 +93,30 @@ export interface CuteSidebarTab {
 
 export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	main: ["footer", "context", "todo"],
-	git: ["gitGraph"],
+	git: ["gitGraph", "workingTree"],
 	agents: ["cute-agents"],
 	usage: ["cute-agents"],
 	prof: ["cute-profiles"],
 	forge: ["cute-profiles"],
-	mem: ["engram", "tools"],
+	mem: ["engram", "engramHandoff", "tools"],
 };
 
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
 	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
-	{ id: "git", key: "2", label: "GIT", title: "Git Graph", cards: SIDEBAR_TAB_CARD_MAP.git },
+	{ id: "git", key: "2", label: "GIT", title: "Git Graph & Working Tree", cards: SIDEBAR_TAB_CARD_MAP.git },
 	{ id: "agents", key: "3", label: "AGENTS", title: "Orchestrator & Subagents", cards: SIDEBAR_TAB_CARD_MAP.agents },
-	{ id: "prof", key: "4", label: "prof", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
+	{ id: "prof", key: "4", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
 	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
 	if (tabIdOrKey) {
-		let normalized = tabIdOrKey === "forge" ? "prof" : tabIdOrKey;
+		let normalized = tabIdOrKey.toLowerCase();
+		if (normalized === "forge") normalized = "prof";
 		if (normalized === "usage") normalized = "agents";
-		const match = CUTE_SIDEBAR_TABS.find((t) => t.id === normalized || t.key === normalized);
+		const match = CUTE_SIDEBAR_TABS.find(
+			(t) => t.id === normalized || t.key === normalized || t.label.toLowerCase() === normalized
+		);
 		if (match) return match;
 	}
 	return CUTE_SIDEBAR_TABS[0];
@@ -483,14 +488,32 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("cute-agents", component);
 						}
 					}
+					if (!component && (key === "workingTree" || key === "working-tree")) {
+						component = state.parts.get("workingTree") || state.parts.get("working-tree");
+						if (!component) {
+							component = new CinlodevWorkingTreeCard(undefined as any, tui, theme);
+							state.parts.set("workingTree", component);
+						}
+					}
+					if (!component && (key === "engramHandoff" || key === "engram-handoff")) {
+						component = state.parts.get("engramHandoff") || state.parts.get("engram-handoff");
+						if (!component) {
+							component = new CinlodevEngramHandoffCard(undefined as any, tui, theme);
+							state.parts.set("engramHandoff", component);
+						}
+					}
 					const rawLines = [...(component?.render(netWidth) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
 					const lines =
 						key !== "footer" &&
 						key !== "context" &&
 						key !== "engram" &&
+						key !== "engramHandoff" &&
+						key !== "engram-handoff" &&
 						key !== "usage" &&
 						key !== "gitGraph" &&
+						key !== "workingTree" &&
+						key !== "working-tree" &&
 						key !== "tools" &&
 						key !== "cute-profiles" &&
 						key !== "cute-profiles-extended" &&
