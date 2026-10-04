@@ -46,7 +46,9 @@ export interface TaskManagerSummary {
 }
 
 export interface SwitcherHitbox {
-	profileName: string;
+	type?: "profile" | "toggle-pagination" | "effort-host" | "effort-agent";
+	profileName?: string;
+	agentId?: string;
 	lineIndex: number;
 	startX: number;
 	endX: number;
@@ -138,6 +140,86 @@ export function extractUniqueAccounts(profile: FullProfileData): string[] {
 	}
 
 	return accounts;
+}
+
+/**
+ * Finds the absolute file path of a profile JSON on disk.
+ */
+export function resolveProfileFilePath(name: string, cwd?: string): string | null {
+	const workingDir = cwd ?? process.cwd();
+	const home = os.homedir();
+	const projectDir = path.join(workingDir, ".pi", "profiles");
+	const globalDir = path.join(home, ".pi", "agent", "profiles");
+
+	const candidateDirs = [projectDir, globalDir];
+	const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+	const candidateFiles = [`${name}.json`, `${name.toLowerCase()}.json`, `${slug}.json`];
+
+	for (const dir of candidateDirs) {
+		if (!fs.existsSync(dir)) continue;
+		for (const cf of candidateFiles) {
+			const candidatePath = path.join(dir, cf);
+			if (fs.existsSync(candidatePath)) {
+				return candidatePath;
+			}
+		}
+		try {
+			const entries = fs.readdirSync(dir);
+			for (const file of entries) {
+				if (!file.endsWith(".json")) continue;
+				const filePath = path.join(dir, file);
+				try {
+					const raw = fs.readFileSync(filePath, "utf-8");
+					const parsed = JSON.parse(raw);
+					if (
+						(parsed.name && parsed.name.toLowerCase() === name.toLowerCase()) ||
+						path.basename(file, ".json").toLowerCase() === name.toLowerCase()
+					) {
+						return filePath;
+					}
+				} catch {}
+			}
+		} catch {}
+	}
+	return null;
+}
+
+/**
+ * Toggles effort level for an agent (or host) in a profile JSON:
+ * low -> medium -> high -> low
+ */
+export function toggleProfileEffort(profileName: string, agentId?: string, cwd?: string): string | null {
+	const filePath = resolveProfileFilePath(profileName, cwd);
+	if (!filePath || !fs.existsSync(filePath)) return null;
+
+	try {
+		const raw = fs.readFileSync(filePath, "utf-8");
+		const data = JSON.parse(raw);
+		const cycle: Record<string, string> = {
+			low: "medium",
+			medium: "high",
+			high: "low",
+		};
+
+		if (!agentId || agentId === "host") {
+			const current = (data.default_effort || "high").toLowerCase();
+			const next = cycle[current] || "high";
+			data.default_effort = next;
+			fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+			return next;
+		}
+
+		if (!data.model_profiles) data.model_profiles = {};
+		const existingCfg = data.model_profiles[agentId] || {};
+		const current = (existingCfg.effort || data.default_effort || "high").toLowerCase();
+		const next = cycle[current] || "high";
+		existingCfg.effort = next;
+		data.model_profiles[agentId] = existingCfg;
+		fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+		return next;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -440,6 +522,7 @@ export class CinlodevProfilesExtendedCard implements Component {
 	private readonly ctx?: ExtensionContext;
 	private readonly pi?: ExtensionAPI;
 	private switcherHitboxes: SwitcherHitbox[] = [];
+	private isExpanded = false;
 
 	constructor(tui?: TUI, theme?: Theme, cwd?: string, ctx?: ExtensionContext, pi?: ExtensionAPI) {
 		this.tui = tui;
@@ -459,10 +542,41 @@ export class CinlodevProfilesExtendedCard implements Component {
 				(h) => h.lineIndex === localLineIndex && localX >= h.startX && localX <= h.endX,
 			);
 			if (hit) {
-				switchProfile(hit.profileName, this.ctx, this.pi, this.cwd).then(() => {
+				if (hit.type === "toggle-pagination") {
+					this.isExpanded = !this.isExpanded;
 					this.tui?.requestRender();
-				});
-				return true;
+					return true;
+				}
+
+				if (hit.type === "effort-host") {
+					const active = getActiveProfileDetails(this.cwd);
+					if (active?.name) {
+						const next = toggleProfileEffort(active.name, undefined, this.cwd);
+						if (next && this.pi && typeof this.pi.setThinkingLevel === "function") {
+							try {
+								this.pi.setThinkingLevel(next);
+							} catch {}
+						}
+						this.tui?.requestRender();
+					}
+					return true;
+				}
+
+				if (hit.type === "effort-agent" && hit.agentId) {
+					const active = getActiveProfileDetails(this.cwd);
+					if (active?.name) {
+						toggleProfileEffort(active.name, hit.agentId, this.cwd);
+						this.tui?.requestRender();
+					}
+					return true;
+				}
+
+				if (hit.profileName) {
+					switchProfile(hit.profileName, this.ctx, this.pi, this.cwd).then(() => {
+						this.tui?.requestRender();
+					});
+					return true;
+				}
 			}
 		}
 
@@ -549,44 +663,92 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 		const lines: string[] = [top];
 
-		// Dynamic line wrapping for profile buttons
-		let currentLineButtons: typeof clusterButtons = [];
-		let currentLineWidth = 0;
+		// Dynamic line wrapping with max 3 lines pagination
+		const MAX_PROFILE_LINES = 3;
+		const toggleBtnRaw = this.isExpanded ? "[▲]" : "[▼]";
+		const toggleBtnLen = calcVisibleWidth(toggleBtnRaw);
+		const toggleBtnStyled = c.pinkBright(c.bold(toggleBtnRaw));
 
-		const flushButtonLine = () => {
-			if (currentLineButtons.length === 0) return;
-			const currentLineIndex = lines.length;
-			let currentX = 2; // initial left border + 1 space padding
-
-			for (let i = 0; i < currentLineButtons.length; i++) {
-				const btn = currentLineButtons[i];
-				this.switcherHitboxes.push({
-					profileName: btn.name,
-					lineIndex: currentLineIndex,
-					startX: currentX,
-					endX: currentX + btn.len,
-				});
-				currentX += btn.len + 1; // button width + space
-			}
-
-			const lineContent = currentLineButtons.map((b) => b.styled).join(" ");
-			lines.push(boxLine(lineContent));
-			currentLineButtons = [];
-			currentLineWidth = 0;
-		};
+		// First pass: wrap all buttons into rows
+		const wrappedRows: typeof clusterButtons[] = [];
+		let rowButtons: typeof clusterButtons = [];
+		let rowWidth = 0;
 
 		for (const btn of clusterButtons) {
-			const spaceNeeded = currentLineWidth > 0 ? 1 + btn.len : btn.len;
-			if (currentLineWidth + spaceNeeded <= innerWidth) {
-				currentLineButtons.push(btn);
-				currentLineWidth += spaceNeeded;
+			const space = rowWidth > 0 ? 1 + btn.len : btn.len;
+			if (rowWidth + space <= innerWidth) {
+				rowButtons.push(btn);
+				rowWidth += space;
 			} else {
-				flushButtonLine();
-				currentLineButtons.push(btn);
-				currentLineWidth = btn.len;
+				if (rowButtons.length > 0) wrappedRows.push(rowButtons);
+				rowButtons = [btn];
+				rowWidth = btn.len;
 			}
 		}
-		flushButtonLine();
+		if (rowButtons.length > 0) wrappedRows.push(rowButtons);
+
+		const needsPagination = wrappedRows.length > MAX_PROFILE_LINES;
+		const rowsToRenderCount = !needsPagination || this.isExpanded ? wrappedRows.length : MAX_PROFILE_LINES;
+
+		for (let r = 0; r < rowsToRenderCount; r++) {
+			const isLastVisibleRow = r === rowsToRenderCount - 1 && needsPagination;
+			const row = wrappedRows[r];
+			const lineIndex = lines.length;
+			let currentX = 2; // initial border + space
+
+			if (isLastVisibleRow) {
+				// Fit as many buttons as possible leaving room for [▼] or [▲]
+				const availableWidth = innerWidth - toggleBtnLen - 1;
+				const visibleRowButtons: typeof clusterButtons = [];
+				let accumWidth = 0;
+
+				for (const btn of row) {
+					const space = accumWidth > 0 ? 1 + btn.len : btn.len;
+					if (accumWidth + space <= availableWidth) {
+						visibleRowButtons.push(btn);
+						accumWidth += space;
+					} else {
+						break;
+					}
+				}
+
+				for (const btn of visibleRowButtons) {
+					this.switcherHitboxes.push({
+						type: "profile",
+						profileName: btn.name,
+						lineIndex,
+						startX: currentX,
+						endX: currentX + btn.len,
+					});
+					currentX += btn.len + 1;
+				}
+
+				// Add toggle button at the end
+				const lineContent = visibleRowButtons.map((b) => b.styled).join(" ");
+				this.switcherHitboxes.push({
+					type: "toggle-pagination",
+					lineIndex,
+					startX: currentX,
+					endX: currentX + toggleBtnLen,
+				});
+
+				const leftPart = lineContent.length > 0 ? `${lineContent} ${toggleBtnStyled}` : toggleBtnStyled;
+				lines.push(boxLine(leftPart));
+			} else {
+				for (const btn of row) {
+					this.switcherHitboxes.push({
+						type: "profile",
+						profileName: btn.name,
+						lineIndex,
+						startX: currentX,
+						endX: currentX + btn.len,
+					});
+					currentX += btn.len + 1;
+				}
+				const lineContent = row.map((b) => b.styled).join(" ");
+				lines.push(boxLine(lineContent));
+			}
+		}
 
 		// Divider between switchers and agents
 		lines.push(divider);
@@ -717,11 +879,30 @@ export class CinlodevProfilesExtendedCard implements Component {
 		// Line 1: Host title + model
 		const hostLeft = `${c.violet("🎯")} ${c.bold(c.violet("host / orquestador"))}`;
 		const hostMeta = `${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`;
+		const hostLineIndex = lines.length;
 		if (calcVisibleWidth("🎯 host / orquestador") + calcVisibleWidth(`${shortHost} (${hostEffort})`) + 2 <= innerWidth) {
 			lines.push(boxLine(hostLeft, hostMeta));
+			// Effort hitbox on the right side
+			const effortWidth = calcVisibleWidth(`(${hostEffort})`);
+			const safeRightX = innerWidth + 2 - effortWidth;
+			this.switcherHitboxes.push({
+				type: "effort-host",
+				lineIndex: hostLineIndex,
+				startX: Math.max(2, safeRightX),
+				endX: innerWidth + 2,
+			});
 		} else {
 			lines.push(boxLine(hostLeft));
+			const subLineIndex = lines.length;
 			lines.push(boxLine(`  ${hostMeta}`));
+			const effortWidth = calcVisibleWidth(`(${hostEffort})`);
+			const safeRightX = innerWidth + 2 - effortWidth;
+			this.switcherHitboxes.push({
+				type: "effort-host",
+				lineIndex: subLineIndex,
+				startX: Math.max(2, safeRightX),
+				endX: innerWidth + 2,
+			});
 		}
 
 		// Quota bars (5h y Semanal)
@@ -771,11 +952,31 @@ export class CinlodevProfilesExtendedCard implements Component {
 				// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
 				const leftText = `${style.bullet} ${style.name(agentId)}`;
 				const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
+				const agentLineIndex = lines.length;
 				if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
 					lines.push(boxLine(leftText, rightText));
+					const effortWidth = calcVisibleWidth(`(${effort})`);
+					const safeRightX = innerWidth + 2 - effortWidth;
+					this.switcherHitboxes.push({
+						type: "effort-agent",
+						agentId,
+						lineIndex: agentLineIndex,
+						startX: Math.max(2, safeRightX),
+						endX: innerWidth + 2,
+					});
 				} else {
 					lines.push(boxLine(leftText));
+					const subLineIndex = lines.length;
 					lines.push(boxLine(`  ${rightText}`));
+					const effortWidth = calcVisibleWidth(`(${effort})`);
+					const safeRightX = innerWidth + 2 - effortWidth;
+					this.switcherHitboxes.push({
+						type: "effort-agent",
+						agentId,
+						lineIndex: subLineIndex,
+						startX: Math.max(2, safeRightX),
+						endX: innerWidth + 2,
+					});
 				}
 
 				// Quota bars (5h y Semanal)
