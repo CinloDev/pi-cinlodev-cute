@@ -20,6 +20,7 @@ import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGi
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD } from "../src/cute-engram.ts";
+import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -2246,16 +2247,15 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.equal(visibleWidth(unthemedBar.line), 50);
 	assert.equal(visibleWidth(unthemedBar.divider), 50);
 
-	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:USAGE, 4:prof, 5:MEM, 0:ALL
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:prof, 5:MEM
 	assert.ok(unthemedBar.line.includes("1:MAIN"));
 	assert.ok(unthemedBar.line.includes("2:GIT"));
-	assert.ok(unthemedBar.line.includes("3:USAGE"));
+	assert.ok(unthemedBar.line.includes("3:AGENTS"));
 	assert.ok(unthemedBar.line.includes("4:prof"));
 	assert.ok(unthemedBar.line.includes("5:MEM"));
-	assert.ok(unthemedBar.line.includes("0:ALL"));
 
-	// Non-empty hitboxes
-	assert.equal(unthemedBar.hitboxes.length, 6);
+	// Non-empty hitboxes (5 tabs: MAIN, GIT, AGENTS, prof, MEM)
+	assert.equal(unthemedBar.hitboxes.length, 5);
 	for (const h of unthemedBar.hitboxes) {
 		assert.ok(h.id);
 		assert.ok(h.key);
@@ -2271,7 +2271,7 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
 	assert.equal(visibleWidth(themedBar.line), 50);
 	assert.equal(visibleWidth(themedBar.divider), 50);
-	assert.equal(themedBar.hitboxes.length, 6);
+	assert.equal(themedBar.hitboxes.length, 5);
 
 	// 3. Narrow rail edge case: visibleWidth must never exceed width
 	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
@@ -2293,25 +2293,26 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 });
 
 test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
-	// Resolves by key ("1" -> "main", "2" -> "git", etc.)
+	// Resolves by key ("1" -> "main", "2" -> "git", "3" -> "agents", etc.)
 	assert.equal(resolveSidebarTab("1").id, "main");
 	assert.equal(resolveSidebarTab("2").id, "git");
-	assert.equal(resolveSidebarTab("3").id, "usage");
+	assert.equal(resolveSidebarTab("3").id, "agents");
 	assert.equal(resolveSidebarTab("4").id, "prof");
 	assert.equal(resolveSidebarTab("5").id, "mem");
-	assert.equal(resolveSidebarTab("0").id, "all");
 
-	// Resolves by id
+	// Resolves by id and backward-compatible aliases
 	assert.equal(resolveSidebarTab("main").id, "main");
 	assert.equal(resolveSidebarTab("git").id, "git");
-	assert.equal(resolveSidebarTab("usage").id, "usage");
+	assert.equal(resolveSidebarTab("agents").id, "agents");
+	assert.equal(resolveSidebarTab("usage").id, "agents", "legacy usage tab should map to agents");
 	assert.equal(resolveSidebarTab("prof").id, "prof");
 	assert.equal(resolveSidebarTab("forge").id, "prof", "forge should be backward compatible alias for prof");
 	assert.equal(resolveSidebarTab("mem").id, "mem");
-	assert.equal(resolveSidebarTab("all").id, "all");
+	assert.equal(resolveSidebarTab("0").id, "main", "legacy 0/all tab should safely fall back to main");
 
 	// SIDEBAR_TAB_CARD_MAP checks
 	assert.ok(SIDEBAR_TAB_CARD_MAP.prof.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.prof must include cute-profiles");
+	assert.ok(SIDEBAR_TAB_CARD_MAP.agents.includes("cute-agents"), "SIDEBAR_TAB_CARD_MAP.agents must include cute-agents");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.forge.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.forge alias must include cute-profiles");
 
 	// Fallback to main on undefined or invalid
@@ -2386,7 +2387,7 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 
 		const prevRenderCount = renderRequests;
 
-		// Wheel forward (wheelDelta > 0) -> cycles from git (index 1) to usage (index 2)
+		// Wheel forward (wheelDelta > 0) -> cycles from git (index 1) to agents (index 2)
 		const wheelResult = scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: 1,
@@ -2394,10 +2395,10 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 			y: 3,
 		});
 		assert.ok(wheelResult.handled, "Wheel on tab bar should be handled");
-		assert.equal(state.activeTabId, "usage", "Wheel delta +1 should cycle tab from git to usage");
+		assert.equal(state.activeTabId, "agents", "Wheel delta +1 should cycle tab from git to agents");
 		assert.ok(renderRequests > prevRenderCount, "requestRender should be called on wheel");
 
-		// Wheel backward (wheelDelta < 0) -> cycles back from usage (index 2) to git (index 1)
+		// Wheel backward (wheelDelta < 0) -> cycles back from agents (index 2) to git (index 1)
 		scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: -1,
@@ -2415,14 +2416,14 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 		});
 		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
 
-		// Wheel backward from main (index 0) wraps to all (index 5)
+		// Wheel backward from main (index 0) wraps to mem (index 4)
 		scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
 			y: 3,
 		});
-		assert.equal(state.activeTabId, "all", "Wheel delta -1 from index 0 should wrap to all");
+		assert.equal(state.activeTabId, "mem", "Wheel delta -1 from index 0 should wrap to mem");
 	} finally {
 		cleanup();
 		resetAll();
@@ -2856,5 +2857,221 @@ test("cute-profiles - edge cases for account extraction and empty profiles", () 
 	// Non-existent profile details load
 	assert.equal(loadProfileDetails("does-not-exist-xyz", "/tmp"), null);
 });
+
+test("cute-agents - getAgentRoleColor and formatSubagentStatusTag conventions", () => {
+	const mockPalette = {
+		cyan: (s: string) => `cyan(${s})`,
+		gold: (s: string) => `gold(${s})`,
+		mint: (s: string) => `mint(${s})`,
+		salmon: (s: string) => `salmon(${s})`,
+		pinkAccent: (s: string) => `pink(${s})`,
+		coral: (s: string) => `coral(${s})`,
+		muted: (s: string) => `muted(${s})`,
+		dim: (s: string) => `dim(${s})`,
+	} as any;
+
+	// Convention grouping check
+	assert.equal(getAgentRoleColor("architect", mockPalette)("test"), "cyan(test)");
+	assert.equal(getAgentRoleColor("researcher", mockPalette)("test"), "gold(test)");
+	assert.equal(getAgentRoleColor("writer", mockPalette)("test"), "mint(test)");
+	assert.equal(getAgentRoleColor("reviewer", mockPalette)("test"), "salmon(test)");
+	assert.equal(getAgentRoleColor("custom-worker", mockPalette)("test"), "mint(test)");
+	assert.equal(getAgentRoleColor("unknown-bot", mockPalette)("test"), "pink(test)");
+
+	// Status tags
+	assert.ok(formatSubagentStatusTag("running", mockPalette).includes("RUNNING"));
+	assert.ok(formatSubagentStatusTag("completed", mockPalette).includes("DONE"));
+	assert.ok(formatSubagentStatusTag("failed", mockPalette).includes("FAIL"));
+	assert.ok(formatSubagentStatusTag("cancelled", mockPalette).includes("CANCEL"));
+});
+
+test("cute-agents - collectSessionSubagentTasks parses session history correctly", () => {
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						timestamp: "2026-10-04T00:00:00Z",
+						content: [
+							{
+								type: "toolCall",
+								id: "call-1",
+								name: "subagent_run",
+								arguments: {
+									agent: "researcher",
+									task: "search latest docs",
+									label: "Search docs",
+									mode: "task",
+								},
+							},
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "call-1",
+						timestamp: "2026-10-04T00:00:15Z",
+						content: "Documentation fetched successfully with 15 sources",
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						timestamp: "2026-10-04T00:01:00Z",
+						content: [
+							{
+								type: "toolCall",
+								id: "call-2",
+								name: "subagent_run",
+								arguments: {
+									agent: "worker",
+									task: "refactor sidebar components",
+									mode: "background",
+								},
+							},
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "call-2",
+						timestamp: "2026-10-04T00:01:02Z",
+						content: 'Background task queued with task_id: bg-task-99',
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "call-3",
+								name: "subagent_cancel",
+								arguments: { task_id: "bg-task-99" },
+							},
+						],
+					},
+				},
+			],
+		},
+	};
+
+	const tasks = collectSessionSubagentTasks(mockCtx);
+	assert.equal(tasks.length, 2);
+
+	// First task: researcher, completed
+	const task1 = tasks.find((t) => t.agent === "researcher");
+	assert.ok(task1);
+	assert.equal(task1.status, "completed");
+	assert.equal(task1.mode, "task");
+	assert.equal(task1.label, "Search docs");
+	assert.ok(task1.resultSummary?.includes("Documentation fetched"));
+
+	// Second task: worker, cancelled via subagent_cancel
+	const task2 = tasks.find((t) => t.agent === "worker");
+	assert.ok(task2);
+	assert.equal(task2.status, "cancelled");
+	assert.equal(task2.mode, "background");
+	assert.equal(task2.id, "bg-task-99");
+});
+
+test("cute-agents - CinlodevAgentsCard rendering, views, and mouse interactions", () => {
+	resetAll();
+	const mockCtx: any = {
+		cwd: process.cwd(),
+		sessionManager: {
+			getSessionId: () => "01a1034a",
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						timestamp: new Date(Date.now() - 25000).toISOString(),
+						content: [
+							{
+								type: "toolCall",
+								id: "c1",
+								name: "subagent_run",
+								arguments: {
+									agent: "writer",
+									task: "write comprehensive tests",
+									label: "Write tests",
+									mode: "task",
+								},
+							},
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "c1",
+						timestamp: new Date().toISOString(),
+						content: "92 tests passing at 100%",
+					},
+				},
+			],
+		},
+	};
+
+	let renderRequested = false;
+	const mockTui: any = {
+		requestRender: () => {
+			renderRequested = true;
+		},
+	};
+
+	const card = new CinlodevAgentsCard(mockCtx, mockTui, undefined);
+
+	// 1. Render in width 50
+	const lines = card.render(50);
+	assert.ok(lines.length > 5);
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), 50, `Line visible width should be 50: ${line}`);
+	}
+
+	// Verify Header and Host
+	assert.ok(lines.some((l) => l.includes("AGENTS")));
+	assert.ok(lines.some((l) => l.includes("Host Orchestrator")));
+	assert.ok(lines.some((l) => l.includes("sess-01a103")));
+
+	// Verify Task Tree
+	assert.ok(lines.some((l) => l.includes("Tareas Delegadas")));
+	assert.ok(lines.some((l) => l.includes("[writer]")));
+	assert.ok(lines.some((l) => l.includes("DONE")));
+
+	// 2. Click toggles expanded task detail
+	renderRequested = false;
+	const clickHandled = card.handleClick(3, "left");
+	assert.ok(clickHandled);
+	assert.ok(renderRequested);
+
+	const expandedLines = card.render(50);
+	assert.ok(expandedLines.some((l) => l.includes("92 tests passing")));
+
+	// 3. Right click cycles view modes
+	renderRequested = false;
+	card.handleClick(3, "right");
+	assert.ok(renderRequested);
+
+	// 4. Narrow rail rendering (width = 30)
+	const narrow = card.render(30);
+	for (const line of narrow) {
+		assert.equal(visibleWidth(line), 30);
+	}
+
+	// 5. Invalidation
+	card.invalidate();
+});
+
 
 

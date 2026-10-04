@@ -5,6 +5,7 @@ import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcri
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
+import { CinlodevAgentsCard } from "./cute-agents.ts";
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -91,25 +92,25 @@ export interface CuteSidebarTab {
 export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	main: ["footer", "context", "todo"],
 	git: ["gitGraph"],
-	usage: ["usage"],
+	agents: ["cute-agents"],
+	usage: ["cute-agents"],
 	prof: ["cute-profiles"],
 	forge: ["cute-profiles"],
 	mem: ["engram", "tools"],
-	all: ["footer", "context", "engram", "usage", "gitGraph", "tools", "cute-profiles", "todo"],
 };
 
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
 	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
 	{ id: "git", key: "2", label: "GIT", title: "Git Graph", cards: SIDEBAR_TAB_CARD_MAP.git },
-	{ id: "usage", key: "3", label: "USAGE", title: "Quotas & Usage", cards: SIDEBAR_TAB_CARD_MAP.usage },
+	{ id: "agents", key: "3", label: "AGENTS", title: "Orchestrator & Subagents", cards: SIDEBAR_TAB_CARD_MAP.agents },
 	{ id: "prof", key: "4", label: "prof", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
 	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
-	{ id: "all", key: "0", label: "ALL", title: "All Cards", cards: SIDEBAR_TAB_CARD_MAP.all },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
 	if (tabIdOrKey) {
-		const normalized = tabIdOrKey === "forge" ? "prof" : tabIdOrKey;
+		let normalized = tabIdOrKey === "forge" ? "prof" : tabIdOrKey;
+		if (normalized === "usage") normalized = "agents";
 		const match = CUTE_SIDEBAR_TABS.find((t) => t.id === normalized || t.key === normalized);
 		if (match) return match;
 	}
@@ -280,6 +281,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme);
 		state.parts.set("cute-profiles", profilesCard);
 	}
+	if (!state.parts.has("cute-agents")) {
+		const agentsCard = new CinlodevAgentsCard(undefined, tui, theme);
+		state.parts.set("cute-agents", agentsCard);
+	}
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
 	let stopped = false;
@@ -446,8 +451,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const activeTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
 			state.activeTabId = activeTab.id;
 
-			const targetCardKeys = !tabsEnabled || activeTab.id === "all"
-				? SIDEBAR_TAB_CARD_MAP.all
+			const targetCardKeys = !tabsEnabled
+				? ["footer", "context", "engram", "gitGraph", "tools", "cute-agents", "cute-profiles", "todo"]
 				: activeTab.cards;
 
 			const sectionData = targetCardKeys
@@ -455,16 +460,27 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					let component = state.parts.get(key);
 					if (
 						!component &&
-						(key === "cute-profiles" || key === "cute-profiles-extended" || key === "agents" || key === "profiles")
+						(key === "cute-profiles" || key === "cute-profiles-extended" || key === "profiles")
 					) {
 						component =
 							state.parts.get("cute-profiles") ||
 							state.parts.get("cute-profiles-extended") ||
-							state.parts.get("agents") ||
 							state.parts.get("profiles");
 						if (!component) {
 							component = new CinlodevProfilesExtendedCard(tui, theme);
 							state.parts.set("cute-profiles", component);
+						}
+					}
+					if (
+						!component &&
+						(key === "cute-agents" || key === "agents")
+					) {
+						component =
+							state.parts.get("cute-agents") ||
+							state.parts.get("agents");
+						if (!component) {
+							component = new CinlodevAgentsCard(undefined, tui, theme);
+							state.parts.set("cute-agents", component);
 						}
 					}
 					const rawLines = [...(component?.render(netWidth) ?? [])];
@@ -478,6 +494,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 						key !== "tools" &&
 						key !== "cute-profiles" &&
 						key !== "cute-profiles-extended" &&
+						key !== "cute-agents" &&
 						key !== "agents" &&
 						key !== "profiles"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
