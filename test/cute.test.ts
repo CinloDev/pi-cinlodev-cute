@@ -2808,7 +2808,15 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		const activeAfter = fs.readFileSync(path.join(projDir, ".active"), "utf8").trim();
 		assert.equal(activeAfter, "cinlo2", "Active profile should be switched to cinlo2");
 
-		// 6. Test wheel on profiles card is disabled to preserve natural sidebar vertical scrolling
+		// 7. Test clicking effort toggles agent effort (e.g. gentle-ai-worker low -> medium -> high)
+		const effortHitbox = hitboxes.find((h) => h.type === "effort-agent" && h.agentId === "gentle-ai-worker");
+		assert.ok(effortHitbox, "Effort hitbox for gentle-ai-worker must exist");
+		renderRequested = false;
+		const effortClickHandled = card.handleRailClick(effortHitbox.lineIndex, "left", effortHitbox.startX + 1);
+		assert.ok(effortClickHandled, "Click on effort hitbox should be handled");
+		assert.ok(renderRequested, "requestRender should be called on effort toggle");
+
+		// 8. Test wheel on profiles card is disabled to preserve natural sidebar vertical scrolling
 		renderRequested = false;
 		const wheelHandled = card.handleRailWheel(1);
 		assert.equal(wheelHandled, false, "handleRailWheel should return false to preserve vertical scroll");
