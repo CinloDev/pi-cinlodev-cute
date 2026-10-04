@@ -11,15 +11,16 @@ import { promisify } from "node:util";
 import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
-import { CinlodevGitGraphCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
-import { CinlodevEngramCard } from "./cute-engram.ts";
+import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, type ProfileItem, CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
+import { CinlodevAgentsCard } from "./cute-agents.ts";
 
 export { formatTokenCount, getContextThreshold };
 
@@ -31,9 +32,12 @@ const execAsync = promisify(exec);
 let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
+let latestWorkingTree: CinlodevWorkingTreeCard | undefined;
 let latestToolsCard: CinlodevToolsCard | undefined;
 let latestUsageCard: CinlodevUsageCard | undefined;
 let latestEngramCard: CinlodevEngramCard | undefined;
+let latestEngramHandoff: CinlodevEngramHandoffCard | undefined;
+let latestAgentsCard: CinlodevAgentsCard | undefined;
 
 export function toggleUsageCard(): boolean {
 	return latestUsageCard?.toggle() ?? false;
@@ -519,9 +523,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const refreshTodos = () => {
 			try {
 				latestGitGraph?.invalidate();
+				latestWorkingTree?.invalidate();
 				latestToolsCard?.invalidate();
 				latestUsageCard?.invalidate();
 				latestEngramCard?.invalidate();
+				latestEngramHandoff?.invalidate();
+				latestAgentsCard?.invalidate();
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -534,15 +541,21 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const contextCard = new CinlodevCuteContextCard(ctx, theme);
 		const engramCard = new CinlodevEngramCard(ctx, tui, theme);
+		const engramHandoff = new CinlodevEngramHandoffCard(ctx, tui, theme);
 		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
+		const agentsCard = new CinlodevAgentsCard(ctx, tui, theme, pi);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
+		const workingTree = new CinlodevWorkingTreeCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
 		latestGitGraph = gitGraph;
+		latestWorkingTree = workingTree;
 		latestToolsCard = toolsCard;
 		latestUsageCard = usageCard;
 		latestEngramCard = engramCard;
+		latestEngramHandoff = engramHandoff;
+		latestAgentsCard = agentsCard;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
@@ -570,9 +583,26 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			invalidate: () => gitGraph.invalidate(),
 			handleRailClick: (lineIndex: number) => gitGraph.handleClick(lineIndex),
 		};
+		const workingTreeRail = {
+			render: (width: number) => workingTree.render(width),
+			invalidate: () => workingTree.invalidate(),
+			handleRailClick: (lineIndex: number) => workingTree.handleClick(lineIndex),
+		};
+		const engramHandoffRail = {
+			render: (width: number) => engramHandoff.render(width),
+			invalidate: () => engramHandoff.invalidate(),
+			handleRailClick: () => engramHandoff.handleClick(),
+		};
 		const toolsRail = {
 			render: (width: number) => toolsCard.render(width),
 			invalidate: () => toolsCard.invalidate(),
+		};
+		const agentsRail = {
+			render: (width: number) => agentsCard.render(width),
+			invalidate: () => agentsCard.invalidate(),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				agentsCard.handleClick(lineIndex, button, localX),
+			handleRailWheel: (delta: number) => agentsCard.handleWheel(delta),
 		};
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme, undefined, ctx, pi);
 		const profilesRail = {
@@ -585,8 +615,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
 		const engramPart = sidebarPart(tui, "engram", { render: () => [] }, engramRail);
+		const engramHandoffPart = sidebarPart(tui, "engramHandoff", { render: () => [] }, engramHandoffRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
+		const agentsPart = sidebarPart(tui, "cute-agents", { render: () => [] }, agentsRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
+		const workingTreePart = sidebarPart(tui, "workingTree", { render: () => [] }, workingTreeRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
 		const todoBottom: Component & { dispose?(): void } = {
@@ -607,7 +640,10 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				contextPart.dispose?.();
 				engramPart.dispose?.();
 				usagePart.dispose?.();
+				agentsPart.dispose?.();
 				gitGraphPart.dispose?.();
+				workingTreePart.dispose?.();
+				engramHandoffPart.dispose?.();
 				toolsPart.dispose?.();
 				profilesPart.dispose?.();
 				todoPart.dispose?.();
