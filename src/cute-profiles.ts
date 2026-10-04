@@ -620,16 +620,22 @@ export class CinlodevProfilesExtendedCard implements Component {
 			const modelLower = model.toLowerCase();
 			let candidatePools: QuotaPoolDisplay[] = matching.pools;
 
-			if (modelLower.includes("gemini")) {
-				const geminiPools = matching.pools.filter((p: QuotaPoolDisplay) => /gemini/i.test(p.label));
-				if (geminiPools.length > 0) candidatePools = geminiPools;
-			} else if (modelLower.includes("claude") || modelLower.includes("gpt")) {
-				const claudeGptPools = matching.pools.filter((p: QuotaPoolDisplay) => /claude|gpt/i.test(p.label));
-				if (claudeGptPools.length > 0) candidatePools = claudeGptPools;
+			// Extract significant model family tokens (e.g. "gemini", "claude", "gpt", "deepseek", "qwen", "mistral")
+			const modelTokens = modelLower
+				.split(/[\/_.:\s-]+/)
+				.filter((t) => t.length >= 3 && !/^(cpam|cpamc|default|model|high|low|medium|pro|flash|mini|preview|latest)$/.test(t));
+
+			const matchingModelPools = matching.pools.filter((p: QuotaPoolDisplay) => {
+				const labelLower = p.label.toLowerCase();
+				return modelTokens.some((tok) => labelLower.includes(tok));
+			});
+
+			if (matchingModelPools.length > 0) {
+				candidatePools = matchingModelPools;
 			}
 
-			const raw5h = candidatePools.find((p) => /5\s*h|five\s*hour/i.test(p.label));
-			const rawWeekly = candidatePools.find((p) => /week|seman/i.test(p.label));
+			const raw5h = candidatePools.find((p) => /5\s*h|five\s*hour|window|rolling|hourly/i.test(p.label));
+			const rawWeekly = candidatePools.find((p) => /week|seman|7\s*d/i.test(p.label));
 
 			let final5h = raw5h;
 			let finalWeekly = rawWeekly;

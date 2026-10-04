@@ -140,7 +140,7 @@ export function resolveBaseUrl(): string {
 export function resolveActiveOrchestratorPrefix(ctx?: ExtensionContext): string | undefined {
 	const cwd = ctx?.cwd ?? process.cwd();
 
-	// 1. Check if model ID carries prefix: e.g. "cpamc/cin82/gemini-3.8-flash-high"
+	// 1. Check if model ID carries prefix: e.g. "cpamc/<account>/<model>"
 	try {
 		const modelId = (ctx?.model as any)?.id || "";
 		const modelMatch = String(modelId).match(/^cpamc\/([^/]+)\//i);
@@ -553,7 +553,7 @@ export class CinlodevUsageCard implements Component {
 		const currentAccount = cachedAccounts[this.selectedIndex];
 		const titleGlyph = g.brand || "✿";
 
-		// Title shows provider and prefix: "✿ antigravity · cin82 ▾ Alt+Q" (NO EMAIL!)
+		// Title shows provider and prefix: "✿ antigravity · <prefix> ▾ Alt+Q" (NO EMAIL!)
 		const titleStr = `${c.pink(titleGlyph)} ${c.gold(currentAccount.provider)} ${c.mint(`· ${currentAccount.prefix}`)} ${c.dim("▾")} ${c.dim("Alt+Q")}`;
 		const titleLen = calcVisibleWidth(titleStr);
 		const fillTop = Math.max(0, safeWidth - 5 - titleLen);
