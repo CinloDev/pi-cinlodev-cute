@@ -138,23 +138,34 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 	});
 
 	// 5. Command to inspect / reapply with hot-reload of configurations
-	pi.registerCommand(loadCuteStrings().commandName, {
-		description: loadCuteStrings().commandDescription,
-		handler: async (_args: string, ctx: ExtensionCommandContext) => {
-			if (!ctx.hasUI) return;
-			// Clear in-memory caches so changes in ~/.pi/agent/cute.json or project configs load immediately
-			resetCuteGlyphsCache();
-			resetCuteStringsCache();
-			resetCuteLayoutCache();
-			resetCutePathsCache();
-			resetCuteColorsCache();
+	const cuteCmdHandler = async (_args: string, ctx: ExtensionCommandContext) => {
+		if (!ctx.hasUI) return;
+		// Clear in-memory caches so changes in ~/.pi/agent/cute.json or project configs load immediately
+		resetCuteGlyphsCache();
+		resetCuteStringsCache();
+		resetCuteLayoutCache();
+		resetCutePathsCache();
+		resetCuteColorsCache();
 
-			installCuteMarkdownThemeHook();
-			installCinlodevPrompt(ctx);
-			installCinlodevFooter(ctx, pi);
-			ctx.ui.notify(loadCuteStrings().commandNotify, "info");
-		},
+		installCuteMarkdownThemeHook();
+		installCinlodevPrompt(ctx);
+		installCinlodevFooter(ctx, pi);
+		ctx.ui.notify(loadCuteStrings().commandNotify, "info");
+	};
+
+	const cmdName = loadCuteStrings().commandName || "cute";
+	pi.registerCommand(cmdName, {
+		description: loadCuteStrings().commandDescription,
+		handler: cuteCmdHandler,
 	});
+
+	// Register universal "/cute" alias if commandName was customized or differs
+	if (cmdName !== "cute") {
+		pi.registerCommand("cute", {
+			description: "Reapply CUTE theme aesthetics and reload configuration (/cute)",
+			handler: cuteCmdHandler,
+		});
+	}
 
 	// 6. Shortcut Alt+Q to toggle Quotas & Usage card in the CUTE sidebar rail
 	pi.registerShortcut("alt+q", {
