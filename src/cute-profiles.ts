@@ -722,26 +722,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 		const hostQuota = getAccountModelPools(hostAccount, hostModel);
 		renderModelQuotaBars(hostAccount, hostQuota);
 
-		// 3. Flat agent rows
-		const FLAT_AGENTS = [
-			"gentle-ai-explore",
-			"gentle-ai-worker",
-			"gentle-ai-verify",
-			"jd-judge-a",
-			"jd-judge-b",
-			"jd-fix-agent",
-			"review-risk",
-			"review-readability",
-			"review-reliability",
-			"review-resilience",
-			"research-scout",
-			"research-writer",
-		];
-
-		const extraAgents = Object.keys(activeDetails.model_profiles || {}).filter(
-			(id) => !FLAT_AGENTS.includes(id),
-		);
-		const allAgentIds = [...FLAT_AGENTS, ...extraAgents];
+		// 3. Dynamic agent rows discovered from active profile
+		const allAgentIds = Object.keys(activeDetails.model_profiles || {});
 
 		const getAgentStyle = (agentId: string) => {
 			if (agentId.startsWith("gentle-ai-")) {
@@ -760,34 +742,39 @@ export class CinlodevProfilesExtendedCard implements Component {
 				// Deep Research: Salmón
 				return { bullet: c.salmon("•"), name: (s: string) => c.salmon(s) };
 			}
-			// Fallback / Extra agents: Pink accent
+			// Fallback / Custom user subagents: Pink accent bullet + text color
 			return { bullet: c.pink("•"), name: (s: string) => c.text(s) };
 		};
 
-		for (const agentId of allAgentIds) {
+		if (allAgentIds.length === 0) {
 			lines.push(boxLine(""));
+			lines.push(boxLine(c.dim("sin subagentes configurados")));
+		} else {
+			for (const agentId of allAgentIds) {
+				lines.push(boxLine(""));
 
-			const agentCfg = activeDetails.model_profiles?.[agentId];
-			const model = agentCfg?.model || hostModel;
-			const effort = agentCfg?.effort || hostEffort;
-			const account = (agentCfg as any)?.account || extractAccountFromModel(agentCfg?.model) || hostAccount;
-			const shortAgent = shortModelName(model).replace(/-high$/, "");
+				const agentCfg = activeDetails.model_profiles?.[agentId];
+				const model = agentCfg?.model || hostModel;
+				const effort = agentCfg?.effort || hostEffort;
+				const account = (agentCfg as any)?.account || extractAccountFromModel(agentCfg?.model) || hostAccount;
+				const shortAgent = shortModelName(model).replace(/-high$/, "");
 
-			const agentQuota = getAccountModelPools(account, model);
-			const style = getAgentStyle(agentId);
+				const agentQuota = getAccountModelPools(account, model);
+				const style = getAgentStyle(agentId);
 
-			// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
-			const leftText = `${style.bullet} ${style.name(agentId)}`;
-			const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
-			if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
-				lines.push(boxLine(leftText, rightText));
-			} else {
-				lines.push(boxLine(leftText));
-				lines.push(boxLine(`  ${rightText}`));
+				// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
+				const leftText = `${style.bullet} ${style.name(agentId)}`;
+				const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
+				if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
+					lines.push(boxLine(leftText, rightText));
+				} else {
+					lines.push(boxLine(leftText));
+					lines.push(boxLine(`  ${rightText}`));
+				}
+
+				// Quota bars (5h y Semanal)
+				renderModelQuotaBars(account, agentQuota);
 			}
-
-			// Quota bars (5h y Semanal)
-			renderModelQuotaBars(account, agentQuota);
 		}
 
 		// 4. Task Manager status summary if available
