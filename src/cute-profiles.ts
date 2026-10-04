@@ -519,26 +519,29 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 		this.switcherHitboxes = [];
 
-		const PRIMARY_CLUSTERS = ["cinlo1", "cinlo2", "cinlo3", "cinlo4"];
+		const availableProfiles = listAvailableProfiles(this.cwd);
+		const profilesToRender: ProfileItem[] =
+			availableProfiles.length > 0
+				? availableProfiles
+				: [{ name: "default", active: true, source: "builtin" }];
+
 		const activeDetails = getActiveProfileDetails(this.cwd) || {
-			name: "cinlo1",
+			name: profilesToRender.find((p) => p.active)?.name || profilesToRender[0]?.name || "default",
 			default_model: "default",
 			default_effort: "high",
 		};
 		const activeName = (activeDetails.name || "").toLowerCase();
-		const matchedCluster = PRIMARY_CLUSTERS.find((c) => c.toLowerCase() === activeName);
-		const currentActive = matchedCluster || PRIMARY_CLUSTERS[0];
 
-		const clusterButtons = PRIMARY_CLUSTERS.map((name, idx) => {
+		const clusterButtons = profilesToRender.map((item, idx) => {
 			const num = idx + 1;
-			const isActive = name.toLowerCase() === currentActive.toLowerCase();
+			const isActive = item.active || item.name.toLowerCase() === activeName;
 			const dot = isActive ? "●" : "○";
-			const raw = `[${dot} ${num}: ${name}]`;
+			const raw = `[${dot} ${num}: ${item.name}]`;
 			const styled = isActive
 				? c.pinkBright(c.bold(raw))
-				: `${c.dim(`[○ ${num}: `)}${c.muted(name)}${c.dim("]")}`;
+				: `${c.dim(`[○ ${num}: `)}${c.muted(item.name)}${c.dim("]")}`;
 			return {
-				name,
+				name: item.name,
 				styled,
 				len: calcVisibleWidth(raw),
 			};
@@ -546,41 +549,44 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 		const lines: string[] = [top];
 
-		// Line 1: [● 1: cinlo1] [○ 2: cinlo2]
-		const line1Index = lines.length;
-		const b1 = clusterButtons[0];
-		const b2 = clusterButtons[1];
-		this.switcherHitboxes.push({
-			profileName: b1.name,
-			lineIndex: line1Index,
-			startX: 2,
-			endX: 2 + b1.len,
-		});
-		this.switcherHitboxes.push({
-			profileName: b2.name,
-			lineIndex: line1Index,
-			startX: 2 + b1.len + 1,
-			endX: 2 + b1.len + 1 + b2.len,
-		});
-		lines.push(boxLine(`${b1.styled} ${b2.styled}`));
+		// Dynamic line wrapping for profile buttons
+		let currentLineButtons: typeof clusterButtons = [];
+		let currentLineWidth = 0;
 
-		// Line 2: [○ 3: cinlo3] [○ 4: cinlo4]
-		const line2Index = lines.length;
-		const b3 = clusterButtons[2];
-		const b4 = clusterButtons[3];
-		this.switcherHitboxes.push({
-			profileName: b3.name,
-			lineIndex: line2Index,
-			startX: 2,
-			endX: 2 + b3.len,
-		});
-		this.switcherHitboxes.push({
-			profileName: b4.name,
-			lineIndex: line2Index,
-			startX: 2 + b3.len + 1,
-			endX: 2 + b3.len + 1 + b4.len,
-		});
-		lines.push(boxLine(`${b3.styled} ${b4.styled}`));
+		const flushButtonLine = () => {
+			if (currentLineButtons.length === 0) return;
+			const currentLineIndex = lines.length;
+			let currentX = 2; // initial left border + 1 space padding
+
+			for (let i = 0; i < currentLineButtons.length; i++) {
+				const btn = currentLineButtons[i];
+				this.switcherHitboxes.push({
+					profileName: btn.name,
+					lineIndex: currentLineIndex,
+					startX: currentX,
+					endX: currentX + btn.len,
+				});
+				currentX += btn.len + 1; // button width + space
+			}
+
+			const lineContent = currentLineButtons.map((b) => b.styled).join(" ");
+			lines.push(boxLine(lineContent));
+			currentLineButtons = [];
+			currentLineWidth = 0;
+		};
+
+		for (const btn of clusterButtons) {
+			const spaceNeeded = currentLineWidth > 0 ? 1 + btn.len : btn.len;
+			if (currentLineWidth + spaceNeeded <= innerWidth) {
+				currentLineButtons.push(btn);
+				currentLineWidth += spaceNeeded;
+			} else {
+				flushButtonLine();
+				currentLineButtons.push(btn);
+				currentLineWidth = btn.len;
+			}
+		}
+		flushButtonLine();
 
 		// Divider between switchers and agents
 		lines.push(divider);
