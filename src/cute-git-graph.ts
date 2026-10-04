@@ -228,6 +228,71 @@ export function resetGitStatusCache(): void {
 	cachedStatus = undefined;
 }
 
+export interface GitFileChange {
+	path: string;
+	status: "modified" | "added" | "deleted" | "untracked" | "conflict";
+	statusCode: string;
+	linesAdded: number;
+	linesDeleted: number;
+}
+
+export function fetchGitFileChanges(cwd: string): GitFileChange[] {
+	try {
+		const statusOut = cp.execFileSync("git", ["status", "--porcelain=v1"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 1500,
+		});
+
+		const numstatMap = new Map<string, { added: number; deleted: number }>();
+		try {
+			const numstatOut = cp.execFileSync("git", ["diff", "HEAD", "--numstat"], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 1500,
+			});
+			for (const line of numstatOut.split("\n")) {
+				const parts = line.trim().split("\t");
+				if (parts.length >= 3) {
+					const a = parseInt(parts[0], 10) || 0;
+					const d = parseInt(parts[1], 10) || 0;
+					const filePath = parts.slice(2).join("\t").trim();
+					numstatMap.set(filePath, { added: a, deleted: d });
+				}
+			}
+		} catch {}
+
+		const files: GitFileChange[] = [];
+		for (const line of statusOut.split("\n")) {
+			if (line.length < 3) continue;
+			const statusCode = line.slice(0, 2);
+			const filePath = line.slice(3).trim();
+			const x = statusCode[0];
+			const y = statusCode[1];
+
+			let status: GitFileChange["status"] = "modified";
+			if (x === "?" && y === "?") status = "untracked";
+			else if (x === "A" || y === "A") status = "added";
+			else if (x === "D" || y === "D") status = "deleted";
+			else if (x === "U" || y === "U") status = "conflict";
+
+			const num = numstatMap.get(filePath) || { added: 0, deleted: 0 };
+			files.push({
+				path: filePath,
+				statusCode: statusCode.trim(),
+				status,
+				linesAdded: num.added,
+				linesDeleted: num.deleted,
+			});
+		}
+		return files;
+	} catch {
+		return [];
+	}
+}
+
 export interface GitGraphCache {
 	rawLines: string[];
 	readAt: number;
@@ -428,6 +493,145 @@ export class CinlodevGitGraphCard implements Component {
 
 		lines.push(bottom);
 
+		return lines;
+	}
+}
+
+export function formatFilePathWithDracula(filePath: string, c: { dim: (s: string) => string; cyan: (s: string) => string }): string {
+	const lastSlash = filePath.lastIndexOf("/");
+	if (lastSlash === -1) {
+		return c.cyan(filePath);
+	}
+	const dir = filePath.slice(0, lastSlash + 1);
+	const base = filePath.slice(lastSlash + 1);
+	return `${c.dim(dir)}${c.cyan(base)}`;
+}
+
+/**
+ * Sidebar Working Tree Card for pi-cinlodev-cute.
+ * Displays dirty working tree files (+lines, -lines) directly below Git Graph in the GIT tab.
+ */
+export class CinlodevWorkingTreeCard implements Component {
+	private readonly ctx?: ExtensionContext;
+	private readonly tui: TUI;
+	private readonly theme?: Theme;
+	private expanded = true;
+
+	constructor(ctx?: ExtensionContext, tui?: TUI, theme?: Theme) {
+		this.ctx = ctx;
+		this.tui = tui ?? ({ requestRender: () => {} } as any);
+		this.theme = theme;
+	}
+
+	toggleExpanded(): boolean {
+		this.expanded = !this.expanded;
+		this.tui.requestRender();
+		return this.expanded;
+	}
+
+	handleClick(_localIndex?: number): boolean {
+		this.toggleExpanded();
+		return true;
+	}
+
+	invalidate(): void {
+		resetGitStatusCache();
+	}
+
+	render(width: number): string[] {
+		const cwd = this.ctx?.cwd ?? process.cwd();
+		const files = fetchGitFileChanges(cwd);
+		const status = fetchGitStatus(cwd, 3000);
+
+		const safeWidth = Math.max(30, width);
+		const innerWidth = safeWidth - 4;
+		const g = cuteGlyphs(this.theme);
+		const colors = loadCuteColors();
+		const theme = this.theme;
+
+		const frame = (s: string): string => (theme ? safeFg(theme, colors.sidebarBorder, s) : s);
+		const c = {
+			pink: (s: string): string => (theme ? safeFg(theme, "accent", s, "pink") : s),
+			gold: (s: string): string => (theme ? safeFg(theme, "heading", s, "yellow") : s),
+			mint: (s: string): string => (theme ? safeFg(theme, "mint", s, "green") : s),
+			coral: (s: string): string => (theme ? safeFg(theme, "red", s, "red") : s),
+			yellow: (s: string): string => (theme ? safeFg(theme, "warning", s, "yellow") : s),
+			cyan: (s: string): string => (theme ? safeFg(theme, "write", s, "cyan") : s),
+			text: (s: string): string => (theme ? safeFg(theme, "text", s) : s),
+			dim: (s: string): string => (theme ? safeFg(theme, "dim", s) : s),
+			muted: (s: string): string => (theme ? safeFg(theme, "muted", s) : s),
+		};
+
+		const boxLine = (left: string, right = ""): string => {
+			const rightWidth = calcVisibleWidth(right);
+			const maxLeftWidth = Math.max(0, innerWidth - (rightWidth > 0 ? rightWidth + 1 : 0));
+			const truncatedLeft = truncateAnsiAware(left, maxLeftWidth);
+			const leftWidth = calcVisibleWidth(truncatedLeft);
+			const padLen = Math.max(0, innerWidth - leftWidth - rightWidth);
+			const pad = " ".repeat(padLen);
+			return `${frame(g.v)} ${truncatedLeft}${pad}${right} ${frame(g.v)}`;
+		};
+
+		const arrow = this.expanded ? "▲" : "▼";
+		const titleStr = `${c.pink("📁")} ${c.gold("Working Tree")} ${c.dim(arrow)}`;
+		const maxTitleLen = Math.max(0, safeWidth - 6);
+		const displayTitle = calcVisibleWidth(titleStr) > maxTitleLen ? truncateAnsiAware(titleStr, maxTitleLen) : titleStr;
+		const titleLen = calcVisibleWidth(displayTitle);
+		const fillTop = Math.max(0, safeWidth - 5 - titleLen);
+		const top = `${frame(`${g.tl}${g.h} `)}${displayTitle}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;
+		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
+
+		if (files.length === 0) {
+			return [top, boxLine(`✔ ${c.mint("Clean")} · ${c.dim("Sin cambios pendientes")}`), bottom];
+		}
+
+		if (!this.expanded) {
+			const modCount = files.length;
+			const summary = `${c.yellow(`● ${modCount}`)} ${c.dim(modCount === 1 ? "archivo" : "archivos")}`;
+			const deltas =
+				status.linesAdded > 0 || status.linesDeleted > 0
+					? `${c.mint(`+${status.linesAdded}`)} ${c.coral(`−${status.linesDeleted}`)}`
+					: "";
+			return [top, boxLine(summary, deltas), bottom];
+		}
+
+		const lines: string[] = [top];
+		const summaryBadge = `${c.yellow(`● ${files.length}`)} ${c.dim(files.length === 1 ? "archivo modificado" : "archivos modificados")}`;
+		const deltasTotal =
+			status.linesAdded > 0 || status.linesDeleted > 0
+				? `${c.mint(`+${status.linesAdded}`)}  ${c.coral(`−${status.linesDeleted}`)}`
+				: "";
+		lines.push(boxLine(summaryBadge, deltasTotal));
+		lines.push(frame(`${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
+
+		// Breathing line after divider
+		lines.push(boxLine(""));
+
+		const maxShow = 8;
+		const visibleFiles = files.slice(0, maxShow);
+		for (const f of visibleFiles) {
+			let badge = c.yellow("M");
+			if (f.status === "added") badge = c.mint("A");
+			else if (f.status === "deleted") badge = c.coral("D");
+			else if (f.status === "untracked") badge = c.pink("?");
+			else if (f.status === "conflict") badge = c.coral("U");
+
+			const rightParts: string[] = [];
+			if (f.linesAdded > 0) rightParts.push(c.mint(`+${f.linesAdded}`));
+			if (f.linesDeleted > 0) rightParts.push(c.coral(`−${f.linesDeleted}`));
+			const rightStr = rightParts.join(" ");
+
+			const styledPath = formatFilePathWithDracula(f.path, c);
+			lines.push(boxLine(`${badge}  ${styledPath}`, rightStr));
+		}
+
+		if (files.length > maxShow) {
+			lines.push(boxLine(c.dim(`… y ${files.length - maxShow} más`)));
+		}
+
+		// Breathing line before bottom
+		lines.push(boxLine(""));
+		lines.push(bottom);
 		return lines;
 	}
 }
