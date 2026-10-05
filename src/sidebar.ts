@@ -1,8 +1,8 @@
 import { ScrollView, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, frameFg, safeFg, bolden, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
+import { cuteGlyphs, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
-import { loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
+import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
