@@ -9,6 +9,25 @@ import { CinlodevAgentsCard } from "./cute-agents.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
+import {
+	measureDockMetrics,
+	measureDockHeight,
+	getVisibleInputBottomOffset,
+	findDock,
+	findTranscript,
+	NODE,
+	type DockMetrics,
+} from "./sidebar-dock.ts";
+
+export {
+	measureDockMetrics,
+	measureDockHeight,
+	getVisibleInputBottomOffset,
+	findDock,
+	findTranscript,
+	NODE,
+	type DockMetrics,
+};
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -19,99 +38,6 @@ import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 // Single/rounded frame tokens map to the configured double (or ascii) preset
 // via cuteGlyphs at render time, so frameStyle switches stay consistent.
 
-export function measureDockMetrics(
-	dock: any,
-	width: number,
-): { totalHeight: number; visibleInputBottomOffset: number } {
-	if (!dock || !Array.isArray(dock.entries)) return { totalHeight: 7, visibleInputBottomOffset: 5 };
-	let totalHeight = 0;
-	let visibleInputBottomOffset: number | undefined;
-
-	for (const entry of dock.entries) {
-		if (entry?.component && typeof entry.component.render === "function") {
-			try {
-				const lines = entry.component.render(width);
-				if (Array.isArray(lines)) {
-					// In Pi's createChatViewport, the editor component is configured with minSize: 3 or is a Box component
-					if (
-						visibleInputBottomOffset === undefined &&
-						(entry.minSize === 3 || entry.component?.constructor?.name === "Box")
-					) {
-						for (let i = lines.length - 1; i >= 0; i--) {
-							if (lines[i].trim().length > 0) {
-								visibleInputBottomOffset = totalHeight + i;
-								break;
-							}
-						}
-					}
-					totalHeight += lines.length;
-				}
-			} catch {}
-		}
-	}
-
-	return {
-		totalHeight: Math.max(3, totalHeight),
-		visibleInputBottomOffset: Math.max(3, visibleInputBottomOffset ?? totalHeight),
-	};
-}
-
-export function measureDockHeight(dock: any, width: number): number {
-	return measureDockMetrics(dock, width).totalHeight;
-}
-
-export function getVisibleInputBottomOffset(dock: any, width: number): number {
-	return measureDockMetrics(dock, width).visibleInputBottomOffset;
-}
-
-function findDock(root: unknown): any {
-	if (!root || typeof root !== "object") return undefined;
-	const entries = (root as any).entries;
-	if (Array.isArray(entries) && entries.length >= 2) {
-		const candidate = entries[1]?.component;
-		if (candidate && Array.isArray((candidate as any).entries)) {
-			return candidate;
-		}
-	}
-	return undefined;
-}
-
-function findTranscript(root: unknown, depth = 0): ScrollView | undefined {
-	if (!root || typeof root !== "object" || depth > 12) return undefined;
-	if ("scrollbar" in root && typeof (root as any).setScrollbar === "function") {
-		return root as ScrollView;
-	}
-	const entries = (root as any).entries;
-	if (Array.isArray(entries)) {
-		for (const entry of entries) {
-			const found = findTranscript(entry?.component, depth + 1);
-			if (found) return found;
-		}
-	}
-	const children = (root as any).children;
-	if (Array.isArray(children)) {
-		for (const child of children) {
-			const found = findTranscript(child, depth + 1);
-			if (found) return found;
-		}
-	}
-	// Descend through custom layout nodes (e.g. gentle-shell wrapping the tree)
-	if (typeof (root as any)[NODE] === "function") {
-		try {
-			const node = (root as any)[NODE]();
-			if (node && Array.isArray(node.entries)) {
-				for (const entry of node.entries) {
-					const found = findTranscript(entry?.component, depth + 1);
-					if (found) return found;
-				}
-			}
-		} catch {}
-	}
-	return undefined;
-}
-
-// Layout symbol shared with Pi 0.85.1 and pi-tui
-const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: string };
 type LayoutRoot = Component & { [NODE]?: () => LayoutNode };
 type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };

@@ -1357,6 +1357,7 @@ test("Syntax check across all source files", () => {
 		"src/hud.ts",
 		"src/footer.ts",
 		"src/sidebar.ts",
+		"src/sidebar-dock.ts",
 		"src/welcome.ts",
 		"src/editor.ts",
 		"src/todos.ts",
@@ -4117,6 +4118,47 @@ test("todos - CinlodevTodoMirror handles mouse wheel scrolling on overflow", () 
 	// Wheel handling vía handleMouse
 	const mouseHandled = mirror.handleMouse({ wheelDelta: 1 });
 	assert.deepEqual(mouseHandled, { handled: true }, "handleMouse debe procesar eventos con wheelDelta");
+});
+
+test("sidebar-dock - measureDockMetrics, findDock and findTranscript execute safely", async () => {
+	const { measureDockMetrics, measureDockHeight, getVisibleInputBottomOffset, findDock, findTranscript } = await import("../src/sidebar-dock.ts");
+
+	// Casos base nulos / vacíos
+	const emptyMetrics = measureDockMetrics(null, 50);
+	assert.deepEqual(emptyMetrics, { totalHeight: 7, visibleInputBottomOffset: 5 });
+	assert.equal(measureDockHeight(null, 50), 7);
+	assert.equal(getVisibleInputBottomOffset(null, 50), 5);
+
+	// Mock dock con entries
+	const mockDock = {
+		entries: [
+			{ component: { render: () => ["line 1", "line 2"] } },
+			{ minSize: 3, component: { render: () => ["input row 1", "input row 2", "input bottom frame"] } },
+			{ component: { render: () => ["status line"] } },
+		],
+	};
+	const metrics = measureDockMetrics(mockDock, 50);
+	assert.equal(metrics.totalHeight, 6);
+	assert.equal(metrics.visibleInputBottomOffset, 4); // 2 + 2 = 4 (segunda fila de input)
+
+	// findDock
+	assert.equal(findDock(null), undefined);
+	const mockTreeWithDock = {
+		entries: [
+			{ component: {} },
+			{ component: { entries: [1, 2] } },
+		],
+	};
+	assert.equal(findDock(mockTreeWithDock), mockTreeWithDock.entries[1].component);
+
+	// findTranscript
+	const mockScrollView = { scrollbar: "auto", setScrollbar: () => {} };
+	const treeWithTranscript = {
+		entries: [
+			{ component: mockScrollView },
+		],
+	};
+	assert.equal(findTranscript(treeWithTranscript), mockScrollView as any);
 });
 
 
