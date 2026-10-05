@@ -53,6 +53,14 @@ export function getLatestUsageCard(): CinlodevUsageCard | undefined {
 	return latestUsageCard;
 }
 
+export function invalidateSidebarGitAndTree(): void {
+	latestGitGraph?.invalidate();
+	latestWorkingTree?.invalidate();
+	latestProjectTree?.invalidate();
+	latestToolsCard?.invalidate();
+	latestTodoTui?.requestRender();
+}
+
 function separator(theme: Theme): string {
 	return frameFg(theme, cuteGlyphs(theme).separator);
 }

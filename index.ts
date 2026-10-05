@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
 import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
-import { installCinlodevFooter, toggleUsageCard } from "./src/footer.js";
+import { installCinlodevFooter, toggleUsageCard, invalidateSidebarGitAndTree } from "./src/footer.js";
 import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
@@ -103,16 +103,23 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		"mem_session_end",
 		"mem_capture_passive",
 	]);
+	const FILE_OR_GIT_TOOLS = new Set(["write", "edit", "bash"]);
 	pi.on("tool_execution_end", (event, ctx) => {
-		if (event && !event.isError && MEMORY_MUTATION_TOOLS.has(event.toolName)) {
-			const project = detectProjectName(ctx?.cwd);
-			// Fire non-blocking cloud replication
-			syncProjectCloud(project).catch(() => {});
+		if (event && !event.isError) {
+			if (MEMORY_MUTATION_TOOLS.has(event.toolName)) {
+				const project = detectProjectName(ctx?.cwd);
+				// Fire non-blocking cloud replication
+				syncProjectCloud(project).catch(() => {});
+			}
+			if (FILE_OR_GIT_TOOLS.has(event.toolName)) {
+				invalidateSidebarGitAndTree();
+			}
 		}
 	});
 
 	// Monitor context threshold transitions on turn completion
 	pi.on("turn_end", async (_event, ctx) => {
+		invalidateSidebarGitAndTree();
 		if (ctx?.hasUI) {
 			contextMonitor.check(ctx);
 		}
