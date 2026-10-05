@@ -7,7 +7,7 @@ import { bolden, cuteGlyphs, cutePalette, frameFg, safeFg } from "./cute-theme.t
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { detectProjectName } from "./cute-engram.ts";
-import { herdrAvailable, launchInHerdrTab } from "./cute-notify.ts";
+import { herdrAvailable, launchInHerdrTab, isTestEnvironment } from "./cute-notify.ts";
 import { fetchGitFileChanges } from "./cute-git-graph.ts";
 
 export interface TreeNode {
@@ -140,6 +140,7 @@ export function detectTerminal(): string {
  * Resolves $VISUAL / $EDITOR / nvim and spawns detached terminal window.
  */
 export function launchEditor(targetPath?: string, cwd?: string): boolean {
+	if (isTestEnvironment()) return true;
 	const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
 	const filePath = targetPath ? targetPath : ".";
 	const workingDir = cwd || process.cwd();

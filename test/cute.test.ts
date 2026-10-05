@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as cp from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, isReviewComponent, looksLikeReviewLines, extractReviewHeader, formatReviewOutputLines } from "../src/cute-transcript.ts";
@@ -3918,14 +3919,30 @@ test("sidebar tabs - switching to git tab renders 2 cards at 50/50 split without
 
 test("cute-tree - renders Git status badges and dirty directory bullets", () => {
 	resetAll();
-	const cwd = process.cwd();
-	const card = new CinlodevProjectTreeCard(undefined, undefined, undefined, cwd);
-	const lines = card.render(60);
-	const joined = lines.join("\n");
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-git-"));
+	try {
+		cp.execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: tempDir, stdio: "ignore" });
 
-	// At least one file or directory in this repo should have M or ● when git is dirty
-	const hasGitBadges = joined.includes("M") || joined.includes("●");
-	assert.ok(hasGitBadges, "Tree card should render git status badges (M or ●) for dirty files/dirs");
+		fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log(1);", "utf8");
+		cp.execFileSync("git", ["add", "."], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["commit", "-m", "init"], { cwd: tempDir, stdio: "ignore" });
+
+		// Modify file to make git dirty
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log(2);", "utf8");
+
+		const card = new CinlodevProjectTreeCard(undefined, undefined, undefined, tempDir);
+		card.getExpandedDirs().add("src");
+		const lines = card.render(60);
+		const joined = lines.join("\n");
+
+		assert.ok(joined.includes("M"), "Modified file in tree should have M badge");
+		assert.ok(joined.includes("●"), "Directory containing modified file should have dirty bullet ●");
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
 });
 
 test("cute-git-graph - CinlodevWorkingTreeCard file clicking", () => {
