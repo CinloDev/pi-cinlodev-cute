@@ -6,7 +6,7 @@ import { loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
-import { CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 
@@ -518,27 +518,38 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const headerLines = 1 + bannerLinesCount + tabsLinesCount + 1;
 
 			let availableCardHeight: number | undefined;
+			let cardHeights: (number | undefined)[] = [];
+			const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
+			const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
+			const { totalHeight: dockHeight, visibleInputBottomOffset } = measureDockMetrics(activeDock, dockWidth);
+			const transcriptHeight = activeTranscript?.viewportHeight;
+
+			// The input box's bottom horizontal line is at:
+			// transcript.viewportHeight + visibleInputBottomOffset.
+			// If transcript is not yet laid out, fall back to termRows - dockHeight + visibleInputBottomOffset.
+			const inputBottomRow = (typeof transcriptHeight === "number" && transcriptHeight > 10)
+				? transcriptHeight + visibleInputBottomOffset
+				: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
+
+			// availableCardHeight must never exceed termRows - headerLines so railLines never overflows terminal
+			const maxAllowedHeight = Math.max(10, termRows - headerLines);
+			const targetHeight = inputBottomRow - headerLines;
+			const totalTargetHeight = Math.min(maxAllowedHeight, Math.max(10, targetHeight));
+
 			if (targetCardKeys.length === 1) {
-				const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
-				const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
-				const { totalHeight: dockHeight, visibleInputBottomOffset } = measureDockMetrics(activeDock, dockWidth);
-				const transcriptHeight = activeTranscript?.viewportHeight;
-
-				// The input box's bottom horizontal line is at:
-				// transcript.viewportHeight + visibleInputBottomOffset.
-				// If transcript is not yet laid out, fall back to termRows - dockHeight + visibleInputBottomOffset.
-				const inputBottomRow = (typeof transcriptHeight === "number" && transcriptHeight > 10)
-					? transcriptHeight + visibleInputBottomOffset
-					: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
-
-				// availableCardHeight must never exceed termRows - headerLines so railLines never overflows terminal
-				const maxAllowedHeight = Math.max(10, termRows - headerLines);
-				const targetHeight = inputBottomRow - headerLines;
-				availableCardHeight = Math.min(maxAllowedHeight, Math.max(10, targetHeight));
+				availableCardHeight = totalTargetHeight;
+				cardHeights = [totalTargetHeight];
+			} else if (targetCardKeys.length === 2) {
+				// 2 cards split 50/50 sharing the full rail height down to the input line
+				const interCardGap = 1; // empty line between the 2 cards
+				const availableForCards = Math.max(14, totalTargetHeight - interCardGap);
+				const half = Math.floor(availableForCards / 2);
+				const secondHalf = availableForCards - half;
+				cardHeights = [half, secondHalf];
 			}
 
 			const sectionData = targetCardKeys
-				.map((key) => {
+				.map((key, index) => {
 					let component = state.parts.get(key);
 					if (
 						!component &&
@@ -565,6 +576,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("cute-agents", component);
 						}
 					}
+					if (!component && (key === "gitGraph" || key === "git-graph")) {
+						component = state.parts.get("gitGraph") || state.parts.get("git-graph");
+						if (!component) {
+							component = new CinlodevGitGraphCard(undefined as any, tui, theme);
+							state.parts.set("gitGraph", component);
+						}
+					}
 					if (!component && (key === "workingTree" || key === "working-tree")) {
 						component = state.parts.get("workingTree") || state.parts.get("working-tree");
 						if (!component) {
@@ -586,8 +604,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("projectTree", component);
 						}
 					}
-					const renderHeight = (key === "projectTree" || key === "project-tree" || targetCardKeys.length === 1)
-						? availableCardHeight
+					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree")
+						? (cardHeights[index] ?? availableCardHeight)
 						: undefined;
 					const rawLines = [...(component?.render(netWidth, renderHeight as any) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
@@ -693,7 +711,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			state.active = true;
 			return true;
 		} catch {
-			failed = true;
+			state.active = false;
 			return false;
 		}
 	};

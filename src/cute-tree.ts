@@ -7,6 +7,7 @@ import { bolden, cuteGlyphs, cutePalette, frameFg, safeFg } from "./cute-theme.t
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { detectProjectName } from "./cute-engram.ts";
+import { herdrAvailable, launchInHerdrTab } from "./cute-notify.ts";
 
 export interface TreeNode {
 	name: string;
@@ -121,7 +122,7 @@ function isExecutableInPath(name: string): boolean {
 	return false;
 }
 
-function detectTerminal(): string {
+export function detectTerminal(): string {
 	if (process.env.TERMINAL && isExecutableInPath(process.env.TERMINAL)) {
 		return process.env.TERMINAL;
 	}
@@ -138,24 +139,34 @@ function detectTerminal(): string {
  * Resolves $VISUAL / $EDITOR / nvim and spawns detached terminal window.
  */
 export function launchEditor(targetPath?: string, cwd?: string): boolean {
+	const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
+	const filePath = targetPath ? targetPath : ".";
+	const workingDir = cwd || process.cwd();
+	const title = `nvim: ${path.basename(filePath)}`;
+
+	// 1. If running inside Herdr, open as a focused full-screen tab
+	if (herdrAvailable()) {
+		if (launchInHerdrTab(`${editor} ${filePath}`, title, workingDir)) {
+			return true;
+		}
+	}
+
+	// 2. Fallback to external terminal (foot, alacritty, kitty, ghostty)
 	try {
-		const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
 		const terminal = detectTerminal();
-		const filePath = targetPath ? targetPath : ".";
-		const workingDir = cwd || process.cwd();
 		const termBin = path.basename(terminal).toLowerCase();
-		const title = `CUTE: ${path.basename(filePath)}`;
+		const winTitle = `CUTE: ${path.basename(filePath)}`;
 
 		let args: string[];
 		switch (termBin) {
 			case "foot":
-				args = ["--app-id=cute-editor", "-T", title, editor, filePath];
+				args = ["--app-id=cute-editor", "-T", winTitle, editor, filePath];
 				break;
 			case "alacritty":
-				args = ["--class", "cute-editor,cute-editor", "-t", title, "-e", editor, filePath];
+				args = ["--class", "cute-editor,cute-editor", "-t", winTitle, "-e", editor, filePath];
 				break;
 			case "kitty":
-				args = ["--class=cute-editor", "-T", title, editor, filePath];
+				args = ["--class=cute-editor", "-T", winTitle, editor, filePath];
 				break;
 			case "ghostty":
 				args = ["--class=cute-editor", "-e", editor, filePath];
