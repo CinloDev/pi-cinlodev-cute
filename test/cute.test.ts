@@ -1358,6 +1358,7 @@ test("Syntax check across all source files", () => {
 		"src/footer.ts",
 		"src/sidebar.ts",
 		"src/sidebar-dock.ts",
+		"src/sidebar-tabs.ts",
 		"src/welcome.ts",
 		"src/editor.ts",
 		"src/todos.ts",
