@@ -8,7 +8,7 @@ import { loadCuteLayout } from "./cute-layout.ts";
 import { readGitBranch } from "./cute-paths.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { detectTerminal, launchEditor } from "./cute-tree.ts";
-import { herdrAvailable, launchInHerdrTab } from "./cute-notify.ts";
+import { herdrAvailable, launchInHerdrTab, isTestEnvironment } from "./cute-notify.ts";
 
 const SIDEBAR_STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
 
@@ -633,6 +633,7 @@ export function resetBranchDiffCache(): void {
 }
 
 export function launchGitDiff(branch: string, cwd?: string): boolean {
+	if (isTestEnvironment()) return true;
 	const workingDir = cwd || process.cwd();
 	const title = `diff: ${branch}`;
 	const cmd = `git diff HEAD...${branch} | less -R`;
