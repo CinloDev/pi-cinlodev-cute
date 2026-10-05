@@ -23,6 +23,7 @@ import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevU
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
+import { CinlodevTodoMirror } from "../src/todos.ts";
 import { invalidateSidebarGitAndTree } from "../src/footer.ts";
 
 function resetAll() {
@@ -3961,6 +3962,161 @@ test("footer - invalidateSidebarGitAndTree executes safely", () => {
 	assert.doesNotThrow(() => {
 		invalidateSidebarGitAndTree();
 	});
+});
+
+test("todos - CinlodevTodoMirror renders double-line CUTE card without background leaks", () => {
+	resetAll();
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: [
+									{ id: 1, title: "Tarea completada", status: "done" },
+									{ id: 2, title: "Tarea en progreso", status: "in_progress", note: "Avanzando en el refactor" },
+									{ id: 3, title: "Tarea pendiente", status: "pending" },
+								],
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	let rendered = false;
+	const mockTui: any = {
+		requestRender: () => {
+			rendered = true;
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, mockTui);
+	const lines = mirror.renderRail(40);
+	const joined = lines.join("\n");
+
+	// Marco doble CUTE presente
+	assert.ok(lines.length >= 5, "Debe tener al menos 5 líneas");
+	assert.ok(lines[0].includes("╔"), "Debe tener esquina superior doble ╔");
+	assert.ok(lines[lines.length - 1].includes("╚"), "Debe tener esquina inferior doble ╚");
+	assert.ok(joined.includes("Todos · 1 of 3"), "Debe incluir el título CUTE con conteo");
+
+	// Cero fondo azul y cero barra float
+	assert.ok(!joined.includes("\x1b[48;"), "No debe tener secuencias de escape de fondo ANSI");
+	assert.ok(!joined.includes("▎"), "No debe contener el rail float ▎");
+
+	// Glifos correctos
+	assert.ok(joined.includes("✓"), "Debe mostrar ✓ para done");
+	assert.ok(joined.includes("◉"), "Debe mostrar ◉ para in_progress");
+	assert.ok(joined.includes("○"), "Debe mostrar ○ para pending");
+
+	// Nota indentada presente
+	assert.ok(joined.includes("↳ Avanzando en el refactor"), "Debe mostrar la nota de la tarea in_progress indentada");
+});
+
+test("todos - CinlodevTodoMirror performs word wrapping for long titles", () => {
+	resetAll();
+	const longTitle = "Esta es una tarea extremadamente larga que no cabe en una sola linea y debe wrappear";
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: [
+									{ id: 1, title: longTitle, status: "pending" },
+								],
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
+	const width = 36;
+	const lines = mirror.renderRail(width);
+
+	// Verificar que cada línea dentro del marco respeta el ancho
+	for (const line of lines) {
+		assert.ok(visibleWidth(line) <= width, `La línea no debe exceder el ancho asignado (${visibleWidth(line)} > ${width})`);
+	}
+
+	// Como el título es largo, debe haber generado al menos 2 líneas de cuerpo más top y bottom
+	assert.ok(lines.length >= 4, "Debe ocupar al menos 2 líneas de contenido por wrapping");
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("Esta es una tarea"), "Debe contener el inicio del título");
+	assert.ok(joined.includes("wrappear"), "Debe contener el final del título en otra línea");
+});
+
+test("todos - CinlodevTodoMirror handles mouse wheel scrolling on overflow", () => {
+	resetAll();
+	const manyTasks = Array.from({ length: 15 }, (_, i) => ({
+		id: i + 1,
+		title: `Tarea de prueba numero ${i + 1}`,
+		status: i < 3 ? "done" as const : "pending" as const,
+	}));
+
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: manyTasks,
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	let renderRequests = 0;
+	const mockTui: any = {
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, mockTui);
+	const initialLines = mirror.renderRail(40);
+	const initialJoined = initialLines.join("\n");
+
+	// Debe mostrar el indicador de scroll
+	assert.ok(initialJoined.includes("wheel scroll"), "Debe mostrar el indicador de scroll por overflow");
+	assert.ok(initialJoined.includes("Tarea de prueba numero 1"), "Inicialmente debe mostrar la primera tarea");
+
+	// Scrollear hacia abajo con wheel
+	const scrollDownHandled = mirror.handleRailWheel(1);
+	assert.equal(scrollDownHandled, true, "Scrollear hacia abajo debe retornar true");
+	assert.ok(renderRequests > 0, "Debe haber solicitado re-render");
+
+	const scrolledLines = mirror.renderRail(40);
+	const scrolledJoined = scrolledLines.join("\n");
+	assert.ok(scrolledJoined.includes("▲ 1 arriba"), "Debe indicar que hay 1 línea scrolleada arriba");
+
+	// Scrollear hacia arriba
+	const scrollUpHandled = mirror.handleRailWheel(-1);
+	assert.equal(scrollUpHandled, true, "Scrollear hacia arriba debe retornar true");
+
+	// Wheel handling vía handleMouse
+	const mouseHandled = mirror.handleMouse({ wheelDelta: 1 });
+	assert.deepEqual(mouseHandled, { handled: true }, "handleMouse debe procesar eventos con wheelDelta");
 });
 
 

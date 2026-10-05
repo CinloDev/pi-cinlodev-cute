@@ -32,6 +32,7 @@ const execAsync = promisify(exec);
 
 let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
+let latestTodoMirror: CinlodevTodoMirror | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
 let latestWorkingTree: CinlodevWorkingTreeCard | undefined;
 let latestToolsCard: CinlodevToolsCard | undefined;
@@ -40,6 +41,10 @@ let latestEngramCard: CinlodevEngramCard | undefined;
 let latestEngramHandoff: CinlodevEngramHandoffCard | undefined;
 let latestAgentsCard: CinlodevAgentsCard | undefined;
 let latestProjectTree: CinlodevProjectTreeCard | undefined;
+
+export function getLatestTodoMirror(): CinlodevTodoMirror | undefined {
+	return latestTodoMirror;
+}
 
 export function toggleUsageCard(): boolean {
 	return latestUsageCard?.toggle() ?? false;
@@ -539,6 +544,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				latestEngramCard?.invalidate();
 				latestEngramHandoff?.invalidate();
 				latestAgentsCard?.invalidate();
+				latestTodoMirror?.invalidate();
+				if (latestTodoTui && (latestTodoTui as any).__cuteTodoRail) {
+					const state = sidebarState(latestTodoTui);
+					state.parts.set("todo", (latestTodoTui as any).__cuteTodoRail);
+				}
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -559,6 +569,9 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
+		latestTodoMirror = todos;
+		(tui as any).__cuteTodoMirror = todos;
+		(ctx as any).__cuteTodoMirror = todos;
 		latestGitGraph = gitGraph;
 		latestWorkingTree = workingTree;
 		latestToolsCard = toolsCard;
@@ -656,10 +669,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => todos.renderBottom(width),
 			invalidate: () => todos.invalidate(),
 		};
-		const todoRail: Component & { dispose?(): void } = {
+		const todoRail: Component & { dispose?(): void; handleRailWheel?(delta: number): boolean } = {
 			render: (width: number) => todos.renderRail(width),
 			invalidate: () => todos.invalidate(),
+			handleRailWheel: (delta: number) => todos.handleRailWheel(delta),
 		};
+		(tui as any).__cuteTodoRail = todoRail;
 		const todoPart = sidebarPart(tui, "todo", todoBottom, todoRail);
 		const uninstall = installSidebar(tui, theme);
 		return {
