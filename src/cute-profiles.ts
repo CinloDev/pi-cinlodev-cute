@@ -523,6 +523,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 	private readonly pi?: ExtensionAPI;
 	private switcherHitboxes: SwitcherHitbox[] = [];
 	private isExpanded = false;
+	private scrollOffset = 0;
+	private lastMaxScrollOffset = 0;
 
 	constructor(tui?: TUI, theme?: Theme, cwd?: string, ctx?: ExtensionContext, pi?: ExtensionAPI) {
 		this.tui = tui;
@@ -583,12 +585,23 @@ export class CinlodevProfilesExtendedCard implements Component {
 		return false;
 	}
 
-	handleRailWheel(_wheelDelta: number): boolean {
-		// Disable profile switching via mouse wheel so wheel scroll naturally scrolls the sidebar content
+	handleRailWheel(wheelDelta: number): boolean {
+		if (wheelDelta !== 0) {
+			const step = wheelDelta > 0 ? 2 : -2;
+			if (this.lastMaxScrollOffset > 0) {
+				const next = Math.max(0, Math.min(this.lastMaxScrollOffset, this.scrollOffset + step));
+				if (next !== this.scrollOffset) {
+					this.scrollOffset = next;
+					this.tui?.requestRender();
+					return true;
+				}
+				return true;
+			}
+		}
 		return false;
 	}
 
-	render(width: number): string[] {
+	render(width: number, availableHeight?: number): string[] {
 		const theme = this.theme;
 		const g = cuteGlyphs(theme);
 		const colors = loadCuteColors();
@@ -752,9 +765,19 @@ export class CinlodevProfilesExtendedCard implements Component {
 
 		// Divider between switchers and agents
 		lines.push(divider);
+		const fixedHeaderLength = lines.length;
 
 		triggerUsageRefresh(this.ctx, this.tui, 15000);
 		const cachedAccounts = getCachedAccounts();
+
+		const bodyLines: string[] = [];
+		const bodyEffortHitboxes: {
+			type: "effort-host" | "effort-agent";
+			agentId?: string;
+			bodyLineIndex: number;
+			startX: number;
+			endX: number;
+		}[] = [];
 
 		const getAccountModelPools = (
 			account: string,
@@ -844,8 +867,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 			quotaInfo: ReturnType<typeof getAccountModelPools>,
 		): void => {
 			if (!quotaInfo.hasAccount || (!quotaInfo.pool5h && !quotaInfo.poolWeekly)) {
-				lines.push(boxLine(c.mint(`@${account}`), c.dim("sin cuota")));
-				lines.push(boxLine(renderFullGaugeBar(undefined)));
+				bodyLines.push(boxLine(c.mint(`@${account}`), c.dim("sin cuota")));
+				bodyLines.push(boxLine(renderFullGaugeBar(undefined)));
 				return;
 			}
 
@@ -855,8 +878,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 				const left5h = `${c.mint(`@${account}`)} ${c.dim("·")} ${c.muted("5h")}`;
 				const pctText = c.bold(p5.threshold.color(`${p5.pct}%`));
 				const right5h = p5.resetStr ? `${pctText} ${c.dim(`(${p5.resetStr})`)}` : pctText;
-				lines.push(boxLine(left5h, right5h));
-				lines.push(boxLine(renderFullGaugeBar(p5)));
+				bodyLines.push(boxLine(left5h, right5h));
+				bodyLines.push(boxLine(renderFullGaugeBar(p5)));
 			}
 
 			// Barra 2: Weekly Limit
@@ -865,8 +888,8 @@ export class CinlodevProfilesExtendedCard implements Component {
 				const leftWeekly = `${c.muted("Semanal")}`;
 				const pctText = c.bold(pw.threshold.color(`${pw.pct}%`));
 				const rightWeekly = pw.resetStr ? `${pctText} ${c.dim(`(${pw.resetStr})`)}` : pctText;
-				lines.push(boxLine(leftWeekly, rightWeekly));
-				lines.push(boxLine(renderFullGaugeBar(pw)));
+				bodyLines.push(boxLine(leftWeekly, rightWeekly));
+				bodyLines.push(boxLine(renderFullGaugeBar(pw)));
 			}
 		};
 
@@ -879,27 +902,27 @@ export class CinlodevProfilesExtendedCard implements Component {
 		// Line 1: Host title + model
 		const hostLeft = `${c.violet("🎯")} ${c.bold(c.violet("host / orquestador"))}`;
 		const hostMeta = `${c.gold(shortHost)} ${c.dim(`(${hostEffort})`)}`;
-		const hostLineIndex = lines.length;
+		const hostBodyLineIndex = bodyLines.length;
 		if (calcVisibleWidth("🎯 host / orquestador") + calcVisibleWidth(`${shortHost} (${hostEffort})`) + 2 <= innerWidth) {
-			lines.push(boxLine(hostLeft, hostMeta));
+			bodyLines.push(boxLine(hostLeft, hostMeta));
 			// Effort hitbox on the right side
 			const effortWidth = calcVisibleWidth(`(${hostEffort})`);
 			const safeRightX = innerWidth + 2 - effortWidth;
-			this.switcherHitboxes.push({
+			bodyEffortHitboxes.push({
 				type: "effort-host",
-				lineIndex: hostLineIndex,
+				bodyLineIndex: hostBodyLineIndex,
 				startX: Math.max(2, safeRightX),
 				endX: innerWidth + 2,
 			});
 		} else {
-			lines.push(boxLine(hostLeft));
-			const subLineIndex = lines.length;
-			lines.push(boxLine(`  ${hostMeta}`));
+			bodyLines.push(boxLine(hostLeft));
+			const subBodyLineIndex = bodyLines.length;
+			bodyLines.push(boxLine(`  ${hostMeta}`));
 			const effortWidth = calcVisibleWidth(`(${hostEffort})`);
 			const safeRightX = innerWidth + 2 - effortWidth;
-			this.switcherHitboxes.push({
+			bodyEffortHitboxes.push({
 				type: "effort-host",
-				lineIndex: subLineIndex,
+				bodyLineIndex: subBodyLineIndex,
 				startX: Math.max(2, safeRightX),
 				endX: innerWidth + 2,
 			});
@@ -934,11 +957,11 @@ export class CinlodevProfilesExtendedCard implements Component {
 		};
 
 		if (allAgentIds.length === 0) {
-			lines.push(boxLine(""));
-			lines.push(boxLine(c.dim("sin subagentes configurados")));
+			bodyLines.push(boxLine(""));
+			bodyLines.push(boxLine(c.dim("sin subagentes configurados")));
 		} else {
 			for (const agentId of allAgentIds) {
-				lines.push(boxLine(""));
+				bodyLines.push(boxLine(""));
 
 				const agentCfg = activeDetails.model_profiles?.[agentId];
 				const model = agentCfg?.model || hostModel;
@@ -952,28 +975,28 @@ export class CinlodevProfilesExtendedCard implements Component {
 				// Line 1: If name + model fits in one line, keep it together; otherwise put model on its own subline
 				const leftText = `${style.bullet} ${style.name(agentId)}`;
 				const rightText = `${c.gold(shortAgent)} ${c.dim(`(${effort})`)}`;
-				const agentLineIndex = lines.length;
+				const agentBodyLineIndex = bodyLines.length;
 				if (calcVisibleWidth(`• ${agentId}`) + calcVisibleWidth(`${shortAgent} (${effort})`) + 2 <= innerWidth) {
-					lines.push(boxLine(leftText, rightText));
+					bodyLines.push(boxLine(leftText, rightText));
 					const effortWidth = calcVisibleWidth(`(${effort})`);
 					const safeRightX = innerWidth + 2 - effortWidth;
-					this.switcherHitboxes.push({
+					bodyEffortHitboxes.push({
 						type: "effort-agent",
 						agentId,
-						lineIndex: agentLineIndex,
+						bodyLineIndex: agentBodyLineIndex,
 						startX: Math.max(2, safeRightX),
 						endX: innerWidth + 2,
 					});
 				} else {
-					lines.push(boxLine(leftText));
-					const subLineIndex = lines.length;
-					lines.push(boxLine(`  ${rightText}`));
+					bodyLines.push(boxLine(leftText));
+					const subBodyLineIndex = bodyLines.length;
+					bodyLines.push(boxLine(`  ${rightText}`));
 					const effortWidth = calcVisibleWidth(`(${effort})`);
 					const safeRightX = innerWidth + 2 - effortWidth;
-					this.switcherHitboxes.push({
+					bodyEffortHitboxes.push({
 						type: "effort-agent",
 						agentId,
-						lineIndex: subLineIndex,
+						bodyLineIndex: subBodyLineIndex,
 						startX: Math.max(2, safeRightX),
 						endX: innerWidth + 2,
 					});
@@ -987,16 +1010,87 @@ export class CinlodevProfilesExtendedCard implements Component {
 		// 4. Task Manager status summary if available
 		const tm = getTaskManagerSummary(this.cwd);
 		if (tm && tm.total > 0) {
-			lines.push(divider);
+			bodyLines.push(divider);
 			const ratioStr = `${tm.completed}/${tm.total}`;
 			const inProgStr = tm.inProgress > 0 ? ` · ${c.gold(`${tm.inProgress} en curso`)}` : "";
-			lines.push(boxLine(`${c.accent("📋 Task Manager")}`, `${c.mint(ratioStr)}${inProgStr}`));
+			bodyLines.push(boxLine(`${c.accent("📋 Task Manager")}`, `${c.mint(ratioStr)}${inProgStr}`));
 			if (tm.currentTaskTitle) {
-				lines.push(boxLine(`   ▶ ${c.text(tm.currentTaskTitle)}`));
+				bodyLines.push(boxLine(`   ▶ ${c.text(tm.currentTaskTitle)}`));
 			}
 		}
 
-		lines.push(bottom);
+		const targetCardLines =
+			availableHeight ||
+			(this.tui?.terminal?.rows && this.tui.terminal.rows >= 15
+				? Math.max(10, this.tui.terminal.rows - 11)
+				: undefined);
+
+		if (targetCardLines !== undefined && targetCardLines > fixedHeaderLength + 2) {
+			const availableBodyLines = targetCardLines - fixedHeaderLength - 1; // -1 for bottom border
+			if (bodyLines.length > availableBodyLines) {
+				const maxVisibleBody = availableBodyLines - 1; // reserve 1 line for scroll indicator
+				this.lastMaxScrollOffset = Math.max(0, bodyLines.length - maxVisibleBody);
+				this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.lastMaxScrollOffset));
+				const visibleBody = bodyLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleBody);
+
+				for (const l of visibleBody) {
+					lines.push(l);
+				}
+
+				for (const hb of bodyEffortHitboxes) {
+					if (hb.bodyLineIndex >= this.scrollOffset && hb.bodyLineIndex < this.scrollOffset + visibleBody.length) {
+						this.switcherHitboxes.push({
+							type: hb.type,
+							agentId: hb.agentId,
+							lineIndex: fixedHeaderLength + (hb.bodyLineIndex - this.scrollOffset),
+							startX: hb.startX,
+							endX: hb.endX,
+						});
+					}
+				}
+
+				const remainingBelow = bodyLines.length - (this.scrollOffset + visibleBody.length);
+				const parts: string[] = [];
+				if (this.scrollOffset > 0) parts.push("▲ " + this.scrollOffset + " arriba");
+				if (remainingBelow > 0) parts.push("▼ " + remainingBelow + " abajo");
+				lines.push(boxLine(c.dim("... " + parts.join(" · ") + " (wheel scroll)")));
+			} else {
+				this.lastMaxScrollOffset = 0;
+				this.scrollOffset = 0;
+				for (const l of bodyLines) {
+					lines.push(l);
+				}
+				for (const hb of bodyEffortHitboxes) {
+					this.switcherHitboxes.push({
+						type: hb.type,
+						agentId: hb.agentId,
+						lineIndex: fixedHeaderLength + hb.bodyLineIndex,
+						startX: hb.startX,
+						endX: hb.endX,
+					});
+				}
+				while (lines.length < targetCardLines - 1) {
+					lines.push(boxLine(""));
+				}
+			}
+			lines.push(bottom);
+		} else {
+			this.lastMaxScrollOffset = 0;
+			for (const l of bodyLines) {
+				lines.push(l);
+			}
+			for (const hb of bodyEffortHitboxes) {
+				this.switcherHitboxes.push({
+					type: hb.type,
+					agentId: hb.agentId,
+					lineIndex: fixedHeaderLength + hb.bodyLineIndex,
+					startX: hb.startX,
+					endX: hb.endX,
+				});
+			}
+			lines.push(bottom);
+		}
+
 		return lines;
 	}
 }
