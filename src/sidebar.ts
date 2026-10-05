@@ -26,6 +26,13 @@ import {
 	type CuteSidebarTab,
 	type TabHitbox,
 } from "./sidebar-tabs.ts";
+import {
+	sidebarState,
+	sidebarPart,
+	renderCUTESidebarBanner,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
+} from "./sidebar-state.ts";
 
 export {
 	measureDockMetrics,
@@ -41,6 +48,11 @@ export {
 	renderCuteSidebarTabBar,
 	type CuteSidebarTab,
 	type TabHitbox,
+	sidebarState,
+	sidebarPart,
+	renderCUTESidebarBanner,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
 };
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
@@ -58,69 +70,6 @@ type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };
 
 // Marker symbol to avoid double-wrapping layoutRoot
 export const CUTE_LAYOUT_WRAPPER = Symbol.for("pi-cinlodev-cute.layout-wrapper");
-
-// State symbol shared across extensions on tui.terminal
-const STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
-
-export interface SidebarState {
-	active: boolean;
-	ownsHost?: () => boolean;
-	parts: Map<string, Component>;
-	activeTabId?: string;
-}
-
-export function sidebarState(tui: TUI): SidebarState {
-	const terminal = tui.terminal as unknown as Record<symbol, SidebarState>;
-	return (terminal[STATE] ??= { active: false, parts: new Map() });
-}
-
-/** Keep the original bottom component mounted, suppressing only its paint when the sidebar owns the host. */
-export function sidebarPart<T extends Component & { dispose?(): void }>(
-	tui: TUI,
-	key: string,
-	bottom: T,
-	rail: Component = bottom,
-): T {
-	if (!tui.terminal) return bottom;
-	const state = sidebarState(tui);
-	state.parts.set(key, rail);
-	return {
-		...bottom,
-		render: (width: number) => (state.active && state.ownsHost?.() ? [] : bottom.render(width)),
-		dispose() {
-			if (state.parts.get(key) === rail) state.parts.delete(key);
-			bottom.dispose?.();
-		},
-	};
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] {
-	const pink = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
-	const text = (s: string): string => (theme ? safeFg(theme, "text", s) : s);
-	const strings = loadCuteStrings();
-	const user = strings.welcomePersona.user || detectSystemUser();
-	const banner = strings.sidebarBanner;
-
-	const label = banner.full.replace("{user}", user);
-	const shortLabel = banner.short.replace("{user}", user);
-	const raw = width >= visibleWidth(label) ? label : shortLabel;
-	const space = width - visibleWidth(raw);
-	if (space < 0) return [];
-
-	const leftPad = Math.floor(space / 2);
-	const rightPad = Math.ceil(space / 2);
-
-	const formatted = raw
-		.replace(new RegExp(escapeRegExp(banner.glyph), "g"), pink(banner.glyph))
-		.replace(new RegExp(escapeRegExp(banner.brand), "g"), pink(banner.brand))
-		.replace(new RegExp(escapeRegExp(banner.partner), "g"), text(banner.partner));
-
-	return [" ".repeat(leftPad) + formatted + " ".repeat(rightPad)];
-}
 
 export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	if (!tui.terminal) return () => {};

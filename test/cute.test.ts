@@ -1359,6 +1359,7 @@ test("Syntax check across all source files", () => {
 		"src/sidebar.ts",
 		"src/sidebar-dock.ts",
 		"src/sidebar-tabs.ts",
+		"src/sidebar-state.ts",
 		"src/welcome.ts",
 		"src/editor.ts",
 		"src/todos.ts",
@@ -4160,6 +4161,37 @@ test("sidebar-dock - measureDockMetrics, findDock and findTranscript execute saf
 		],
 	};
 	assert.equal(findTranscript(treeWithTranscript), mockScrollView as any);
+});
+
+test("sidebar-state - sidebarState, sidebarPart and renderCUTESidebarBanner operate safely", async () => {
+	const { sidebarState, sidebarPart, renderCUTESidebarBanner, SIDEBAR_STATE_KEY } = await import("../src/sidebar-state.ts");
+
+	const mockTerminal: any = {};
+	const mockTui: any = { terminal: mockTerminal };
+
+	// Inicialización de estado en el terminal
+	const state = sidebarState(mockTui);
+	assert.ok(state, "Debe retornar un objeto SidebarState");
+	assert.equal(state.active, false);
+	assert.equal(mockTerminal[SIDEBAR_STATE_KEY], state, "Debe estar alojado en el símbolo SIDEBAR_STATE_KEY del terminal");
+
+	// Registro de parte
+	const bottomComp = { render: () => ["bottom 1"] };
+	const railComp = { render: () => ["rail 1"] };
+	const part = sidebarPart(mockTui, "testKey", bottomComp, railComp);
+
+	assert.equal(state.parts.get("testKey"), railComp, "Debe registrar railComp en state.parts");
+	assert.deepEqual(part.render(50), ["bottom 1"], "Cuando el sidebar no es active, debe renderizar bottom");
+
+	state.active = true;
+	state.ownsHost = () => true;
+	assert.deepEqual(part.render(50), [], "Cuando el sidebar es active y ownsHost, debe suprimir el bottom retornando []");
+
+	// Banner
+	const banner = renderCUTESidebarBanner(50);
+	assert.ok(banner.length > 0, "Debe retornar al menos 1 línea de banner");
+	assert.ok(banner[0].includes("✿"), "Debe contener el glifo decorativo del banner");
+	assert.ok(banner[0].toUpperCase().includes("CINLODEV"), "Debe contener la marca o usuario en el banner");
 });
 
 
