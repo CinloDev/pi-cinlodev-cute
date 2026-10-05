@@ -17,7 +17,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
@@ -35,6 +35,7 @@ function resetAll() {
 	resetActiveProfileCache();
 	resetGitGraphCache();
 	resetGitStatusCache();
+	resetGitFileChangesCache();
 	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
@@ -4192,6 +4193,46 @@ test("sidebar-state - sidebarState, sidebarPart and renderCUTESidebarBanner oper
 	assert.ok(banner.length > 0, "Debe retornar al menos 1 línea de banner");
 	assert.ok(banner[0].includes("✿"), "Debe contener el glifo decorativo del banner");
 	assert.ok(banner[0].toUpperCase().includes("CINLODEV"), "Debe contener la marca o usuario en el banner");
+});
+
+test("cute-git-graph - fetchGitFileChanges respects TTL cache and invalidation", () => {
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-git-cache-"));
+	try {
+		cp.execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: tempDir, stdio: "ignore" });
+		fs.writeFileSync(path.join(tempDir, "file1.txt"), "hello", "utf8");
+		cp.execFileSync("git", ["add", "."], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["commit", "-m", "init"], { cwd: tempDir, stdio: "ignore" });
+
+		// Modificar un archivo
+		fs.writeFileSync(path.join(tempDir, "file1.txt"), "hello world", "utf8");
+		resetGitFileChangesCache();
+
+		const firstCall = fetchGitFileChanges(tempDir, 5000);
+		assert.equal(firstCall.length, 1);
+		assert.equal(firstCall[0].path, "file1.txt");
+
+		// Agregar un segundo archivo sin resetear caché
+		fs.writeFileSync(path.join(tempDir, "file2.txt"), "new file", "utf8");
+		const cachedCall = fetchGitFileChanges(tempDir, 5000);
+		// Debe devolver la referencia en caché (1 archivo) sin invocar git nuevamente
+		assert.equal(cachedCall.length, 1);
+		assert.equal(cachedCall, firstCall, "Debe retornar la referencia en memoria dentro del TTL");
+
+		// Resetear caché
+		resetGitFileChangesCache();
+		const freshCall = fetchGitFileChanges(tempDir, 5000);
+		assert.equal(freshCall.length, 2, "Luego de resetear caché debe ver los 2 archivos");
+
+		// Verificar que invalidateSidebarGitAndTree resetea la caché
+		fs.writeFileSync(path.join(tempDir, "file3.txt"), "third file", "utf8");
+		assert.equal(fetchGitFileChanges(tempDir, 5000).length, 2, "Aún en caché debe ver 2");
+		invalidateSidebarGitAndTree();
+		assert.equal(fetchGitFileChanges(tempDir, 5000).length, 3, "Tras invalidateSidebarGitAndTree debe ver 3");
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
 });
 
 

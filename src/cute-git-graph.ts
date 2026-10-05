@@ -269,6 +269,18 @@ export function resetGitStatusCache(): void {
 	cachedStatus = undefined;
 }
 
+export interface GitFileChangesCache {
+	files: GitFileChange[];
+	readAt: number;
+	cwd: string;
+}
+
+let cachedFileChanges: GitFileChangesCache | undefined;
+
+export function resetGitFileChangesCache(): void {
+	cachedFileChanges = undefined;
+}
+
 export interface GitFileChange {
 	path: string;
 	status: "modified" | "added" | "deleted" | "untracked" | "conflict";
@@ -277,7 +289,12 @@ export interface GitFileChange {
 	linesDeleted: number;
 }
 
-export function fetchGitFileChanges(cwd: string): GitFileChange[] {
+export function fetchGitFileChanges(cwd: string, ttlMs = 2000): GitFileChange[] {
+	const now = Date.now();
+	if (cachedFileChanges && cachedFileChanges.cwd === cwd && now - cachedFileChanges.readAt < ttlMs) {
+		return cachedFileChanges.files;
+	}
+
 	try {
 		const statusOut = cp.execFileSync("git", ["status", "--porcelain=v1"], {
 			cwd,
@@ -328,8 +345,10 @@ export function fetchGitFileChanges(cwd: string): GitFileChange[] {
 				linesDeleted: num.deleted,
 			});
 		}
+		cachedFileChanges = { files, readAt: now, cwd };
 		return files;
 	} catch {
+		cachedFileChanges = { files: [], readAt: now, cwd };
 		return [];
 	}
 }
@@ -810,6 +829,7 @@ export class CinlodevGitGraphCard implements Component {
 		resetGitStatusCache();
 		resetGitBranchesCache();
 		resetBranchDiffCache();
+		resetGitFileChangesCache();
 	}
 
 	render(width: number, availableHeight?: number): string[] {
@@ -1139,6 +1159,7 @@ export class CinlodevWorkingTreeCard implements Component {
 	invalidate(): void {
 		resetGitStatusCache();
 		resetBranchDiffCache();
+		resetGitFileChangesCache();
 	}
 
 	render(width: number, availableHeight?: number): string[] {

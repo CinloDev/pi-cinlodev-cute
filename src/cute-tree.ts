@@ -409,6 +409,11 @@ export class CinlodevProjectTreeCard implements Component {
 		return false;
 	}
 
+	invalidate(): void {
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
+	}
+
 	handleClick(lineIndex?: number, button?: string, localX?: number): boolean {
 		return this.handleRailClick(lineIndex ?? 0, button, localX);
 	}

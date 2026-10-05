@@ -759,16 +759,31 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		}
 	};
 
+	let currentTimer: NodeJS.Timeout | undefined;
+
+	const scheduleNext = (delayMs: number) => {
+		if (stopped) return;
+		if (currentTimer) clearTimeout(currentTimer);
+		currentTimer = setTimeout(() => {
+			if (stopped) return;
+			attach();
+			const isAttached = !!host.layoutRoot && roots.has(host.layoutRoot);
+			const nextDelay = isAttached ? 400 : loadCuteLayout().sidebar.attachMs;
+			scheduleNext(nextDelay);
+		}, delayMs);
+		currentTimer.unref();
+	};
+
 	attach();
-	const timer = setInterval(attach, loadCuteLayout().sidebar.attachMs);
-	timer.unref();
+	const isAlreadyAttached = !!host.layoutRoot && roots.has(host.layoutRoot);
+	scheduleNext(isAlreadyAttached ? 400 : loadCuteLayout().sidebar.attachMs);
 
 	return () => {
 		stopped = true;
 		state.active = false;
 		activeTranscript = undefined;
 		activeDock = undefined;
-		clearInterval(timer);
+		if (currentTimer) clearTimeout(currentTimer);
 		scroll.hideTransientScrollbar();
 		for (const cleanup of cleanups.reverse()) cleanup();
 		tui.requestRender();
