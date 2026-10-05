@@ -4,7 +4,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { cuteGlyphs, frameFg, cutePalette } from "./cute-theme";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
-import { formatProfileDisplay, loadCuteStrings } from "./cute-strings.ts";
+import { formatProfileDisplay, loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
 import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
 import { getContextThreshold } from "./cute-metrics.ts";
 
@@ -161,7 +161,7 @@ export class GentlemanHudWidget implements Component {
 		const innerWidth = safeWidth - 2;
 
 		const strings = loadCuteStrings();
-		const user = strings.welcomePersona.user || "Cinlo";
+		const user = strings.welcomePersona.user || detectSystemUser();
 		const title = theme.fg("accent", strings.hudTitle.replace("{user}", user));
 		const sep = theme.fg("borderMuted", ` ${cuteGlyphs(theme).separator} `);
 
@@ -335,7 +335,7 @@ export default function (pi: ExtensionAPI) {
 		const context = formatPercent(stats.contextPercent);
 		const model = ctx.model?.id ?? "no-model";
 		const strings = loadCuteStrings();
-		const user = strings.welcomePersona.user || "Cinlo";
+		const user = strings.welcomePersona.user || detectSystemUser();
 		const statusLine = strings.hudStatusLine;
 		const brand = statusLine.brand.replace("{user}", user);
 		return [

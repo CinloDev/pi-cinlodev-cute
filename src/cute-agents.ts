@@ -274,6 +274,14 @@ export class CinlodevAgentsCard implements Component {
 		return false;
 	}
 
+	handleRailClick(lineIndex: number, button?: string, localX?: number): boolean {
+		return this.handleClick(lineIndex, button, localX);
+	}
+
+	handleRailWheel(delta: number): boolean {
+		return this.handleWheel(delta);
+	}
+
 	private getUnifiedTasks(): SubagentTaskRecord[] {
 		const sessionTasks = collectSessionSubagentTasks(this.ctx);
 		// Deduplicate: prepend liveTasks that are not in sessionTasks

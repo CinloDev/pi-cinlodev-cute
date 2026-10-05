@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { resetActiveProfileCache, readActiveProfile } from "./cute-paths.ts";
+import { resetActiveProfileCache as resetPathActiveProfileCache, readActiveProfile } from "./cute-paths.ts";
 import { cuteGlyphs, cutePalette, safeFg, bolden } from "./cute-theme.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
@@ -11,6 +11,83 @@ import { getCachedAccounts, getQuotaThreshold, triggerUsageRefresh, fetchUsageAc
 
 export const SDD_PROFILES_API_SYMBOL = Symbol.for("cinlodev.sdd-profiles.api");
 export { fetchUsageAccounts as fetchQuotaAccounts } from "./cute-usage.ts";
+
+const PROFILES_CACHE_TTL_MS = 3000;
+
+interface CacheEntry<T> {
+	data: T;
+	timestamp: number;
+}
+
+const listProfilesCache = new Map<string, CacheEntry<ProfileItem[]>>();
+const profileDetailsCache = new Map<string, CacheEntry<FullProfileData | null>>();
+let cachedBuiltinProfilesDir: string | null | undefined;
+
+/**
+ * Dynamically resolves the sdd-profiles builtin profiles directory without hardcoding
+ * the GitHub organization or username.
+ * Probes ~/.pi/agent/git/ for any directory matching *sdd-profiles* containing a profiles/ folder.
+ */
+export function findSddProfilesDir(): string | null {
+	if (cachedBuiltinProfilesDir !== undefined) {
+		return cachedBuiltinProfilesDir;
+	}
+
+	const home = os.homedir();
+	const gitBase = path.join(home, ".pi", "agent", "git");
+	if (!fs.existsSync(gitBase)) {
+		cachedBuiltinProfilesDir = null;
+		return null;
+	}
+
+	// 1. Direct probe for existing or common path
+	const directCandidate = path.join(gitBase, "github.com", "CinloDev", "pi-sdd-profiles", "profiles");
+	if (fs.existsSync(directCandidate)) {
+		cachedBuiltinProfilesDir = directCandidate;
+		return directCandidate;
+	}
+
+	// 2. Dynamic probe: search up to 3 levels under gitBase for *sdd-profiles*/profiles
+	try {
+		const queue: { dir: string; depth: number }[] = [{ dir: gitBase, depth: 0 }];
+		while (queue.length > 0) {
+			const { dir, depth } = queue.shift()!;
+			if (depth > 3) continue;
+
+			const entries = fs.readdirSync(dir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isDirectory()) continue;
+				const fullPath = path.join(dir, entry.name);
+				if (entry.name.includes("sdd-profiles")) {
+					const profilesSubdir = path.join(fullPath, "profiles");
+					if (fs.existsSync(profilesSubdir)) {
+						cachedBuiltinProfilesDir = profilesSubdir;
+						return profilesSubdir;
+					}
+				}
+				if (depth < 3) {
+					queue.push({ dir: fullPath, depth: depth + 1 });
+				}
+			}
+		}
+	} catch {
+		// Fallback safely
+	}
+
+	cachedBuiltinProfilesDir = null;
+	return null;
+}
+
+export function resetProfilesCache(): void {
+	listProfilesCache.clear();
+	profileDetailsCache.clear();
+	cachedBuiltinProfilesDir = undefined;
+}
+
+export function resetActiveProfileCache(): void {
+	resetPathActiveProfileCache();
+	resetProfilesCache();
+}
 
 export interface ProfileItem {
 	name: string;
@@ -206,6 +283,7 @@ export function toggleProfileEffort(profileName: string, agentId?: string, cwd?:
 			const next = cycle[current] || "high";
 			data.default_effort = next;
 			fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+			resetProfilesCache();
 			return next;
 		}
 
@@ -216,6 +294,7 @@ export function toggleProfileEffort(profileName: string, agentId?: string, cwd?:
 		existingCfg.effort = next;
 		data.model_profiles[agentId] = existingCfg;
 		fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+		resetProfilesCache();
 		return next;
 	} catch {
 		return null;
@@ -226,15 +305,27 @@ export function toggleProfileEffort(profileName: string, agentId?: string, cwd?:
  * Loads the full profile JSON configuration from project, global or builtin profiles.
  */
 export function loadProfileDetails(name: string, cwd?: string): FullProfileData | null {
+	if (!name || typeof name !== "string") return null;
+
+	const normCwd = path.resolve(cwd ?? process.cwd());
+	const cacheKey = `${name.toLowerCase()}::${normCwd}`;
+	const now = Date.now();
+	const cached = profileDetailsCache.get(cacheKey);
+	if (cached && now - cached.timestamp < PROFILES_CACHE_TTL_MS) {
+		return cached.data;
+	}
+
 	const workingDir = cwd ?? process.cwd();
 	const home = os.homedir();
 	const projectDir = path.join(workingDir, ".pi", "profiles");
 	const globalDir = path.join(home, ".pi", "agent", "profiles");
-	const builtinDir = path.join(home, ".pi", "agent", "git", "github.com", "CinloDev", "pi-sdd-profiles", "profiles");
+	const builtinDir = findSddProfilesDir();
 
-	const candidateDirs = [projectDir, globalDir, builtinDir];
+	const candidateDirs = [projectDir, globalDir, ...(builtinDir ? [builtinDir] : [])];
 	const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
 	const candidateFiles = [`${name}.json`, `${name.toLowerCase()}.json`, `${slug}.json`];
+
+	let result: FullProfileData | null = null;
 
 	for (const dir of candidateDirs) {
 		if (!fs.existsSync(dir)) continue;
@@ -243,10 +334,12 @@ export function loadProfileDetails(name: string, cwd?: string): FullProfileData 
 			if (fs.existsSync(candidatePath)) {
 				try {
 					const raw = fs.readFileSync(candidatePath, "utf-8");
-					return JSON.parse(raw);
+					result = JSON.parse(raw);
+					break;
 				} catch {}
 			}
 		}
+		if (result) break;
 		try {
 			const entries = fs.readdirSync(dir);
 			for (const file of entries) {
@@ -259,13 +352,17 @@ export function loadProfileDetails(name: string, cwd?: string): FullProfileData 
 						(parsed.name && parsed.name.toLowerCase() === name.toLowerCase()) ||
 						path.basename(file, ".json").toLowerCase() === name.toLowerCase()
 					) {
-						return parsed;
+						result = parsed;
+						break;
 					}
 				} catch {}
 			}
+			if (result) break;
 		} catch {}
 	}
-	return null;
+
+	profileDetailsCache.set(cacheKey, { data: result, timestamp: now });
+	return result;
 }
 
 /**
@@ -358,17 +455,27 @@ function shortModelName(modelId: string): string {
  * List all available SDD profiles from runtime API or disk.
  */
 export function listAvailableProfiles(cwd?: string): ProfileItem[] {
+	const normCwd = path.resolve(cwd ?? process.cwd());
 	const api = getSddProfilesApi();
+	const cacheKey = `${normCwd}::${api ? "api" : "disk"}`;
+	const now = Date.now();
+	const cached = listProfilesCache.get(cacheKey);
+	if (cached && now - cached.timestamp < PROFILES_CACHE_TTL_MS) {
+		return cached.data;
+	}
+
 	if (api) {
 		try {
 			const list = api.listProfiles();
 			const activeName = api.getActiveProfile();
-			return list.map((p) => ({
+			const result = list.map((p) => ({
 				name: p.name,
 				description: p.description,
 				active: p.active ?? (activeName ? p.name.toLowerCase() === activeName.toLowerCase() : false),
 				source: p.source ?? "global",
 			}));
+			listProfilesCache.set(cacheKey, { data: result, timestamp: now });
+			return result;
 		} catch {
 			// Fallback to disk
 		}
@@ -378,7 +485,7 @@ export function listAvailableProfiles(cwd?: string): ProfileItem[] {
 	const home = os.homedir();
 	const projectDir = path.join(workingDir, ".pi", "profiles");
 	const globalDir = path.join(home, ".pi", "agent", "profiles");
-	const builtinDir = path.join(home, ".pi", "agent", "git", "github.com", "CinloDev", "pi-sdd-profiles", "profiles");
+	const builtinDir = findSddProfilesDir();
 
 	let activeName: string | null = null;
 	const projectActivePath = path.join(projectDir, ".active");
@@ -425,10 +532,13 @@ export function listAvailableProfiles(cwd?: string): ProfileItem[] {
 	// Project overrides global, which overrides builtin
 	scanDir(projectDir, "project");
 	scanDir(globalDir, "global");
-	scanDir(builtinDir, "builtin");
+	if (builtinDir) {
+		scanDir(builtinDir, "builtin");
+	}
 
 	const list = Array.from(profilesMap.values());
 	list.sort((a, b) => a.name.localeCompare(b.name));
+	listProfilesCache.set(cacheKey, { data: list, timestamp: now });
 	return list;
 }
 
@@ -445,10 +555,11 @@ export async function switchProfile(
 	if (api) {
 		try {
 			const res = await api.activateProfile(profileName);
+			resetProfilesCache();
 			resetActiveProfileCache();
 			return { success: res.success, message: res.message };
-		} catch (err: any) {
-			console.warn("[cute-profiles] Error activating via API, falling back to disk:", err);
+		} catch {
+			// Fallback to disk
 		}
 	}
 
@@ -508,6 +619,7 @@ export async function switchProfile(
 		} catch {}
 	}
 
+	resetProfilesCache();
 	resetActiveProfileCache();
 	return { success: true, message: `Perfil "${resolvedName}" activado.` };
 }

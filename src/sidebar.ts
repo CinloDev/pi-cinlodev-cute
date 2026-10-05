@@ -2,7 +2,7 @@ import { ScrollView, truncateToWidth, visibleWidth, type Component, type TUI } f
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { cuteGlyphs, frameFg, safeFg, bolden, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
-import { loadCuteStrings } from "./cute-strings.ts";
+import { loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
@@ -19,42 +19,49 @@ import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 // Single/rounded frame tokens map to the configured double (or ascii) preset
 // via cuteGlyphs at render time, so frameStyle switches stay consistent.
 
-export function measureDockHeight(dock: any, width: number): number {
-	if (!dock || !Array.isArray(dock.entries)) return 7;
-	let total = 0;
-	for (const entry of dock.entries) {
-		if (entry?.component && typeof entry.component.render === "function") {
-			try {
-				const lines = entry.component.render(width);
-				if (Array.isArray(lines)) total += lines.length;
-			} catch {}
-		}
-	}
-	return Math.max(3, total);
-}
+export function measureDockMetrics(
+	dock: any,
+	width: number,
+): { totalHeight: number; visibleInputBottomOffset: number } {
+	if (!dock || !Array.isArray(dock.entries)) return { totalHeight: 7, visibleInputBottomOffset: 5 };
+	let totalHeight = 0;
+	let visibleInputBottomOffset: number | undefined;
 
-export function getVisibleInputBottomOffset(dock: any, width: number): number {
-	if (!dock || !Array.isArray(dock.entries)) return 5;
-	let offset = 0;
 	for (const entry of dock.entries) {
 		if (entry?.component && typeof entry.component.render === "function") {
 			try {
 				const lines = entry.component.render(width);
 				if (Array.isArray(lines)) {
-					// In Pi's createChatViewport, the editor component is configured with minSize: 3
-					if (entry.minSize === 3) {
+					// In Pi's createChatViewport, the editor component is configured with minSize: 3 or is a Box component
+					if (
+						visibleInputBottomOffset === undefined &&
+						(entry.minSize === 3 || entry.component?.constructor?.name === "Box")
+					) {
 						for (let i = lines.length - 1; i >= 0; i--) {
 							if (lines[i].trim().length > 0) {
-								return offset + i;
+								visibleInputBottomOffset = totalHeight + i;
+								break;
 							}
 						}
 					}
-					offset += lines.length;
+					totalHeight += lines.length;
 				}
 			} catch {}
 		}
 	}
-	return Math.max(3, offset);
+
+	return {
+		totalHeight: Math.max(3, totalHeight),
+		visibleInputBottomOffset: Math.max(3, visibleInputBottomOffset ?? totalHeight),
+	};
+}
+
+export function measureDockHeight(dock: any, width: number): number {
+	return measureDockMetrics(dock, width).totalHeight;
+}
+
+export function getVisibleInputBottomOffset(dock: any, width: number): number {
+	return measureDockMetrics(dock, width).visibleInputBottomOffset;
 }
 
 function findDock(root: unknown): any {
@@ -295,7 +302,7 @@ export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] 
 	const pink = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const text = (s: string): string => (theme ? safeFg(theme, "text", s) : s);
 	const strings = loadCuteStrings();
-	const user = strings.welcomePersona.user || "Cinlo";
+	const user = strings.welcomePersona.user || detectSystemUser();
 	const banner = strings.sidebarBanner;
 
 	const label = banner.full.replace("{user}", user);
@@ -514,8 +521,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			if (targetCardKeys.length === 1) {
 				const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
 				const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
-				const dockHeight = measureDockHeight(activeDock, dockWidth);
-				const visibleInputBottomOffset = getVisibleInputBottomOffset(activeDock, dockWidth);
+				const { totalHeight: dockHeight, visibleInputBottomOffset } = measureDockMetrics(activeDock, dockWidth);
 				const transcriptHeight = activeTranscript?.viewportHeight;
 
 				// The input box's bottom horizontal line is at:
@@ -525,8 +531,10 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					? transcriptHeight + visibleInputBottomOffset
 					: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
 
-				// availableCardHeight is the total lines so the card's bottom line ends exactly at inputBottomRow
-				availableCardHeight = Math.max(10, inputBottomRow - headerLines + 1);
+				// availableCardHeight must never exceed termRows - headerLines so railLines never overflows terminal
+				const maxAllowedHeight = Math.max(10, termRows - headerLines);
+				const targetHeight = inputBottomRow - headerLines;
+				availableCardHeight = Math.min(maxAllowedHeight, Math.max(10, targetHeight));
 			}
 
 			const sectionData = targetCardKeys
