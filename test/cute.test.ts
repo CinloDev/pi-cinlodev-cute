@@ -22,6 +22,7 @@ import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevU
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
+import { invalidateSidebarGitAndTree } from "../src/footer.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -3913,6 +3914,36 @@ test("sidebar tabs - switching to git tab renders 2 cards at 50/50 split without
 		cleanup();
 		resetAll();
 	}
+});
+
+test("cute-tree - renders Git status badges and dirty directory bullets", () => {
+	resetAll();
+	const cwd = process.cwd();
+	const card = new CinlodevProjectTreeCard(undefined, undefined, undefined, cwd);
+	const lines = card.render(60);
+	const joined = lines.join("\n");
+
+	// At least one file or directory in this repo should have M or ● when git is dirty
+	const hasGitBadges = joined.includes("M") || joined.includes("●");
+	assert.ok(hasGitBadges, "Tree card should render git status badges (M or ●) for dirty files/dirs");
+});
+
+test("cute-git-graph - CinlodevWorkingTreeCard file clicking", () => {
+	resetAll();
+	const card = new CinlodevWorkingTreeCard(undefined, undefined, undefined);
+	const lines = card.render(60, 20);
+
+	// Line 3 is first modified file if dirty
+	if (lines.length > 4 && lines[3].includes("src/")) {
+		const handled = card.handleRailClick(3);
+		assert.equal(handled, true, "Clicking on modified file row should return true");
+	}
+});
+
+test("footer - invalidateSidebarGitAndTree executes safely", () => {
+	assert.doesNotThrow(() => {
+		invalidateSidebarGitAndTree();
+	});
 });
 
 

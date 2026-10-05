@@ -8,6 +8,7 @@ import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { detectProjectName } from "./cute-engram.ts";
 import { herdrAvailable, launchInHerdrTab } from "./cute-notify.ts";
+import { fetchGitFileChanges } from "./cute-git-graph.ts";
 
 export interface TreeNode {
 	name: string;
@@ -462,6 +463,8 @@ export class CinlodevProjectTreeCard implements Component {
 		const c = {
 			pink: (s: string): string => (theme ? safeFg(theme, "accent", s, "pink") : s),
 			gold: (s: string): string => (theme ? safeFg(theme, "heading", s, "yellow") : s),
+			yellow: (s: string): string => (theme ? safeFg(theme, "warning", s, "yellow") : s),
+			coral: (s: string): string => (theme ? safeFg(theme, "red", s, "red") : s),
 			mint: (s: string): string => (theme ? safeFg(theme, "mint", s, "green") : s),
 			cyan: (s: string): string => (theme ? safeFg(theme, "write", s, "cyan") : s),
 			text: (s: string): string => (theme ? safeFg(theme, "text", s) : s),
@@ -579,6 +582,19 @@ export class CinlodevProjectTreeCard implements Component {
 		const visibleRows = allRows.slice(this.scrollOffset, this.scrollOffset + maxVisibleRows);
 		const lines: string[] = [top];
 
+		// Map dirty Git files and parent directories
+		const gitChanges = fetchGitFileChanges(this.cwd);
+		const gitStatusMap = new Map<string, string>();
+		const dirtyDirSet = new Set<string>();
+		for (const ch of gitChanges) {
+			gitStatusMap.set(ch.path, ch.status);
+			let parentDir = path.dirname(ch.path);
+			while (parentDir && parentDir !== "." && parentDir !== "/") {
+				dirtyDirSet.add(parentDir);
+				parentDir = path.dirname(parentDir);
+			}
+		}
+
 		for (const row of visibleRows) {
 			const currentLineIdx = lines.length;
 			const styledPrefix = c.dim(row.prefix);
@@ -586,10 +602,12 @@ export class CinlodevProjectTreeCard implements Component {
 			if (row.node.isDirectory) {
 				const isExpanded = this.expandedDirs.has(row.node.relPath);
 				const folderIcon = isExpanded ? "📂 " : "📁 ";
-				const folderName = c.cyan(row.node.name);
+				const hasDirtyChildren = dirtyDirSet.has(row.node.relPath);
+				const folderName = hasDirtyChildren ? c.yellow(row.node.name) : c.cyan(row.node.name);
 				const countStr = typeof row.node.itemCount === "number" ? c.dim(` (${row.node.itemCount} items)`) : "";
+				const rightBadge = hasDirtyChildren ? c.yellow("●") : "";
 				const content = `${styledPrefix}${folderIcon}${folderName}${countStr}`;
-				lines.push(boxLine(content));
+				lines.push(boxLine(content, rightBadge));
 
 				this.hitboxes.push({
 					lineIndex: currentLineIdx,
@@ -600,6 +618,8 @@ export class CinlodevProjectTreeCard implements Component {
 				});
 			} else {
 				const fileIcon = `${getFileIcon(row.node.extension)} `;
+				const fileGitStatus = gitStatusMap.get(row.node.relPath);
+				let rightBadge = "";
 				let fileColor = c.text;
 				const ext = (row.node.extension || "").toLowerCase();
 				if (ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx" || ext === "mjs") {
@@ -610,12 +630,26 @@ export class CinlodevProjectTreeCard implements Component {
 					fileColor = c.text;
 				}
 
+				if (fileGitStatus === "modified") {
+					fileColor = c.yellow;
+					rightBadge = c.yellow("M");
+				} else if (fileGitStatus === "added") {
+					fileColor = c.mint;
+					rightBadge = c.mint("A");
+				} else if (fileGitStatus === "untracked") {
+					fileColor = c.pink;
+					rightBadge = c.pink("?");
+				} else if (fileGitStatus === "conflict") {
+					fileColor = c.coral;
+					rightBadge = c.coral("U");
+				}
+
 				const isSelected = this.selectedRelPath === row.node.relPath;
 				const styledName = isSelected
 					? c.pink(bolden(this.theme, row.node.name))
 					: fileColor(row.node.name);
 				const content = `${styledPrefix}${fileIcon}${styledName}`;
-				lines.push(boxLine(content));
+				lines.push(boxLine(content, rightBadge));
 
 				this.hitboxes.push({
 					lineIndex: currentLineIdx,

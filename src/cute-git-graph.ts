@@ -7,7 +7,7 @@ import { loadCuteColors } from "./cute-colors.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 import { readGitBranch } from "./cute-paths.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
-import { detectTerminal } from "./cute-tree.ts";
+import { detectTerminal, launchEditor } from "./cute-tree.ts";
 import { herdrAvailable, launchInHerdrTab } from "./cute-notify.ts";
 
 const SIDEBAR_STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
@@ -1064,6 +1064,7 @@ export class CinlodevWorkingTreeCard implements Component {
 	private lastMaxScrollOffset = 0;
 	private hitboxClose?: { start: number; end: number };
 	private hitboxOpen?: { start: number; end: number };
+	private fileHitboxes: Array<{ lineIndex: number; filePath: string }> = [];
 
 	constructor(ctx?: ExtensionContext, tui?: TUI, theme?: Theme) {
 		this.ctx = ctx;
@@ -1113,7 +1114,22 @@ export class CinlodevWorkingTreeCard implements Component {
 					return true;
 				}
 			}
+			const hit = this.fileHitboxes.find((h) => h.lineIndex === lineIndex);
+			if (hit) {
+				const cwd = this.ctx?.cwd ?? process.cwd();
+				launchEditor(hit.filePath, cwd);
+				return true;
+			}
 			return true;
+		}
+
+		if (lineIndex > 0) {
+			const hit = this.fileHitboxes.find((h) => h.lineIndex === lineIndex);
+			if (hit) {
+				const cwd = this.ctx?.cwd ?? process.cwd();
+				launchEditor(hit.filePath, cwd);
+				return true;
+			}
 		}
 
 		return this.handleClick(lineIndex);
@@ -1189,8 +1205,9 @@ export class CinlodevWorkingTreeCard implements Component {
 			const actionsStart = safeWidth - 3 - actionsLen;
 			this.hitboxClose = { start: actionsStart, end: actionsStart + 5 };
 			this.hitboxOpen = { start: actionsStart + 6, end: safeWidth - 3 };
+			this.fileHitboxes = [];
 
-			const allRows: Array<{ line: string; right: string; isDivider?: boolean }> = [];
+			const allRows: Array<{ line: string; right: string; isDivider?: boolean; filePath?: string }> = [];
 			const summaryBadge = `${c.yellow(`● ${diff.files.length}`)} ${c.dim(diff.files.length === 1 ? "archivo" : "archivos")}`;
 			const deltasTotal =
 				diff.totalAdded > 0 || diff.totalDeleted > 0
@@ -1214,7 +1231,7 @@ export class CinlodevWorkingTreeCard implements Component {
 					const rightStr = rightParts.join(" ");
 
 					const styledPath = formatFilePathWithDracula(f.path, c);
-					allRows.push({ line: `${badge}  ${styledPath}`, right: rightStr });
+					allRows.push({ line: `${badge}  ${styledPath}`, right: rightStr, filePath: f.path });
 				}
 			}
 
@@ -1234,7 +1251,11 @@ export class CinlodevWorkingTreeCard implements Component {
 				if (r.isDivider) {
 					lines.push(frame(`${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
 				} else {
+					const currentIdx = lines.length;
 					lines.push(boxLine(r.line, r.right));
+					if (r.filePath) {
+						this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath });
+					}
 				}
 			}
 
@@ -1297,7 +1318,8 @@ export class CinlodevWorkingTreeCard implements Component {
 			return lines;
 		}
 
-		const allRows: Array<{ line: string; right: string; isDivider?: boolean }> = [];
+		const allRows: Array<{ line: string; right: string; isDivider?: boolean; filePath?: string }> = [];
+		this.fileHitboxes = [];
 		const summaryBadge = `${c.yellow(`● ${files.length}`)} ${c.dim(files.length === 1 ? "archivo modificado" : "archivos modificados")}`;
 		const deltasTotal =
 			status.linesAdded > 0 || status.linesDeleted > 0
@@ -1319,7 +1341,7 @@ export class CinlodevWorkingTreeCard implements Component {
 			const rightStr = rightParts.join(" ");
 
 			const styledPath = formatFilePathWithDracula(f.path, c);
-			allRows.push({ line: `${badge}  ${styledPath}`, right: rightStr });
+			allRows.push({ line: `${badge}  ${styledPath}`, right: rightStr, filePath: f.path });
 		}
 
 		const hasOverflow = isFixed && allRows.length > contentCapacity;
@@ -1338,7 +1360,11 @@ export class CinlodevWorkingTreeCard implements Component {
 			if (r.isDivider) {
 				lines.push(frame(`${g.dividerL}${g.h.repeat(safeWidth - 2)}${g.dividerR}`));
 			} else {
+				const currentIdx = lines.length;
 				lines.push(boxLine(r.line, r.right));
+				if (r.filePath) {
+					this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath });
+				}
 			}
 		}
 
