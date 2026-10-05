@@ -21,6 +21,7 @@ import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, Cinlo
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
+import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -2247,15 +2248,16 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.equal(visibleWidth(unthemedBar.line), 50);
 	assert.equal(visibleWidth(unthemedBar.divider), 50);
 
-	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:PROF, 5:MEM
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:PROF, 5:MEM, 6:TREE
 	assert.ok(unthemedBar.line.includes("1:MAIN"));
 	assert.ok(unthemedBar.line.includes("2:GIT"));
 	assert.ok(unthemedBar.line.includes("3:AGENTS"));
 	assert.ok(unthemedBar.line.includes("4:PROF"));
 	assert.ok(unthemedBar.line.includes("5:MEM"));
+	assert.ok(unthemedBar.line.includes("6:TREE"));
 
-	// Non-empty hitboxes (5 tabs: MAIN, GIT, AGENTS, prof, MEM)
-	assert.equal(unthemedBar.hitboxes.length, 5);
+	// Non-empty hitboxes (6 tabs: MAIN, GIT, AGENTS, prof, MEM, TREE)
+	assert.equal(unthemedBar.hitboxes.length, 6);
 	for (const h of unthemedBar.hitboxes) {
 		assert.ok(h.id);
 		assert.ok(h.key);
@@ -2271,7 +2273,7 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
 	assert.equal(visibleWidth(themedBar.line), 50);
 	assert.equal(visibleWidth(themedBar.divider), 50);
-	assert.equal(themedBar.hitboxes.length, 5);
+	assert.equal(themedBar.hitboxes.length, 6);
 
 	// 3. Narrow rail edge case: visibleWidth must never exceed width
 	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
@@ -2416,14 +2418,14 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 		});
 		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
 
-		// Wheel backward from main (index 0) wraps to mem (index 4)
+		// Wheel backward from main (index 0) wraps to tree (index 5)
 		scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
 			y: 3,
 		});
-		assert.equal(state.activeTabId, "mem", "Wheel delta -1 from index 0 should wrap to mem");
+		assert.equal(state.activeTabId, "tree", "Wheel delta -1 from index 0 should wrap to tree");
 	} finally {
 		cleanup();
 		resetAll();
@@ -2577,6 +2579,79 @@ test("sidebar integration - direct hstack without header discards foreign rail a
 
 		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
 		assert.ok(scrollEntry, "CUTE tabbed ScrollView must be mounted");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("sidebar card height - activeTranscript viewportHeight aligns card height to input line", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const mockTranscript: any = {
+		scrollbar: "auto",
+		setScrollbar: () => {},
+		viewportHeight: 48,
+		render: () => ["transcript line 1"],
+		invalidate: () => {},
+	};
+
+	const foreignRail: any = {
+		render: () => ["foreign rail"],
+		invalidate: () => {},
+	};
+
+	const mockLayoutRoot: any = {
+		render: () => ["root"],
+		invalidate: () => {},
+	};
+
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockTranscript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: foreignRail, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 54 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+
+		// 1. Test "tree" tab (single card: projectTree)
+		state.activeTabId = "tree";
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.ok(nodeResult.entries.length >= 2, "HStack must contain entries");
+
+		const treeCard = state.parts.get("projectTree") as CinlodevProjectTreeCard;
+		assert.ok(treeCard, "projectTree card should be registered in state.parts");
+
+		// Header lines: banner (2) + tab bar (2) + spacing before cards (1) = 5 lines
+		// Available card height = 48 (transcript viewportHeight) - 5 (headerLines) = 43 lines
+		const layout = loadCuteLayout().sidebar;
+		const netWidth = layout.railWidth - layout.railPadding * 2;
+		const treeLines = treeCard.render(netWidth, 43);
+
+		assert.equal(treeLines.length, 43, "Tree card must render 43 lines (48 - headerLines)");
+		assert.ok(treeLines[42].includes("╚") || treeLines[42].includes("═") || treeLines[42].includes("─"), "Bottom line must be card bottom border");
+
+		// 2. Test "prof" tab (single card: cute-profiles)
+		state.activeTabId = "prof";
+		mockLayoutRoot[NODE]();
+		const profCard = state.parts.get("cute-profiles") as CinlodevProfilesExtendedCard;
+		assert.ok(profCard, "cute-profiles card should be registered in state.parts");
+
+		const profLines = profCard.render(netWidth, 43);
+		assert.equal(profLines.length, 43, "Profiles card must render 43 lines (48 - headerLines)");
+		assert.ok(profLines[42].includes("╚") || profLines[42].includes("═") || profLines[42].includes("─"), "Bottom line must be card bottom border");
 	} finally {
 		cleanup();
 		resetAll();
@@ -2835,6 +2910,100 @@ test("cute-profiles - CinlodevProfilesExtendedCard renders switcher, accounts, s
 		}
 	} finally {
 		setCachedAccountsForTesting(null);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetAll();
+	}
+});
+
+test("cute-profiles - CinlodevProfilesExtendedCard internal scrolling and height constraint", () => {
+	resetAll();
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-scroll-test-"));
+	try {
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "prof1", "utf8");
+		fs.writeFileSync(
+			path.join(projDir, "prof1.json"),
+			JSON.stringify({
+				name: "prof1",
+				default_model: "cpamc/acc1/gemini-3.8-flash-high",
+				default_effort: "high",
+				model_profiles: {
+					"gentle-ai-worker": { model: "cpamc/acc2/gemini-3.8-flash-high", effort: "high" },
+					"gentle-ai-explore": { model: "cpamc/acc3/gemini-3.8-flash-high", effort: "low" },
+					"jd-judge-a": { model: "cpamc/acc1/gemini-3.8-flash-high", effort: "high" },
+					"review-risk": { model: "cpamc/acc2/gemini-3.8-flash-high", effort: "medium" },
+					"review-reliability": { model: "cpamc/acc3/gemini-3.8-flash-high", effort: "low" },
+					"research-scout": { model: "cpamc/acc1/gemini-3.8-flash-high", effort: "high" },
+					"research-writer": { model: "cpamc/acc2/gemini-3.8-flash-high", effort: "medium" },
+				},
+			}),
+			"utf8",
+		);
+
+		let renderRequested = false;
+		const mockTui: any = {
+			requestRender: () => {
+				renderRequested = true;
+			},
+		};
+
+		const card = new CinlodevProfilesExtendedCard(mockTui, undefined, tmpDir);
+
+		// 1. Calling render(52, 25) constrains lines to exactly 25
+		const lines = card.render(52, 25);
+		assert.equal(lines.length, 25, "Lines must be constrained to exactly 25");
+
+		// Top header and divider should be intact
+		assert.ok(lines[0].includes("Profiles & Clusters"), "Header must be at the top");
+		const fullText = lines.join("\n");
+		assert.ok(fullText.includes("wheel scroll"), "Scroll indicator must be visible when content overflows");
+		assert.ok(fullText.includes("abajo"), "Should indicate remaining lines below");
+
+		// 2. handleRailWheel(1) increments scrollOffset and requests render
+		renderRequested = false;
+		const wheelDownHandled = card.handleRailWheel(1);
+		assert.equal(wheelDownHandled, true, "Wheel down should be handled internally");
+		assert.equal(renderRequested, true, "requestRender should be called on scroll");
+
+		const scrolledLines = card.render(52, 25);
+		assert.equal(scrolledLines.length, 25, "Scrolled lines must still equal 25");
+		const scrolledText = scrolledLines.join("\n");
+		assert.ok(scrolledText.includes("arriba"), "Should indicate scrolled lines above");
+
+		// 3. handleRailWheel(-1) decrements scrollOffset
+		renderRequested = false;
+		const wheelUpHandled = card.handleRailWheel(-1);
+		assert.equal(wheelUpHandled, true, "Wheel up should be handled internally");
+		assert.equal(renderRequested, true, "requestRender should be called on scroll up");
+
+		// 4. Boundary behavior: scrolling past top returns true but doesn't request unnecessary render
+		renderRequested = false;
+		const topBoundaryHandled = card.handleRailWheel(-1);
+		assert.equal(topBoundaryHandled, true, "Top boundary wheel should return true to block outer scroll");
+		assert.equal(renderRequested, false, "Should not requestRender when already at boundary");
+
+		// 5. wheelDelta === 0 returns false
+		assert.equal(card.handleRailWheel(0), false, "handleRailWheel(0) should return false");
+
+		// 6. When availableHeight is large (no overflow), pad with empty lines to match availableHeight
+		const largeLines = card.render(52, 60);
+		assert.equal(largeLines.length, 60, "Lines must be padded to exactly target availableHeight 60");
+		const largeText = largeLines.join("\n");
+		assert.ok(!largeText.includes("wheel scroll"), "No scroll indicator should be present when content fits");
+
+		// 7. When availableHeight is undefined and no terminal rows, render natural unconstrained lines
+		const unconstrainedLines = card.render(52);
+		assert.ok(unconstrainedLines.length > 0);
+		assert.ok(!unconstrainedLines.join("\n").includes("wheel scroll"));
+		// And handleRailWheel returns false when unconstrained
+		assert.equal(card.handleRailWheel(1), false, "handleRailWheel should return false when unconstrained");
+
+		// 8. Terminal rows calculation fallback when availableHeight is undefined
+		mockTui.terminal = { rows: 40 };
+		const terminalRowsLines = card.render(52);
+		assert.equal(terminalRowsLines.length, 29, "Lines should equal terminal.rows - 11 (40 - 11 = 29)");
+	} finally {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		resetAll();
 	}
@@ -3159,6 +3328,451 @@ Found 1 memories:
 	assert.ok(SIDEBAR_TAB_CARD_MAP.git.includes("workingTree"), "git tab must include workingTree");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("engramHandoff"), "mem tab must include engramHandoff");
 });
+
+test("cute-tree - scanDirectoryTree returns sorted directories and files, ignoring default patterns", () => {
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-scan-test-"));
+	try {
+		fs.mkdirSync(path.join(tempDir, ".git"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/main");
+
+		fs.mkdirSync(path.join(tempDir, "node_modules"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "node_modules", "dummy.txt"), "ignored");
+
+		fs.mkdirSync(path.join(tempDir, "dist"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "dist", "bundle.js"), "ignored");
+
+		fs.mkdirSync(path.join(tempDir, "src", "components"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "export {}");
+		fs.writeFileSync(path.join(tempDir, "src", "utils.ts"), "export {}");
+		fs.writeFileSync(path.join(tempDir, "src", "components", "button.tsx"), "export {}");
+
+		fs.mkdirSync(path.join(tempDir, "docs"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "docs", "readme.md"), "# docs");
+
+		fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+		fs.writeFileSync(path.join(tempDir, "tsconfig.json"), "{}");
+		fs.writeFileSync(path.join(tempDir, "z_last.txt"), "hello");
+
+		const nodes = scanDirectoryTree(tempDir);
+
+		// .git, node_modules, dist must be ignored
+		assert.ok(!nodes.some((n) => n.name === ".git"));
+		assert.ok(!nodes.some((n) => n.name === "node_modules"));
+		assert.ok(!nodes.some((n) => n.name === "dist"));
+
+		// Root nodes: directories first (alphabetical), then files (alphabetical)
+		// Dirs: docs, src
+		// Files: package.json, tsconfig.json, z_last.txt
+		assert.equal(nodes.length, 5);
+		assert.equal(nodes[0].name, "docs");
+		assert.equal(nodes[0].isDirectory, true);
+		assert.equal(nodes[0].relPath, "docs");
+		assert.equal(nodes[0].itemCount, 1);
+		assert.equal(nodes[0].children?.length, 1);
+		assert.equal(nodes[0].children?.[0].name, "readme.md");
+		assert.equal(nodes[0].children?.[0].isDirectory, false);
+		assert.equal(nodes[0].children?.[0].extension, "md");
+
+		assert.equal(nodes[1].name, "src");
+		assert.equal(nodes[1].isDirectory, true);
+		assert.equal(nodes[1].relPath, "src");
+		assert.equal(nodes[1].itemCount, 3);
+		assert.equal(nodes[1].children?.[0].name, "components");
+		assert.equal(nodes[1].children?.[0].isDirectory, true);
+		assert.equal(nodes[1].children?.[1].name, "index.ts");
+		assert.equal(nodes[1].children?.[2].name, "utils.ts");
+
+		assert.equal(nodes[2].name, "package.json");
+		assert.equal(nodes[2].isDirectory, false);
+		assert.equal(nodes[2].extension, "json");
+
+		assert.equal(nodes[3].name, "tsconfig.json");
+		assert.equal(nodes[3].isDirectory, false);
+		assert.equal(nodes[3].extension, "json");
+
+		assert.equal(nodes[4].name, "z_last.txt");
+		assert.equal(nodes[4].isDirectory, false);
+		assert.equal(nodes[4].extension, "txt");
+
+		// Non-existent directory returns empty array
+		const emptyNodes = scanDirectoryTree(path.join(tempDir, "does-not-exist"));
+		assert.deepEqual(emptyNodes, []);
+
+		// Custom ignoredNames
+		const customNodes = scanDirectoryTree(tempDir, 5, 0, new Set(["docs", "package.json"]));
+		assert.ok(!customNodes.some((n) => n.name === "docs"));
+		assert.ok(!customNodes.some((n) => n.name === "package.json"));
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - launchEditor behavior falls back gracefully without throwing", () => {
+	const origHypr = process.env.HYPRLAND_INSTANCE_SIGNATURE;
+	const origTerm = process.env.TERMINAL;
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-launch-test-"));
+	const testFile = path.join(tempDir, "sample.txt");
+	fs.writeFileSync(testFile, "test");
+
+	try {
+		delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
+		process.env.TERMINAL = "true";
+
+		assert.doesNotThrow(() => {
+			const result = launchEditor();
+			assert.equal(typeof result, "boolean");
+		});
+
+		assert.doesNotThrow(() => {
+			const resultWithArgs = launchEditor(testFile, tempDir);
+			assert.equal(typeof resultWithArgs, "boolean");
+		});
+	} finally {
+		if (origHypr !== undefined) process.env.HYPRLAND_INSTANCE_SIGNATURE = origHypr;
+		else delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
+		if (origTerm !== undefined) process.env.TERMINAL = origTerm;
+		else delete process.env.TERMINAL;
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - CinlodevProjectTreeCard rendering, box lines, header and files", () => {
+	resetAll();
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-card-test-"));
+	try {
+		fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log('hi');");
+		fs.writeFileSync(path.join(tempDir, "package.json"), JSON.stringify({ name: "demo-project" }));
+
+		const mockCtx: any = { cwd: tempDir };
+		let renderRequested = false;
+		const mockTui: any = {
+			requestRender: () => {
+				renderRequested = true;
+			},
+		};
+
+		const card = new CinlodevProjectTreeCard(mockCtx, mockTui, undefined, tempDir);
+
+		// Render at width 50
+		const lines = card.render(50);
+		assert.ok(lines.length >= 4, "Should render header, directories, files and footer");
+		for (const line of lines) {
+			assert.equal(visibleWidth(line), 50, `Line length must equal 50: ${line}`);
+		}
+
+		// Header checks: top border, PROYECTO title, and editor badge (e.g. nvim)
+		const topHeader = lines[0];
+		assert.ok(topHeader.includes("PROYECTO"), "Header must include PROYECTO");
+		assert.ok(topHeader.includes("nvim"), "Header must include nvim editor button");
+
+		// Content checks: src directory and package.json
+		assert.ok(lines.some((l) => l.includes("src")), "Rendered lines must contain src directory");
+		assert.ok(lines.some((l) => l.includes("package.json")), "Rendered lines must contain package.json");
+		assert.ok(lines.some((l) => l.includes("index.ts")), "src is expanded by default, so index.ts should be visible");
+
+		// Box line framing check: middle lines must have vertical borders
+		for (let i = 1; i < lines.length - 1; i++) {
+			assert.ok(lines[i].startsWith("║ ") && lines[i].endsWith(" ║"), `Box line ${i} must have proper borders`);
+		}
+
+		// Empty directory case
+		const emptyDir = path.join(tempDir, "empty");
+		fs.mkdirSync(emptyDir, { recursive: true });
+		const emptyCard = new CinlodevProjectTreeCard(undefined, mockTui, undefined, emptyDir);
+		const emptyLines = emptyCard.render(50);
+		assert.equal(emptyLines.length, 3);
+		assert.ok(emptyLines[1].includes("Sin archivos en el proyecto"));
+		for (const l of emptyLines) {
+			assert.equal(visibleWidth(l), 50);
+		}
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - handleRailClick directory toggle, expand/collapse all, and editor launch", () => {
+	resetAll();
+	const origHypr = process.env.HYPRLAND_INSTANCE_SIGNATURE;
+	const origTerm = process.env.TERMINAL;
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-click-test-"));
+
+	try {
+		delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
+		process.env.TERMINAL = "true";
+
+		fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log('hi');");
+		fs.mkdirSync(path.join(tempDir, "docs"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "docs", "intro.md"), "# intro");
+		fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+
+		let renderCalls = 0;
+		const mockTui: any = {
+			requestRender: () => {
+				renderCalls++;
+			},
+		};
+
+		const card = new CinlodevProjectTreeCard(undefined, mockTui, undefined, tempDir);
+
+		// Initially "src" is auto-expanded
+		assert.ok(card.getExpandedDirs().has("src"));
+
+		// Render to generate hitboxes
+		card.render(50);
+		const hitboxes = card.getHitboxes();
+		assert.ok(hitboxes.length > 0);
+
+		// 1. Click header (lineIndex 0) launches editor
+		assert.equal(card.handleRailClick(0), true);
+
+		// 2. Click on a directory hitbox toggles expansion
+		const srcHitbox = hitboxes.find((h) => h.type === "toggle-dir" && h.node?.relPath === "src");
+		assert.ok(srcHitbox, "src directory hitbox must exist");
+
+		const prevRender = renderCalls;
+		// Clicking src collapses it
+		const toggleResult = card.handleRailClick(srcHitbox.lineIndex, "left", srcHitbox.startX);
+		assert.equal(toggleResult, true);
+		assert.ok(!card.getExpandedDirs().has("src"), "src should be collapsed after click");
+		assert.ok(renderCalls > prevRender);
+
+		// Clicking src again expands it
+		card.handleRailClick(srcHitbox.lineIndex, "left", srcHitbox.startX);
+		assert.ok(card.getExpandedDirs().has("src"), "src should be expanded again after second click");
+
+		// 3. Right-click toggles collapseAll / expandAll
+		// First right-click: collapses all since expandedDirs is non-empty
+		const rightClick1 = card.handleRailClick(0, "right");
+		assert.equal(rightClick1, true);
+		assert.equal(card.getExpandedDirs().size, 0, "Right-click should collapse all");
+
+		// Second right-click: expands all
+		const rightClick2 = card.handleRailClick(0, "right");
+		assert.equal(rightClick2, true);
+		assert.ok(card.getExpandedDirs().size >= 2, "Second right-click should expand all directories (src, docs)");
+
+		// Direct setExpanded, expandAll, collapseAll methods
+		card.collapseAll();
+		assert.equal(card.getExpandedDirs().size, 0);
+		card.setExpanded("docs", true);
+		assert.ok(card.getExpandedDirs().has("docs"));
+		card.setExpanded("docs", false);
+		assert.ok(!card.getExpandedDirs().has("docs"));
+
+		card.expandAll();
+		assert.ok(card.getExpandedDirs().has("src"));
+		assert.ok(card.getExpandedDirs().has("docs"));
+
+		// 4. File click opens file
+		card.render(50);
+		const fileHitbox = card.getHitboxes().find((h) => h.type === "open-file");
+		assert.ok(fileHitbox, "File hitbox must exist");
+		assert.equal(card.handleClick(fileHitbox.lineIndex, "left", fileHitbox.startX), true);
+
+		// Invalidation
+		card.invalidate();
+	} finally {
+		if (origHypr !== undefined) process.env.HYPRLAND_INSTANCE_SIGNATURE = origHypr;
+		else delete process.env.HYPRLAND_INSTANCE_SIGNATURE;
+		if (origTerm !== undefined) process.env.TERMINAL = origTerm;
+		else delete process.env.TERMINAL;
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - handleWheel scrolling for large directory trees", () => {
+	resetAll();
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-wheel-test-"));
+	try {
+		// Create 30 files so that tree has 30 rows (maxVisibleRows is 24)
+		for (let i = 0; i < 30; i++) {
+			const filename = `file_${String(i).padStart(2, "0")}.txt`;
+			fs.writeFileSync(path.join(tempDir, filename), `line ${i}`);
+		}
+
+		let renderCalls = 0;
+		const mockTui: any = {
+			requestRender: () => {
+				renderCalls++;
+			},
+		};
+
+		const card = new CinlodevProjectTreeCard(undefined, mockTui, undefined, tempDir);
+
+		// Initial render (offset = 0)
+		const initialLines = card.render(50);
+		// With 30 items and maxVisibleRows 23 (24 content lines - 1 indicator), 30 - 23 = 7 remaining below
+		assert.ok(initialLines.some((l) => l.includes("▼ 7 abajo")), "Should indicate 7 items below with offset 0");
+
+		// Wheel delta 0 returns false
+		assert.equal(card.handleWheel(0), false);
+
+		// Wheel scroll forward (+1)
+		const prevCalls = renderCalls;
+		const scrolled = card.handleWheel(1);
+		assert.equal(scrolled, true);
+		assert.ok(renderCalls > prevCalls);
+
+		const scrolledLines = card.render(50);
+		assert.ok(scrolledLines.some((l) => l.includes("▲ 1 arriba")), "Should indicate 1 item above after wheel +1");
+		assert.ok(scrolledLines.some((l) => l.includes("▼ 6 abajo")), "Should indicate 6 items below after wheel +1");
+
+		// Wheel scroll backward (-1)
+		assert.equal(card.handleWheel(-1), true);
+		const backLines = card.render(50);
+		assert.ok(backLines.some((l) => l.includes("▼ 7 abajo")));
+
+		// Delegated handleRailWheel
+		assert.equal(card.handleRailWheel(1), true);
+
+		// Small directory: <= 24 items, handleWheel returns false
+		const smallDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-small-"));
+		try {
+			fs.writeFileSync(path.join(smallDir, "single.txt"), "hello");
+			const smallCard = new CinlodevProjectTreeCard(undefined, mockTui, undefined, smallDir);
+			smallCard.render(50);
+			assert.equal(smallCard.handleWheel(1), false);
+			assert.equal(smallCard.handleWheel(-1), false);
+		} finally {
+			fs.rmSync(smallDir, { recursive: true, force: true });
+		}
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - full-height behavior when terminal rows is set", () => {
+	resetAll();
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-full-height-test-"));
+	try {
+		const termRows = 45;
+		const railOverhead = 11; // banner, tab bar, spacing & input area overhead
+		const expectedTotalLines = Math.max(10, termRows - railOverhead); // 34 lines
+		const targetContentLines = expectedTotalLines - 2; // 32 lines capacity
+
+		const mockTui: any = {
+			requestRender: () => {},
+			terminal: { rows: termRows },
+		};
+
+		// 1. Items < targetContentLines: creates 5 files (less than 32)
+		for (let i = 0; i < 5; i++) {
+			fs.writeFileSync(path.join(tempDir, `small_${i}.txt`), `hello ${i}`);
+		}
+
+		const smallCard = new CinlodevProjectTreeCard(undefined, mockTui, undefined, tempDir);
+		const smallLines = smallCard.render(50);
+
+		// Verifies rendered lines count matches terminal height minus rail overhead
+		assert.equal(smallLines.length, expectedTotalLines, `Expected ${expectedTotalLines} lines, got ${smallLines.length}`);
+
+		// Verifies empty padding lines when items < targetContentLines
+		const emptyPadLines = smallLines.filter((l) => l.startsWith("║ ") && l.endsWith(" ║") && l.slice(2, -2).trim() === "");
+		assert.ok(emptyPadLines.length > 0, "Should have empty padded lines filling vertical space");
+		assert.equal(emptyPadLines.length, targetContentLines - 5, `Expected ${targetContentLines - 5} padded lines`);
+
+		// Explicit availableHeight parameter override test
+		const explicitLines = smallCard.render(50, 32);
+		assert.equal(explicitLines.length, 32, "Explicit availableHeight must set exact card lines count");
+		const explicitPadLines = explicitLines.filter((l) => l.startsWith("║ ") && l.endsWith(" ║") && l.slice(2, -2).trim() === "");
+		assert.equal(explicitPadLines.length, 30 - 5, "Padding must adjust to explicit availableHeight");
+
+		// Clean directory for large items test
+		for (let i = 0; i < 5; i++) {
+			fs.unlinkSync(path.join(tempDir, `small_${i}.txt`));
+		}
+
+		// 2. Items > targetContentLines: creates 50 files (more than 32)
+		for (let i = 0; i < 50; i++) {
+			const filename = `item_${String(i).padStart(2, "0")}.txt`;
+			fs.writeFileSync(path.join(tempDir, filename), `item ${i}`);
+		}
+
+		smallCard.invalidate();
+		const largeLines = smallCard.render(50);
+
+		// Verifies rendered lines count matches terminal height minus rail overhead
+		assert.equal(largeLines.length, expectedTotalLines, `Expected ${expectedTotalLines} lines, got ${largeLines.length}`);
+
+		// Verifies scroll indicator when items > targetContentLines
+		const hasScrollIndicator = largeLines.some((l) => l.includes("▼") && l.includes("abajo") && l.includes("wheel scroll"));
+		assert.ok(hasScrollIndicator, "Should contain scroll indicator line when items > targetContentLines");
+		// 50 items - 31 visible (since 1 line for scroll indicator) = 19 remaining below
+		assert.ok(largeLines.some((l) => l.includes("▼ 19 abajo")), "50 items - 31 visible = 19 remaining below");
+
+		// Scrolling with handleWheel
+		assert.equal(smallCard.handleWheel(1), true);
+		const scrolledLines = smallCard.render(50);
+		assert.equal(scrolledLines.length, expectedTotalLines);
+		assert.ok(scrolledLines.some((l) => l.includes("▲ 1 arriba")), "Should indicate 1 item above after wheel +1");
+		assert.ok(scrolledLines.some((l) => l.includes("▼ 18 abajo")), "Should indicate 18 items below after wheel +1");
+
+		// 3. Fallback when termRows < 15: falls back to 24 capacity without padding
+		const smallTermMockTui: any = {
+			requestRender: () => {},
+			terminal: { rows: 12 },
+		};
+		const fallbackCard = new CinlodevProjectTreeCard(undefined, smallTermMockTui, undefined, tempDir);
+		const fallbackLines = fallbackCard.render(50);
+		// When totalRows (50) > contentCapacity (24), maxVisibleRows is 23 (leaving 1 for indicator)
+		assert.equal(fallbackCard.getMaxVisibleRows(50), 23);
+		// When totalRows (5) <= contentCapacity (24), maxVisibleRows is 24
+		assert.equal(fallbackCard.getMaxVisibleRows(5), 24);
+		// With 50 items and contentCapacity 24, fallbackLines should be 26 (top + 23 items + scroll indicator + bottom)
+		assert.equal(fallbackLines.length, 26);
+
+		// 4. Empty directory with terminal rows >= 15 expands with padding to reach bottom
+		const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-empty-full-"));
+		try {
+			const emptyCard = new CinlodevProjectTreeCard(undefined, mockTui, undefined, emptyDir);
+			const emptyLines = emptyCard.render(50);
+			assert.equal(emptyLines.length, expectedTotalLines);
+			assert.ok(emptyLines[1].includes("Sin archivos en el proyecto"));
+		} finally {
+			fs.rmSync(emptyDir, { recursive: true, force: true });
+		}
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-tree - resolveSidebarTab resolves '6', 'tree', 'TREE' to projectTree", () => {
+	// Key resolution
+	const tabByKey = resolveSidebarTab("6");
+	assert.equal(tabByKey.id, "tree");
+	assert.equal(tabByKey.key, "6");
+	assert.equal(tabByKey.label, "TREE");
+	assert.deepEqual(tabByKey.cards, ["projectTree"]);
+
+	// Lowercase id resolution
+	const tabById = resolveSidebarTab("tree");
+	assert.equal(tabById.id, "tree");
+	assert.equal(tabById.key, "6");
+	assert.equal(tabById.label, "TREE");
+	assert.deepEqual(tabById.cards, ["projectTree"]);
+
+	// Uppercase label resolution
+	const tabByUpper = resolveSidebarTab("TREE");
+	assert.equal(tabByUpper.id, "tree");
+	assert.equal(tabByUpper.key, "6");
+	assert.equal(tabByUpper.label, "TREE");
+	assert.deepEqual(tabByUpper.cards, ["projectTree"]);
+
+	// Aliases
+	const tabByProjectTree = resolveSidebarTab("projecttree");
+	assert.equal(tabByProjectTree.id, "tree");
+	assert.deepEqual(tabByProjectTree.cards, ["projectTree"]);
+
+	const tabByProjectTreeHyphen = resolveSidebarTab("project-tree");
+	assert.equal(tabByProjectTreeHyphen.id, "tree");
+	assert.deepEqual(tabByProjectTreeHyphen.cards, ["projectTree"]);
+
+	// SIDEBAR_TAB_CARD_MAP
+	assert.deepEqual(SIDEBAR_TAB_CARD_MAP.tree, ["projectTree"]);
+});
+
 
 
 

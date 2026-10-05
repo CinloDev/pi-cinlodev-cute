@@ -21,6 +21,7 @@ import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, type ProfileItem, CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
+import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 
 export { formatTokenCount, getContextThreshold };
 
@@ -38,6 +39,7 @@ let latestUsageCard: CinlodevUsageCard | undefined;
 let latestEngramCard: CinlodevEngramCard | undefined;
 let latestEngramHandoff: CinlodevEngramHandoffCard | undefined;
 let latestAgentsCard: CinlodevAgentsCard | undefined;
+let latestProjectTree: CinlodevProjectTreeCard | undefined;
 
 export function toggleUsageCard(): boolean {
 	return latestUsageCard?.toggle() ?? false;
@@ -606,11 +608,20 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		};
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme, undefined, ctx, pi);
 		const profilesRail = {
-			render: (width: number) => profilesCard.render(width),
+			render: (width: number, availableHeight?: number) => profilesCard.render(width, availableHeight),
 			invalidate: () => profilesCard.invalidate?.(),
 			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
 				profilesCard.handleRailClick(lineIndex, button, localX),
 			handleRailWheel: (delta: number) => profilesCard.handleRailWheel(delta),
+		};
+		const projectTreeCard = new CinlodevProjectTreeCard(ctx, tui, theme);
+		latestProjectTree = projectTreeCard;
+		const projectTreeRail = {
+			render: (width: number, availableHeight?: number) => projectTreeCard.render(width, availableHeight),
+			invalidate: () => projectTreeCard.invalidate(),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				projectTreeCard.handleRailClick(lineIndex, button, localX),
+			handleRailWheel: (delta: number) => projectTreeCard.handleWheel(delta),
 		};
 		const part = sidebarPart(tui, "footer", bottom, rail);
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
@@ -622,6 +633,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const workingTreePart = sidebarPart(tui, "workingTree", { render: () => [] }, workingTreeRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
+		const projectTreePart = sidebarPart(tui, "projectTree", { render: () => [] }, projectTreeRail);
 		const todoBottom: Component & { dispose?(): void } = {
 			render: (width: number) => todos.renderBottom(width),
 			invalidate: () => todos.invalidate(),
@@ -646,6 +658,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				engramHandoffPart.dispose?.();
 				toolsPart.dispose?.();
 				profilesPart.dispose?.();
+				projectTreePart.dispose?.();
 				todoPart.dispose?.();
 			},
 		};
