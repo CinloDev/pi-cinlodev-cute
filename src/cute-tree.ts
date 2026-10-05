@@ -7,6 +7,8 @@ import { bolden, cuteGlyphs, cutePalette, frameFg, safeFg } from "./cute-theme.t
 import { loadCuteColors } from "./cute-colors.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "./cute-transcript.ts";
 import { detectProjectName } from "./cute-engram.ts";
+import { herdrAvailable, launchInHerdrTab, isTestEnvironment } from "./cute-notify.ts";
+import { fetchGitFileChanges } from "./cute-git-graph.ts";
 
 export interface TreeNode {
 	name: string;
@@ -47,6 +49,7 @@ export function scanDirectoryTree(
 	currentDepth = 0,
 	ignoredNames?: Set<string>,
 	rootPath?: string,
+	expandedDirs?: Set<string>,
 ): TreeNode[] {
 	const ignored = ignoredNames ?? DEFAULT_IGNORED_NAMES;
 	const root = rootPath ?? dirPath;
@@ -67,14 +70,16 @@ export function scanDirectoryTree(
 
 			if (isDirectory) {
 				let itemCount = 0;
-				try {
-					const subEntries = fs.readdirSync(absPath);
-					itemCount = subEntries.filter((name) => !ignored.has(name)).length;
-				} catch {}
-
 				let children: TreeNode[] | undefined;
-				if (currentDepth < maxDepth) {
-					children = scanDirectoryTree(absPath, maxDepth, currentDepth + 1, ignored, root);
+
+				if (currentDepth < maxDepth && (!expandedDirs || expandedDirs.has(relPath))) {
+					children = scanDirectoryTree(absPath, maxDepth, currentDepth + 1, ignored, root, expandedDirs);
+					itemCount = children.length;
+				} else {
+					try {
+						const subEntries = fs.readdirSync(absPath);
+						itemCount = subEntries.filter((name) => !ignored.has(name)).length;
+					} catch {}
 				}
 
 				dirs.push({
@@ -118,7 +123,7 @@ function isExecutableInPath(name: string): boolean {
 	return false;
 }
 
-function detectTerminal(): string {
+export function detectTerminal(): string {
 	if (process.env.TERMINAL && isExecutableInPath(process.env.TERMINAL)) {
 		return process.env.TERMINAL;
 	}
@@ -135,22 +140,52 @@ function detectTerminal(): string {
  * Resolves $VISUAL / $EDITOR / nvim and spawns detached terminal window.
  */
 export function launchEditor(targetPath?: string, cwd?: string): boolean {
+	if (isTestEnvironment()) return true;
+	const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
+	const filePath = targetPath ? targetPath : ".";
+	const workingDir = cwd || process.cwd();
+	const title = `nvim: ${path.basename(filePath)}`;
+
+	// 1. If running inside Herdr, open as a focused full-screen tab
+	if (herdrAvailable()) {
+		if (launchInHerdrTab(`${editor} ${filePath}`, title, workingDir)) {
+			return true;
+		}
+	}
+
+	// 2. Fallback to external terminal (foot, alacritty, kitty, ghostty)
 	try {
-		const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
 		const terminal = detectTerminal();
-		const filePath = targetPath ? targetPath : ".";
-		const workingDir = cwd || process.cwd();
+		const termBin = path.basename(terminal).toLowerCase();
+		const winTitle = `CUTE: ${path.basename(filePath)}`;
+
+		let args: string[];
+		switch (termBin) {
+			case "foot":
+				args = ["--app-id=cute-editor", "-T", winTitle, editor, filePath];
+				break;
+			case "alacritty":
+				args = ["--class", "cute-editor,cute-editor", "-t", winTitle, "-e", editor, filePath];
+				break;
+			case "kitty":
+				args = ["--class=cute-editor", "-T", winTitle, editor, filePath];
+				break;
+			case "ghostty":
+				args = ["--class=cute-editor", "-e", editor, filePath];
+				break;
+			default:
+				args = ["-e", editor, filePath];
+				break;
+		}
 
 		// Spawn terminal with editor directly detached so it works in any Wayland/X11 environment
-		const child = spawn(
-			terminal,
-			["--app-id=cute-editor", "-T", `CUTE: ${path.basename(filePath)}`, editor, filePath],
-			{
-				detached: true,
-				stdio: "ignore",
-				cwd: workingDir,
-			},
-		);
+		const child = spawn(terminal, args, {
+			detached: true,
+			stdio: "ignore",
+			cwd: workingDir,
+		});
+
+		child.on("error", () => {});
 		child.unref();
 		return true;
 	} catch {
@@ -297,24 +332,30 @@ export class CinlodevProjectTreeCard implements Component {
 		} else {
 			this.expandedDirs.delete(relPath);
 		}
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	expandAll(): void {
-		const tree = this.getTree();
+		const tree = scanDirectoryTree(this.cwd);
 		collectAllDirRelPaths(tree, this.expandedDirs);
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	collapseAll(): void {
 		this.expandedDirs.clear();
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	private getTree(): TreeNode[] {
 		const now = Date.now();
 		if (!this.cachedTree || now - this.lastScanTime > 3000) {
-			this.cachedTree = scanDirectoryTree(this.cwd);
+			this.cachedTree = scanDirectoryTree(this.cwd, 5, 0, undefined, undefined, this.expandedDirs);
 			this.lastScanTime = now;
 		}
 		return this.cachedTree;
@@ -352,6 +393,8 @@ export class CinlodevProjectTreeCard implements Component {
 				} else {
 					this.expandedDirs.add(hit.node.relPath);
 				}
+				this.cachedTree = undefined;
+				this.lastScanTime = 0;
 				this.tui?.requestRender();
 				return true;
 			}
@@ -421,6 +464,8 @@ export class CinlodevProjectTreeCard implements Component {
 		const c = {
 			pink: (s: string): string => (theme ? safeFg(theme, "accent", s, "pink") : s),
 			gold: (s: string): string => (theme ? safeFg(theme, "heading", s, "yellow") : s),
+			yellow: (s: string): string => (theme ? safeFg(theme, "warning", s, "yellow") : s),
+			coral: (s: string): string => (theme ? safeFg(theme, "red", s, "red") : s),
 			mint: (s: string): string => (theme ? safeFg(theme, "mint", s, "green") : s),
 			cyan: (s: string): string => (theme ? safeFg(theme, "write", s, "cyan") : s),
 			text: (s: string): string => (theme ? safeFg(theme, "text", s) : s),
@@ -442,29 +487,52 @@ export class CinlodevProjectTreeCard implements Component {
 
 		const projectName = detectProjectName(this.cwd) || path.basename(this.cwd) || "project";
 		const editorRaw = path.basename(process.env.VISUAL || process.env.EDITOR || "nvim");
-		const editorBadgeRaw = `[ ↗ ${editorRaw} ]`;
-		const editorBadgeStyled = `${c.dim("[")} ${c.pink("↗")} ${c.gold(editorRaw)} ${c.dim("]")}`;
 
-		// Header calculation
+		const fullBadgeRaw = `[ ↗ ${editorRaw} ]`;
+		const compactBadgeRaw = "[ ↗ ]";
+		const useCompactBadge = safeWidth < 38;
+		const activeBadgeRaw = useCompactBadge ? compactBadgeRaw : fullBadgeRaw;
+		const activeBadgeStyled = useCompactBadge
+			? `${c.dim("[")} ${c.pink("↗")} ${c.dim("]")}`
+			: `${c.dim("[")} ${c.pink("↗")} ${c.gold(editorRaw)} ${c.dim("]")}`;
+		const activeBadgeLen = calcVisibleWidth(activeBadgeRaw);
+
+		// Header layout: tl + h + ' ' (3) ... ' ' + h*(fill) + ' ' (fill + 2) ... badge ... ' ' + h + tr (3)
+		// Total fixed overhead excluding title text and fill line: 3 + 2 + activeBadgeLen + 3 = 8 + activeBadgeLen
+		const fixedOverhead = 8 + activeBadgeLen;
+		const availableForTitle = Math.max(0, safeWidth - fixedOverhead);
+
 		const flowerIcon = g.flower || "✿";
-		const leftTitlePrefix = `${flowerIcon} PROYECTO · `;
-		const leftTitlePrefixLen = calcVisibleWidth(leftTitlePrefix);
-		const rightBadgeLen = calcVisibleWidth(editorBadgeRaw);
-		const borderAndGaps = 8; // tl(1) + h(1) + space(1) + space(1) + h*(fill) + space(1) + space(1) + h(1) + tr(1)
-		const availableForProjectName = Math.max(4, safeWidth - borderAndGaps - leftTitlePrefixLen - rightBadgeLen);
-		const displayProjectName =
-			calcVisibleWidth(projectName) > availableForProjectName
-				? truncateAnsiAware(projectName, availableForProjectName)
-                : projectName;
+		let titleStyled = "";
+		let titleRawLen = 0;
 
-		const leftTitleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")} ${c.dim("·")} ${c.cyan(displayProjectName)}`;
-		const leftTitleLen = calcVisibleWidth(`${flowerIcon} PROYECTO · ${displayProjectName}`);
+		const fullPrefixRaw = `${flowerIcon} PROYECTO · `;
+		const fullPrefixLen = calcVisibleWidth(fullPrefixRaw);
 
-		const fillLen = Math.max(1, safeWidth - (leftTitleLen + rightBadgeLen + borderAndGaps));
-		const top = `${frame(`${g.tl}${g.h} `)}${leftTitleStyled}${frame(` ${g.h.repeat(fillLen)} `)}${editorBadgeStyled}${frame(` ${g.h}${g.tr}`)}`;
+		if (availableForTitle >= 18) {
+			const maxProjectNameLen = availableForTitle - fullPrefixLen;
+			const displayProjectName =
+				calcVisibleWidth(projectName) > maxProjectNameLen
+					? truncateAnsiAware(projectName, maxProjectNameLen)
+					: projectName;
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")} ${c.dim("·")} ${c.cyan(displayProjectName)}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} PROYECTO · ${displayProjectName}`);
+		} else if (availableForTitle >= 11) {
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} PROYECTO`);
+		} else if (availableForTitle >= 6) {
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("TREE")}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} TREE`);
+		} else if (availableForTitle >= 1) {
+			titleStyled = c.pink(flowerIcon);
+			titleRawLen = calcVisibleWidth(flowerIcon);
+		}
+
+		const fillLen = Math.max(0, safeWidth - (3 + titleRawLen + 2 + activeBadgeLen + 3));
+		const top = `${frame(`${g.tl}${g.h} `)}${titleStyled}${frame(` ${g.h.repeat(fillLen)} `)}${activeBadgeStyled}${frame(` ${g.h}${g.tr}`)}`;
 		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
-		const editorButtonStartX = safeWidth - 3 - rightBadgeLen;
+		const editorButtonStartX = safeWidth - 3 - activeBadgeLen;
 		const editorButtonEndX = safeWidth - 3;
 		this.hitboxes.push({
 			lineIndex: 0,
@@ -515,6 +583,19 @@ export class CinlodevProjectTreeCard implements Component {
 		const visibleRows = allRows.slice(this.scrollOffset, this.scrollOffset + maxVisibleRows);
 		const lines: string[] = [top];
 
+		// Map dirty Git files and parent directories
+		const gitChanges = fetchGitFileChanges(this.cwd);
+		const gitStatusMap = new Map<string, string>();
+		const dirtyDirSet = new Set<string>();
+		for (const ch of gitChanges) {
+			gitStatusMap.set(ch.path, ch.status);
+			let parentDir = path.dirname(ch.path);
+			while (parentDir && parentDir !== "." && parentDir !== "/") {
+				dirtyDirSet.add(parentDir);
+				parentDir = path.dirname(parentDir);
+			}
+		}
+
 		for (const row of visibleRows) {
 			const currentLineIdx = lines.length;
 			const styledPrefix = c.dim(row.prefix);
@@ -522,10 +603,12 @@ export class CinlodevProjectTreeCard implements Component {
 			if (row.node.isDirectory) {
 				const isExpanded = this.expandedDirs.has(row.node.relPath);
 				const folderIcon = isExpanded ? "📂 " : "📁 ";
-				const folderName = c.cyan(row.node.name);
+				const hasDirtyChildren = dirtyDirSet.has(row.node.relPath);
+				const folderName = hasDirtyChildren ? c.yellow(row.node.name) : c.cyan(row.node.name);
 				const countStr = typeof row.node.itemCount === "number" ? c.dim(` (${row.node.itemCount} items)`) : "";
+				const rightBadge = hasDirtyChildren ? c.yellow("●") : "";
 				const content = `${styledPrefix}${folderIcon}${folderName}${countStr}`;
-				lines.push(boxLine(content));
+				lines.push(boxLine(content, rightBadge));
 
 				this.hitboxes.push({
 					lineIndex: currentLineIdx,
@@ -536,6 +619,8 @@ export class CinlodevProjectTreeCard implements Component {
 				});
 			} else {
 				const fileIcon = `${getFileIcon(row.node.extension)} `;
+				const fileGitStatus = gitStatusMap.get(row.node.relPath);
+				let rightBadge = "";
 				let fileColor = c.text;
 				const ext = (row.node.extension || "").toLowerCase();
 				if (ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx" || ext === "mjs") {
@@ -546,12 +631,26 @@ export class CinlodevProjectTreeCard implements Component {
 					fileColor = c.text;
 				}
 
+				if (fileGitStatus === "modified") {
+					fileColor = c.yellow;
+					rightBadge = c.yellow("M");
+				} else if (fileGitStatus === "added") {
+					fileColor = c.mint;
+					rightBadge = c.mint("A");
+				} else if (fileGitStatus === "untracked") {
+					fileColor = c.pink;
+					rightBadge = c.pink("?");
+				} else if (fileGitStatus === "conflict") {
+					fileColor = c.coral;
+					rightBadge = c.coral("U");
+				}
+
 				const isSelected = this.selectedRelPath === row.node.relPath;
 				const styledName = isSelected
 					? c.pink(bolden(this.theme, row.node.name))
 					: fileColor(row.node.name);
 				const content = `${styledPrefix}${fileIcon}${styledName}`;
-				lines.push(boxLine(content));
+				lines.push(boxLine(content, rightBadge));
 
 				this.hitboxes.push({
 					lineIndex: currentLineIdx,

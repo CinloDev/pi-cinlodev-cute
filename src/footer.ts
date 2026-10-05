@@ -15,7 +15,7 @@ import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
-import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
+import { formatProfileDisplay, loadCuteStrings, matchBracketProfile, detectSystemUser } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
@@ -32,6 +32,7 @@ const execAsync = promisify(exec);
 
 let todoHooksInstalled = false;
 let latestTodoTui: TUI | undefined;
+let latestTodoMirror: CinlodevTodoMirror | undefined;
 let latestGitGraph: CinlodevGitGraphCard | undefined;
 let latestWorkingTree: CinlodevWorkingTreeCard | undefined;
 let latestToolsCard: CinlodevToolsCard | undefined;
@@ -40,6 +41,10 @@ let latestEngramCard: CinlodevEngramCard | undefined;
 let latestEngramHandoff: CinlodevEngramHandoffCard | undefined;
 let latestAgentsCard: CinlodevAgentsCard | undefined;
 let latestProjectTree: CinlodevProjectTreeCard | undefined;
+
+export function getLatestTodoMirror(): CinlodevTodoMirror | undefined {
+	return latestTodoMirror;
+}
 
 export function toggleUsageCard(): boolean {
 	return latestUsageCard?.toggle() ?? false;
@@ -51,6 +56,14 @@ export function isUsageCardVisible(): boolean {
 
 export function getLatestUsageCard(): CinlodevUsageCard | undefined {
 	return latestUsageCard;
+}
+
+export function invalidateSidebarGitAndTree(): void {
+	latestGitGraph?.invalidate();
+	latestWorkingTree?.invalidate();
+	latestProjectTree?.invalidate();
+	latestToolsCard?.invalidate();
+	latestTodoTui?.requestRender();
 }
 
 function separator(theme: Theme): string {
@@ -170,7 +183,7 @@ export class CinlodevCuteFooter implements Component {
 
 		// 1. Brand segment (texts from config/CinlodevCute.strings.json via loadCuteStrings())
 		const strings = loadCuteStrings();
-		const user = strings.welcomePersona.user || "Cinlo";
+		const user = strings.welcomePersona.user || detectSystemUser();
 		const brandText = strings.footerBrand.replace("{user}", user);
 		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(brandText)}`;
 
@@ -531,6 +544,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				latestEngramCard?.invalidate();
 				latestEngramHandoff?.invalidate();
 				latestAgentsCard?.invalidate();
+				latestTodoMirror?.invalidate();
+				if (latestTodoTui && (latestTodoTui as any).__cuteTodoRail) {
+					const state = sidebarState(latestTodoTui);
+					state.parts.set("todo", (latestTodoTui as any).__cuteTodoRail);
+				}
 				latestTodoTui?.requestRender();
 			} catch {}
 		};
@@ -551,6 +569,9 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 		latestTodoTui = tui;
+		latestTodoMirror = todos;
+		(tui as any).__cuteTodoMirror = todos;
+		(ctx as any).__cuteTodoMirror = todos;
 		latestGitGraph = gitGraph;
 		latestWorkingTree = workingTree;
 		latestToolsCard = toolsCard;
@@ -581,14 +602,24 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			handleRailWheel: (delta: number) => usageCard.handleWheel(delta),
 		};
 		const gitGraphRail = {
-			render: (width: number) => gitGraph.render(width),
+			render: (width: number, availableHeight?: number) => gitGraph.render(width, availableHeight),
 			invalidate: () => gitGraph.invalidate(),
-			handleRailClick: (lineIndex: number) => gitGraph.handleClick(lineIndex),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				typeof gitGraph.handleRailClick === "function"
+					? gitGraph.handleRailClick(lineIndex, button, localX)
+					: gitGraph.handleClick(lineIndex),
+			handleRailWheel: (delta: number) =>
+				typeof gitGraph.handleRailWheel === "function" ? gitGraph.handleRailWheel(delta) : false,
 		};
 		const workingTreeRail = {
-			render: (width: number) => workingTree.render(width),
+			render: (width: number, availableHeight?: number) => workingTree.render(width, availableHeight),
 			invalidate: () => workingTree.invalidate(),
-			handleRailClick: (lineIndex: number) => workingTree.handleClick(lineIndex),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				typeof workingTree.handleRailClick === "function"
+					? workingTree.handleRailClick(lineIndex, button, localX)
+					: workingTree.handleClick(lineIndex),
+			handleRailWheel: (delta: number) =>
+				typeof workingTree.handleRailWheel === "function" ? workingTree.handleRailWheel(delta) : false,
 		};
 		const engramHandoffRail = {
 			render: (width: number) => engramHandoff.render(width),
@@ -638,10 +669,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => todos.renderBottom(width),
 			invalidate: () => todos.invalidate(),
 		};
-		const todoRail: Component & { dispose?(): void } = {
+		const todoRail: Component & { dispose?(): void; handleRailWheel?(delta: number): boolean } = {
 			render: (width: number) => todos.renderRail(width),
 			invalidate: () => todos.invalidate(),
+			handleRailWheel: (delta: number) => todos.handleRailWheel(delta),
 		};
+		(tui as any).__cuteTodoRail = todoRail;
 		const todoPart = sidebarPart(tui, "todo", todoBottom, todoRail);
 		const uninstall = installSidebar(tui, theme);
 		return {

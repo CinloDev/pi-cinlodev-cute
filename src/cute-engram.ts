@@ -347,11 +347,13 @@ export function formatRelativeTime(dateInput: Date | string | null | undefined, 
 // Global cached snapshot
 let cachedSnapshot: EngramSnapshot | null = null;
 let snapshotPromise: Promise<EngramSnapshot> | null = null;
+let isEngramRefreshing = false;
 const CACHE_TTL_MS = 10000;
 
 export function resetEngramCache(): void {
 	cachedSnapshot = null;
 	snapshotPromise = null;
+	isEngramRefreshing = false;
 }
 
 export async function getEngramSnapshot(cwd?: string, force = false): Promise<EngramSnapshot> {
@@ -396,11 +398,18 @@ export function triggerEngramRefresh(cwd?: string, tui?: TUI, ttlMs = CACHE_TTL_
 	if (cachedSnapshot && now - cachedSnapshot.lastCheck < ttlMs) {
 		return;
 	}
+	if (isEngramRefreshing) {
+		return;
+	}
+	isEngramRefreshing = true;
 	getEngramSnapshot(cwd, true)
 		.then(() => {
 			tui?.requestRender();
 		})
-		.catch(() => {});
+		.catch(() => {})
+		.finally(() => {
+			isEngramRefreshing = false;
+		});
 }
 
 interface ActionTarget {
@@ -450,6 +459,7 @@ export class CinlodevEngramCard implements Component {
 				this.tui.requestRender();
 			}
 		}, durationMs);
+		this.confirmTimer?.unref?.();
 	}
 
 	private resetConfirmation(): void {
@@ -494,6 +504,7 @@ export class CinlodevEngramCard implements Component {
 			this.statusNotice = null;
 			this.tui.requestRender();
 		}, durationMs);
+		this.statusNoticeTimer?.unref?.();
 		this.tui.requestRender();
 	}
 

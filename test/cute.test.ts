@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as cp from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cuteGlyphs, resetCuteGlyphsCache, PETAL_PRESETS, unifyCardFrame, unifySidebarCardFrame, transformTranscriptLines, formatGentleAiCardLine, installWelcomeHeaderGuard, safeFg, bolden } from "../src/cute-theme.ts";
 import { frameCategoryBox, formatTranscriptChild, formatAssistantProse, truncateAnsiAware, formatTranscriptChildren, isBashComponent, isReadComponent, isWriteComponent, isFetchComponent, looksLikeFetchLines, isSearchComponent, looksLikeSearchLines, isMemoryComponent, isGrepComponent, formatGrepLines, highlightUncoloredSegments, isErrorTextComponent, looksLikeErrorLines, formatBashOutputLines, formatBashCommandHeader, highlightCodeLine, formatWriteDiffLines, formatReadLines, toolFileHighlightable, toolFilePath, extractBashDisplayPath, extractHeredoc, hasKeptColor, isReviewComponent, looksLikeReviewLines, extractReviewHeader, formatReviewOutputLines } from "../src/cute-transcript.ts";
@@ -16,12 +17,14 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
+import { CinlodevTodoMirror } from "../src/todos.ts";
+import { invalidateSidebarGitAndTree } from "../src/footer.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -32,6 +35,7 @@ function resetAll() {
 	resetActiveProfileCache();
 	resetGitGraphCache();
 	resetGitStatusCache();
+	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
 }
@@ -1353,6 +1357,9 @@ test("Syntax check across all source files", () => {
 		"src/hud.ts",
 		"src/footer.ts",
 		"src/sidebar.ts",
+		"src/sidebar-dock.ts",
+		"src/sidebar-tabs.ts",
+		"src/sidebar-state.ts",
 		"src/welcome.ts",
 		"src/editor.ts",
 		"src/todos.ts",
@@ -3771,6 +3778,420 @@ test("cute-tree - resolveSidebarTab resolves '6', 'tree', 'TREE' to projectTree"
 
 	// SIDEBAR_TAB_CARD_MAP
 	assert.deepEqual(SIDEBAR_TAB_CARD_MAP.tree, ["projectTree"]);
+});
+
+test("cute-git-graph - branches view and branch selection toggle", () => {
+	resetAll();
+	const cwd = process.cwd();
+	const branches = fetchGitBranches(cwd);
+	assert.ok(Array.isArray(branches), "fetchGitBranches must return an array");
+	assert.ok(branches.length >= 1, "There should be at least one branch in the repo");
+	assert.equal(branches[0].isCurrent, true, "First local branch in list should be the current branch");
+
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+	const mockCtx = { cwd } as any;
+
+	const card = new CinlodevGitGraphCard(mockCtx, mockTui);
+
+	// Toggle view mode to branches
+	setGitTabViewMode("branches", mockTui);
+	assert.equal(getGitTabViewMode(), "branches");
+	assert.equal(renderRequested, 1);
+
+	// Render branches view
+	const lines = card.render(50, 20);
+	assert.equal(lines.length, 20, "Fixed height with availableHeight=20 should return exactly 20 lines");
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("ramas en repo"), "Should display branch count header");
+	assert.ok(joined.includes(branches[0].name.slice(0, 15)), "Should list the current branch");
+
+	// Click on a branch selects it
+	const targetBranch = branches.length > 1 ? branches[1].name : "test-branch";
+	setGitTabSelectedBranch(targetBranch, mockTui);
+	assert.equal(getGitTabSelectedBranch(), targetBranch);
+	assert.equal(renderRequested, 2);
+
+	// Re-rendering in branches view shows 'diff' indicator for selected branch
+	const selectedLines = card.render(50, 20);
+	assert.ok(selectedLines.some((l) => l.includes("diff")), "Selected branch should have diff badge");
+
+	// Clicking selected branch deselects it
+	setGitTabSelectedBranch(null, mockTui);
+	assert.equal(getGitTabSelectedBranch(), null);
+
+	// Switch back to graph view
+	setGitTabViewMode("graph", mockTui);
+	assert.equal(getGitTabViewMode(), "graph");
+});
+
+test("cute-git-graph - CinlodevWorkingTreeCard Diff mode and 50/50 fixed height", () => {
+	resetAll();
+	const cwd = process.cwd();
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+	const mockCtx = { cwd } as any;
+
+	const card = new CinlodevWorkingTreeCard(mockCtx, mockTui);
+
+	// 1. Working tree mode with fixed height (availableHeight = 16)
+	setGitTabSelectedBranch(null);
+	const wtLines = card.render(50, 16);
+	assert.equal(wtLines.length, 16, "Working tree card with availableHeight=16 should return exactly 16 lines");
+	assert.ok(wtLines[0].includes("Working Tree"), "Header should contain 'Working Tree'");
+
+	// 2. Select a branch to activate Diff mode
+	const branches = fetchGitBranches(cwd);
+	const targetBranch = branches.length > 1 ? branches[1].name : "develop";
+	setGitTabSelectedBranch(targetBranch, mockTui);
+	assert.equal(getGitTabSelectedBranch(), targetBranch);
+
+	// Render in Diff mode with availableHeight = 18
+	const diffLines = card.render(50, 18);
+	assert.equal(diffLines.length, 18, "Diff card with availableHeight=18 should return exactly 18 lines");
+	assert.ok(diffLines[0].includes("Diff"), "Header should contain 'Diff'");
+	assert.ok(diffLines[0].includes("✕"), "Header should contain close button '[ ✕ ]'");
+	assert.ok(diffLines[0].includes("↗"), "Header should contain diff launch button '[ ↗ ]'");
+
+	// 3. Click close button resets to Working tree mode
+	// Simulate click on line 0 (header) near the close button
+	card.handleRailClick(0, "left", 38);
+	assert.equal(getGitTabSelectedBranch(), null, "Clicking close on line 0 should reset selected branch to null");
+
+	// 4. Mouse wheel scrolling
+	assert.equal(card.handleRailWheel(0), false);
+	assert.equal(card.handleRailWheel(1), false); // No overflow -> returns false
+});
+
+test("sidebar tabs - switching to git tab renders 2 cards at 50/50 split without errors", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const mockLayoutRoot: any = {
+		render: () => ["line1", "line2"],
+		invalidate: () => {},
+	};
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockLayoutRoot, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: { render: () => [] }, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+		// Mount sidebar wrapper
+		mockLayoutRoot[NODE]();
+
+		// Switch to GIT tab
+		state.activeTabId = "git";
+
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.ok(nodeResult.entries.length >= 3, "Layout should have at least left, divider, and rail entries");
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "ScrollView rail entry must be mounted");
+
+		const layout = loadCuteLayout().sidebar;
+		const railLines = scrollEntry.component.render(layout.railWidth);
+		assert.ok(railLines.length > 10, "Git tab rail must render lines");
+
+		const joined = railLines.join("\n");
+		assert.ok(joined.includes("git graph"), "Git tab rail must render upper card 'git graph'");
+		assert.ok(joined.includes("Working Tree"), "Git tab rail must render lower card 'Working Tree'");
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+test("cute-tree - renders Git status badges and dirty directory bullets", () => {
+	resetAll();
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-tree-git-"));
+	try {
+		cp.execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: tempDir, stdio: "ignore" });
+
+		fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log(1);", "utf8");
+		cp.execFileSync("git", ["add", "."], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["commit", "-m", "init"], { cwd: tempDir, stdio: "ignore" });
+
+		// Modify file to make git dirty
+		fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "console.log(2);", "utf8");
+
+		const card = new CinlodevProjectTreeCard(undefined, undefined, undefined, tempDir);
+		card.getExpandedDirs().add("src");
+		const lines = card.render(60);
+		const joined = lines.join("\n");
+
+		assert.ok(joined.includes("M"), "Modified file in tree should have M badge");
+		assert.ok(joined.includes("●"), "Directory containing modified file should have dirty bullet ●");
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-git-graph - CinlodevWorkingTreeCard file clicking", () => {
+	resetAll();
+	const card = new CinlodevWorkingTreeCard(undefined, undefined, undefined);
+	const lines = card.render(60, 20);
+
+	// Line 3 is first modified file if dirty
+	if (lines.length > 4 && lines[3].includes("src/")) {
+		const handled = card.handleRailClick(3);
+		assert.equal(handled, true, "Clicking on modified file row should return true");
+	}
+});
+
+test("footer - invalidateSidebarGitAndTree executes safely", () => {
+	assert.doesNotThrow(() => {
+		invalidateSidebarGitAndTree();
+	});
+});
+
+test("todos - CinlodevTodoMirror renders double-line CUTE card without background leaks", () => {
+	resetAll();
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: [
+									{ id: 1, title: "Tarea completada", status: "done" },
+									{ id: 2, title: "Tarea en progreso", status: "in_progress", note: "Avanzando en el refactor" },
+									{ id: 3, title: "Tarea pendiente", status: "pending" },
+								],
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	let rendered = false;
+	const mockTui: any = {
+		requestRender: () => {
+			rendered = true;
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, mockTui);
+	const lines = mirror.renderRail(40);
+	const joined = lines.join("\n");
+
+	// Marco doble CUTE presente
+	assert.ok(lines.length >= 5, "Debe tener al menos 5 líneas");
+	assert.ok(lines[0].includes("╔"), "Debe tener esquina superior doble ╔");
+	assert.ok(lines[lines.length - 1].includes("╚"), "Debe tener esquina inferior doble ╚");
+	assert.ok(joined.includes("Todos · 1 of 3"), "Debe incluir el título CUTE con conteo");
+
+	// Cero fondo azul y cero barra float
+	assert.ok(!joined.includes("\x1b[48;"), "No debe tener secuencias de escape de fondo ANSI");
+	assert.ok(!joined.includes("▎"), "No debe contener el rail float ▎");
+
+	// Glifos correctos
+	assert.ok(joined.includes("✓"), "Debe mostrar ✓ para done");
+	assert.ok(joined.includes("◉"), "Debe mostrar ◉ para in_progress");
+	assert.ok(joined.includes("○"), "Debe mostrar ○ para pending");
+
+	// Nota indentada presente
+	assert.ok(joined.includes("↳ Avanzando en el refactor"), "Debe mostrar la nota de la tarea in_progress indentada");
+});
+
+test("todos - CinlodevTodoMirror performs word wrapping for long titles", () => {
+	resetAll();
+	const longTitle = "Esta es una tarea extremadamente larga que no cabe en una sola linea y debe wrappear";
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: [
+									{ id: 1, title: longTitle, status: "pending" },
+								],
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
+	const width = 36;
+	const lines = mirror.renderRail(width);
+
+	// Verificar que cada línea dentro del marco respeta el ancho
+	for (const line of lines) {
+		assert.ok(visibleWidth(line) <= width, `La línea no debe exceder el ancho asignado (${visibleWidth(line)} > ${width})`);
+	}
+
+	// Como el título es largo, debe haber generado al menos 2 líneas de cuerpo más top y bottom
+	assert.ok(lines.length >= 4, "Debe ocupar al menos 2 líneas de contenido por wrapping");
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("Esta es una tarea"), "Debe contener el inicio del título");
+	assert.ok(joined.includes("wrappear"), "Debe contener el final del título en otra línea");
+});
+
+test("todos - CinlodevTodoMirror handles mouse wheel scrolling on overflow", () => {
+	resetAll();
+	const manyTasks = Array.from({ length: 15 }, (_, i) => ({
+		id: i + 1,
+		title: `Tarea de prueba numero ${i + 1}`,
+		status: i < 3 ? "done" as const : "pending" as const,
+	}));
+
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: manyTasks,
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	let renderRequests = 0;
+	const mockTui: any = {
+		requestRender: () => {
+			renderRequests++;
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, mockTui);
+	const initialLines = mirror.renderRail(40);
+	const initialJoined = initialLines.join("\n");
+
+	// Debe mostrar el indicador de scroll
+	assert.ok(initialJoined.includes("wheel scroll"), "Debe mostrar el indicador de scroll por overflow");
+	assert.ok(initialJoined.includes("Tarea de prueba numero 1"), "Inicialmente debe mostrar la primera tarea");
+
+	// Scrollear hacia abajo con wheel
+	const scrollDownHandled = mirror.handleRailWheel(1);
+	assert.equal(scrollDownHandled, true, "Scrollear hacia abajo debe retornar true");
+	assert.ok(renderRequests > 0, "Debe haber solicitado re-render");
+
+	const scrolledLines = mirror.renderRail(40);
+	const scrolledJoined = scrolledLines.join("\n");
+	assert.ok(scrolledJoined.includes("▲ 1 arriba"), "Debe indicar que hay 1 línea scrolleada arriba");
+
+	// Scrollear hacia arriba
+	const scrollUpHandled = mirror.handleRailWheel(-1);
+	assert.equal(scrollUpHandled, true, "Scrollear hacia arriba debe retornar true");
+
+	// Wheel handling vía handleMouse
+	const mouseHandled = mirror.handleMouse({ wheelDelta: 1 });
+	assert.deepEqual(mouseHandled, { handled: true }, "handleMouse debe procesar eventos con wheelDelta");
+});
+
+test("sidebar-dock - measureDockMetrics, findDock and findTranscript execute safely", async () => {
+	const { measureDockMetrics, measureDockHeight, getVisibleInputBottomOffset, findDock, findTranscript } = await import("../src/sidebar-dock.ts");
+
+	// Casos base nulos / vacíos
+	const emptyMetrics = measureDockMetrics(null, 50);
+	assert.deepEqual(emptyMetrics, { totalHeight: 7, visibleInputBottomOffset: 5 });
+	assert.equal(measureDockHeight(null, 50), 7);
+	assert.equal(getVisibleInputBottomOffset(null, 50), 5);
+
+	// Mock dock con entries
+	const mockDock = {
+		entries: [
+			{ component: { render: () => ["line 1", "line 2"] } },
+			{ minSize: 3, component: { render: () => ["input row 1", "input row 2", "input bottom frame"] } },
+			{ component: { render: () => ["status line"] } },
+		],
+	};
+	const metrics = measureDockMetrics(mockDock, 50);
+	assert.equal(metrics.totalHeight, 6);
+	assert.equal(metrics.visibleInputBottomOffset, 4); // 2 + 2 = 4 (segunda fila de input)
+
+	// findDock
+	assert.equal(findDock(null), undefined);
+	const mockTreeWithDock = {
+		entries: [
+			{ component: {} },
+			{ component: { entries: [1, 2] } },
+		],
+	};
+	assert.equal(findDock(mockTreeWithDock), mockTreeWithDock.entries[1].component);
+
+	// findTranscript
+	const mockScrollView = { scrollbar: "auto", setScrollbar: () => {} };
+	const treeWithTranscript = {
+		entries: [
+			{ component: mockScrollView },
+		],
+	};
+	assert.equal(findTranscript(treeWithTranscript), mockScrollView as any);
+});
+
+test("sidebar-state - sidebarState, sidebarPart and renderCUTESidebarBanner operate safely", async () => {
+	const { sidebarState, sidebarPart, renderCUTESidebarBanner, SIDEBAR_STATE_KEY } = await import("../src/sidebar-state.ts");
+
+	const mockTerminal: any = {};
+	const mockTui: any = { terminal: mockTerminal };
+
+	// Inicialización de estado en el terminal
+	const state = sidebarState(mockTui);
+	assert.ok(state, "Debe retornar un objeto SidebarState");
+	assert.equal(state.active, false);
+	assert.equal(mockTerminal[SIDEBAR_STATE_KEY], state, "Debe estar alojado en el símbolo SIDEBAR_STATE_KEY del terminal");
+
+	// Registro de parte
+	const bottomComp = { render: () => ["bottom 1"] };
+	const railComp = { render: () => ["rail 1"] };
+	const part = sidebarPart(mockTui, "testKey", bottomComp, railComp);
+
+	assert.equal(state.parts.get("testKey"), railComp, "Debe registrar railComp en state.parts");
+	assert.deepEqual(part.render(50), ["bottom 1"], "Cuando el sidebar no es active, debe renderizar bottom");
+
+	state.active = true;
+	state.ownsHost = () => true;
+	assert.deepEqual(part.render(50), [], "Cuando el sidebar es active y ownsHost, debe suprimir el bottom retornando []");
+
+	// Banner
+	const banner = renderCUTESidebarBanner(50);
+	assert.ok(banner.length > 0, "Debe retornar al menos 1 línea de banner");
+	assert.ok(banner[0].includes("✿"), "Debe contener el glifo decorativo del banner");
+	assert.ok(banner[0].toUpperCase().includes("CINLODEV"), "Debe contener la marca o usuario en el banner");
 });
 
 

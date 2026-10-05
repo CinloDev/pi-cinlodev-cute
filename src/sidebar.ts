@@ -1,14 +1,59 @@
 import { ScrollView, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, frameFg, safeFg, bolden, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
+import { cuteGlyphs, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
 import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
-import { CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
+import {
+	measureDockMetrics,
+	measureDockHeight,
+	getVisibleInputBottomOffset,
+	findDock,
+	findTranscript,
+	NODE,
+	type DockMetrics,
+} from "./sidebar-dock.ts";
+import {
+	CUTE_SIDEBAR_TABS,
+	SIDEBAR_TAB_CARD_MAP,
+	resolveSidebarTab,
+	renderCuteSidebarTabBar,
+	type CuteSidebarTab,
+	type TabHitbox,
+} from "./sidebar-tabs.ts";
+import {
+	sidebarState,
+	sidebarPart,
+	renderCUTESidebarBanner,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
+} from "./sidebar-state.ts";
+
+export {
+	measureDockMetrics,
+	measureDockHeight,
+	getVisibleInputBottomOffset,
+	findDock,
+	findTranscript,
+	NODE,
+	type DockMetrics,
+	CUTE_SIDEBAR_TABS,
+	SIDEBAR_TAB_CARD_MAP,
+	resolveSidebarTab,
+	renderCuteSidebarTabBar,
+	type CuteSidebarTab,
+	type TabHitbox,
+	sidebarState,
+	sidebarPart,
+	renderCUTESidebarBanner,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
+};
 
 // Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
 // (keys resolved by themes/CinlodevCute.json to the same hex as before):
@@ -19,301 +64,12 @@ import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 // Single/rounded frame tokens map to the configured double (or ascii) preset
 // via cuteGlyphs at render time, so frameStyle switches stay consistent.
 
-export function measureDockHeight(dock: any, width: number): number {
-	if (!dock || !Array.isArray(dock.entries)) return 7;
-	let total = 0;
-	for (const entry of dock.entries) {
-		if (entry?.component && typeof entry.component.render === "function") {
-			try {
-				const lines = entry.component.render(width);
-				if (Array.isArray(lines)) total += lines.length;
-			} catch {}
-		}
-	}
-	return Math.max(3, total);
-}
-
-export function getVisibleInputBottomOffset(dock: any, width: number): number {
-	if (!dock || !Array.isArray(dock.entries)) return 5;
-	let offset = 0;
-	for (const entry of dock.entries) {
-		if (entry?.component && typeof entry.component.render === "function") {
-			try {
-				const lines = entry.component.render(width);
-				if (Array.isArray(lines)) {
-					// In Pi's createChatViewport, the editor component is configured with minSize: 3
-					if (entry.minSize === 3) {
-						for (let i = lines.length - 1; i >= 0; i--) {
-							if (lines[i].trim().length > 0) {
-								return offset + i;
-							}
-						}
-					}
-					offset += lines.length;
-				}
-			} catch {}
-		}
-	}
-	return Math.max(3, offset);
-}
-
-function findDock(root: unknown): any {
-	if (!root || typeof root !== "object") return undefined;
-	const entries = (root as any).entries;
-	if (Array.isArray(entries) && entries.length >= 2) {
-		const candidate = entries[1]?.component;
-		if (candidate && Array.isArray((candidate as any).entries)) {
-			return candidate;
-		}
-	}
-	return undefined;
-}
-
-function findTranscript(root: unknown, depth = 0): ScrollView | undefined {
-	if (!root || typeof root !== "object" || depth > 12) return undefined;
-	if ("scrollbar" in root && typeof (root as any).setScrollbar === "function") {
-		return root as ScrollView;
-	}
-	const entries = (root as any).entries;
-	if (Array.isArray(entries)) {
-		for (const entry of entries) {
-			const found = findTranscript(entry?.component, depth + 1);
-			if (found) return found;
-		}
-	}
-	const children = (root as any).children;
-	if (Array.isArray(children)) {
-		for (const child of children) {
-			const found = findTranscript(child, depth + 1);
-			if (found) return found;
-		}
-	}
-	// Descend through custom layout nodes (e.g. gentle-shell wrapping the tree)
-	if (typeof (root as any)[NODE] === "function") {
-		try {
-			const node = (root as any)[NODE]();
-			if (node && Array.isArray(node.entries)) {
-				for (const entry of node.entries) {
-					const found = findTranscript(entry?.component, depth + 1);
-					if (found) return found;
-				}
-			}
-		} catch {}
-	}
-	return undefined;
-}
-
-// Layout symbol shared with Pi 0.85.1 and pi-tui
-const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: string };
 type LayoutRoot = Component & { [NODE]?: () => LayoutNode };
 type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };
 
 // Marker symbol to avoid double-wrapping layoutRoot
 export const CUTE_LAYOUT_WRAPPER = Symbol.for("pi-cinlodev-cute.layout-wrapper");
-
-// State symbol shared across extensions on tui.terminal
-const STATE = Symbol.for("gentle-pi.experimental-sidebar.state");
-
-export interface SidebarState {
-	active: boolean;
-	ownsHost?: () => boolean;
-	parts: Map<string, Component>;
-	activeTabId?: string;
-}
-
-export interface CuteSidebarTab {
-	id: string;
-	key: string;
-	label: string;
-	title?: string;
-	cards: string[];
-}
-
-export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
-	main: ["footer", "context", "todo"],
-	git: ["gitGraph", "workingTree"],
-	agents: ["cute-agents"],
-	usage: ["cute-agents"],
-	prof: ["cute-profiles"],
-	forge: ["cute-profiles"],
-	mem: ["engram", "engramHandoff", "tools"],
-	tree: ["projectTree"],
-};
-
-export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
-	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
-	{ id: "git", key: "2", label: "GIT", title: "Git Graph & Working Tree", cards: SIDEBAR_TAB_CARD_MAP.git },
-	{ id: "agents", key: "3", label: "AGENTS", title: "Orchestrator & Subagents", cards: SIDEBAR_TAB_CARD_MAP.agents },
-	{ id: "prof", key: "4", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
-	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
-	{ id: "tree", key: "6", label: "TREE", title: "Project Tree & Explorer", cards: SIDEBAR_TAB_CARD_MAP.tree },
-];
-
-export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
-	if (tabIdOrKey) {
-		let normalized = tabIdOrKey.toLowerCase();
-		if (normalized === "forge") normalized = "prof";
-		if (normalized === "usage") normalized = "agents";
-		if (normalized === "projecttree" || normalized === "project-tree") normalized = "tree";
-		const match = CUTE_SIDEBAR_TABS.find(
-			(t) => t.id === normalized || t.key === normalized || t.label.toLowerCase() === normalized
-		);
-		if (match) return match;
-	}
-	return CUTE_SIDEBAR_TABS[0];
-}
-
-export interface TabHitbox {
-	id: string;
-	key: string;
-	label: string;
-	startX: number;
-	endX: number;
-}
-
-export function renderCuteSidebarTabBar(
-	width: number,
-	activeTabId: string,
-	theme?: Theme,
-): { line: string; divider: string; hitboxes: TabHitbox[] } {
-	const activeTab = resolveSidebarTab(activeTabId);
-	const hitboxes: TabHitbox[] = [];
-
-	const dim = (s: string): string => (theme ? safeFg(theme, "dim", s) : s);
-	const muted = (s: string): string => (theme ? safeFg(theme, "muted", s) : s);
-	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
-	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
-
-	const compactActive = width < 44;
-
-	const tabVisuals = CUTE_SIDEBAR_TABS.map((tab) => {
-		const isActive = tab.id === activeTab.id;
-		if (isActive) {
-			const label = compactActive
-				? `[${tab.key}:${tab.label}]`
-				: `[ ${tab.key}:${tab.label} ]`;
-			const styled = pinkBright(bolden(theme, label));
-			return { tab, isActive, styled, len: visibleWidth(label) };
-		} else {
-			const label = `${tab.key}:${tab.label}`;
-			const styled = `${dim(tab.key)}${dim(":")}${muted(tab.label)}`;
-			return { tab, isActive, styled, len: visibleWidth(label) };
-		}
-	});
-
-	const totalTabLen = tabVisuals.reduce((acc, t) => acc + t.len, 0);
-	const gapsCount = CUTE_SIDEBAR_TABS.length - 1;
-	const remaining = Math.max(0, width - totalTabLen);
-	const baseGap = gapsCount > 0 ? Math.floor(remaining / gapsCount) : 0;
-	let extraSpaces = gapsCount > 0 ? remaining % gapsCount : 0;
-
-	let currentX = 0;
-	const parts: string[] = [];
-
-	for (let i = 0; i < tabVisuals.length; i++) {
-		const item = tabVisuals[i];
-		const startX = currentX;
-		const endX = currentX + item.len;
-		hitboxes.push({
-			id: item.tab.id,
-			key: item.tab.key,
-			label: item.tab.label,
-			startX,
-			endX,
-		});
-		parts.push(item.styled);
-		currentX = endX;
-
-		if (i < gapsCount) {
-			const gap = baseGap + (extraSpaces > 0 ? 1 : 0);
-			if (extraSpaces > 0) extraSpaces--;
-			if (gap > 0) {
-				parts.push(" ".repeat(gap));
-				currentX += gap;
-			}
-		}
-	}
-
-	if (currentX < width) {
-		parts.push(" ".repeat(width - currentX));
-	}
-
-	const glyphs = cuteGlyphs(theme);
-	const sepChar = glyphs.frameStyle === "ascii" || glyphs.h === "-" ? "-" : "─";
-	const divider = subtle(sepChar.repeat(Math.max(0, width)));
-
-	let line = parts.join("");
-	if (width < totalTabLen || visibleWidth(line) > width) {
-		line = truncateToWidth(line, Math.max(0, width));
-	}
-
-	const validHitboxes = hitboxes
-		.filter((h) => h.startX < width)
-		.map((h) => ({
-			...h,
-			endX: Math.min(h.endX, width),
-		}));
-
-	return {
-		line,
-		divider,
-		hitboxes: validHitboxes,
-	};
-}
-
-export function sidebarState(tui: TUI): SidebarState {
-	const terminal = tui.terminal as unknown as Record<symbol, SidebarState>;
-	return (terminal[STATE] ??= { active: false, parts: new Map() });
-}
-
-/** Keep the original bottom component mounted, suppressing only its paint when the sidebar owns the host. */
-export function sidebarPart<T extends Component & { dispose?(): void }>(
-	tui: TUI,
-	key: string,
-	bottom: T,
-	rail: Component = bottom,
-): T {
-	if (!tui.terminal) return bottom;
-	const state = sidebarState(tui);
-	state.parts.set(key, rail);
-	return {
-		...bottom,
-		render: (width: number) => (state.active && state.ownsHost?.() ? [] : bottom.render(width)),
-		dispose() {
-			if (state.parts.get(key) === rail) state.parts.delete(key);
-			bottom.dispose?.();
-		},
-	};
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function renderCUTESidebarBanner(width: number, theme?: Theme): string[] {
-	const pink = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
-	const text = (s: string): string => (theme ? safeFg(theme, "text", s) : s);
-	const strings = loadCuteStrings();
-	const user = strings.welcomePersona.user || "Cinlo";
-	const banner = strings.sidebarBanner;
-
-	const label = banner.full.replace("{user}", user);
-	const shortLabel = banner.short.replace("{user}", user);
-	const raw = width >= visibleWidth(label) ? label : shortLabel;
-	const space = width - visibleWidth(raw);
-	if (space < 0) return [];
-
-	const leftPad = Math.floor(space / 2);
-	const rightPad = Math.ceil(space / 2);
-
-	const formatted = raw
-		.replace(new RegExp(escapeRegExp(banner.glyph), "g"), pink(banner.glyph))
-		.replace(new RegExp(escapeRegExp(banner.brand), "g"), pink(banner.brand))
-		.replace(new RegExp(escapeRegExp(banner.partner), "g"), text(banner.partner));
-
-	return [" ".repeat(leftPad) + formatted + " ".repeat(rightPad)];
-}
 
 export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	if (!tui.terminal) return () => {};
@@ -511,26 +267,38 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			const headerLines = 1 + bannerLinesCount + tabsLinesCount + 1;
 
 			let availableCardHeight: number | undefined;
+			let cardHeights: (number | undefined)[] = [];
+			const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
+			const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
+			const { totalHeight: dockHeight, visibleInputBottomOffset } = measureDockMetrics(activeDock, dockWidth);
+			const transcriptHeight = activeTranscript?.viewportHeight;
+
+			// The input box's bottom horizontal line is at:
+			// transcript.viewportHeight + visibleInputBottomOffset.
+			// If transcript is not yet laid out, fall back to termRows - dockHeight + visibleInputBottomOffset.
+			const inputBottomRow = (typeof transcriptHeight === "number" && transcriptHeight > 10)
+				? transcriptHeight + visibleInputBottomOffset
+				: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
+
+			// availableCardHeight must never exceed termRows - headerLines so railLines never overflows terminal
+			const maxAllowedHeight = Math.max(10, termRows - headerLines);
+			const targetHeight = inputBottomRow - headerLines;
+			const totalTargetHeight = Math.min(maxAllowedHeight, Math.max(10, targetHeight));
+
 			if (targetCardKeys.length === 1) {
-				const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
-				const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
-				const dockHeight = measureDockHeight(activeDock, dockWidth);
-				const visibleInputBottomOffset = getVisibleInputBottomOffset(activeDock, dockWidth);
-				const transcriptHeight = activeTranscript?.viewportHeight;
-
-				// The input box's bottom horizontal line is at:
-				// transcript.viewportHeight + visibleInputBottomOffset.
-				// If transcript is not yet laid out, fall back to termRows - dockHeight + visibleInputBottomOffset.
-				const inputBottomRow = (typeof transcriptHeight === "number" && transcriptHeight > 10)
-					? transcriptHeight + visibleInputBottomOffset
-					: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
-
-				// availableCardHeight is the total lines so the card's bottom line ends exactly at inputBottomRow
-				availableCardHeight = Math.max(10, inputBottomRow - headerLines + 1);
+				availableCardHeight = totalTargetHeight;
+				cardHeights = [totalTargetHeight];
+			} else if (targetCardKeys.length === 2) {
+				// 2 cards split 50/50 sharing the full rail height down to the input line
+				const interCardGap = 1; // empty line between the 2 cards
+				const availableForCards = Math.max(14, totalTargetHeight - interCardGap);
+				const half = Math.floor(availableForCards / 2);
+				const secondHalf = availableForCards - half;
+				cardHeights = [half, secondHalf];
 			}
 
 			const sectionData = targetCardKeys
-				.map((key) => {
+				.map((key, index) => {
 					let component = state.parts.get(key);
 					if (
 						!component &&
@@ -557,6 +325,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("cute-agents", component);
 						}
 					}
+					if (!component && (key === "gitGraph" || key === "git-graph")) {
+						component = state.parts.get("gitGraph") || state.parts.get("git-graph");
+						if (!component) {
+							component = new CinlodevGitGraphCard(undefined as any, tui, theme);
+							state.parts.set("gitGraph", component);
+						}
+					}
 					if (!component && (key === "workingTree" || key === "working-tree")) {
 						component = state.parts.get("workingTree") || state.parts.get("working-tree");
 						if (!component) {
@@ -578,8 +353,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("projectTree", component);
 						}
 					}
-					const renderHeight = (key === "projectTree" || key === "project-tree" || targetCardKeys.length === 1)
-						? availableCardHeight
+					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree")
+						? (cardHeights[index] ?? availableCardHeight)
 						: undefined;
 					const rawLines = [...(component?.render(netWidth, renderHeight as any) ?? [])];
 					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
@@ -685,7 +460,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			state.active = true;
 			return true;
 		} catch {
-			failed = true;
+			state.active = false;
 			return false;
 		}
 	};

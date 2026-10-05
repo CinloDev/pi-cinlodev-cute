@@ -27,6 +27,44 @@ export function notifyHerdr(message: string, body?: string): boolean {
 	}
 }
 
+/** Check whether we are running inside an automated test suite. */
+export function isTestEnvironment(): boolean {
+	return Boolean(
+		process.env.NODE_ENV === "test" ||
+		process.env.CUTE_TEST_MODE === "1" ||
+		process.argv.some((arg) => arg.includes("--test") || arg.includes(".test.ts")),
+	);
+}
+
+/**
+ * Launches an interactive command inside a new focused Herdr tab.
+ */
+export function launchInHerdrTab(command: string, label: string, cwd?: string): boolean {
+	if (isTestEnvironment()) return true;
+	if (!herdrAvailable()) return false;
+	try {
+		const workingDir = cwd || process.cwd();
+		const out = execFileSync(
+			HERDR_BIN,
+			["tab", "create", "--cwd", workingDir, "--label", label, "--focus"],
+			{ encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] },
+		);
+		const parsed = JSON.parse(out);
+		const paneId = parsed?.result?.root_pane?.pane_id;
+		if (paneId) {
+			execFileSync(HERDR_BIN, ["pane", "run", paneId, command], {
+				encoding: "utf8",
+				timeout: 2000,
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
 export type NotificationType = "info" | "warning" | "error";
 
 /**

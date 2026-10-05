@@ -2,7 +2,8 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import welcome from "./src/welcome.js";
 import hud from "./src/hud.js";
 import { installCinlodevPrompt, setCinlodevPromptThinkingLevel, setCinlodevPromptWorking } from "./src/editor.js";
-import { installCinlodevFooter, toggleUsageCard } from "./src/footer.js";
+import { installCinlodevFooter, toggleUsageCard, invalidateSidebarGitAndTree, getLatestTodoMirror } from "./src/footer.js";
+import { sidebarState } from "./src/sidebar.js";
 import { loadCuteStrings, resetCuteStringsCache } from "./src/cute-strings.ts";
 import { loadCutePaths, resetCutePathsCache, resolveDevBinaryPath } from "./src/cute-paths.ts";
 import { installWelcomeHeaderGuard, resetCuteGlyphsCache, transformTranscriptLines, installCuteMarkdownThemeHook } from "./src/cute-theme.ts";
@@ -13,6 +14,11 @@ import { CuteContextMonitor } from "./src/cute-context-monitor.ts";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
+	// 0. Disable float background leaks from foreign gentle-shell cards
+	try {
+		(globalThis as any)[Symbol.for("gentle-pi.card-style")] = "neon";
+	} catch {}
+
 	// 0. Context Threshold Notifications Monitor (Herdr + Pi toast)
 	const contextMonitor = new CuteContextMonitor();
 
@@ -37,12 +43,68 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		installWelcomeHeaderGuard(ctx);
 
 		// Intercept ctx.ui.setWidget so any widgets registered by other extensions
-		// (such as gentle-shell-dev-binary warning cards) render with double line and themed tones.
+		// (such as gentle-shell-dev-binary warning cards or gentle-todo) render with double line and themed tones.
 		if (ctx.ui && typeof ctx.ui.setWidget === "function" && !(ctx.ui as any).__cuteSetWidgetWrapped) {
 			(ctx.ui as any).__cuteSetWidgetWrapped = true;
 			const origSetWidget = ctx.ui.setWidget.bind(ctx.ui);
 			ctx.ui.setWidget = (key: string, content: any, options?: any) => {
-				if (typeof content === "function") {
+				if (key === "gentle-todo") {
+					if (content === undefined) {
+						return origSetWidget(key, undefined, options);
+					}
+					if (typeof content === "function") {
+						const origFactory = content;
+						content = (tui: any, theme: any) => {
+							const comp = origFactory(tui, theme);
+							const mirror = (tui as any)?.__cuteTodoMirror ?? (ctx as any)?.__cuteTodoMirror ?? getLatestTodoMirror();
+							const cuteRail = (tui as any)?.__cuteTodoRail;
+
+							// Protegemos el slot 'todo' en el sidebar rail para que siempre use nuestro componente CUTE
+							if (cuteRail && tui?.terminal) {
+								const state = sidebarState(tui);
+								state.parts.set("todo", cuteRail);
+							}
+
+							// Si se renderiza como widget bottom (arriba del editor), usamos el marco CUTE
+							// solo si el sidebar no está activo y hay contenido para mostrar
+							if (mirror) {
+								return {
+									render(width: number) {
+										if (tui?.terminal) {
+											const state = sidebarState(tui);
+											if (state.active && state.ownsHost?.()) return [];
+										}
+										const raw = comp?.render?.(width);
+										if (!raw || raw.length === 0) return [];
+										return mirror.renderBottom(width);
+									},
+									handleMouse(event: any) {
+										return mirror.handleMouse(event);
+									},
+									invalidate() {
+										mirror.invalidate();
+									},
+									dispose() {
+										comp?.dispose?.();
+									},
+								};
+							}
+
+							if (!comp || typeof comp.render !== "function") return comp;
+							const origRender = comp.render.bind(comp);
+							return {
+								...comp,
+								render(width: number) {
+									const rawLines = origRender(width);
+									return transformTranscriptLines(rawLines, theme);
+								},
+								dispose() {
+									comp.dispose?.();
+								},
+							};
+						};
+					}
+				} else if (typeof content === "function") {
 					const origFactory = content;
 					content = (tui: any, theme: any) => {
 						const comp = origFactory(tui, theme);
@@ -103,16 +165,23 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 		"mem_session_end",
 		"mem_capture_passive",
 	]);
+	const FILE_OR_GIT_TOOLS = new Set(["write", "edit", "bash"]);
 	pi.on("tool_execution_end", (event, ctx) => {
-		if (event && !event.isError && MEMORY_MUTATION_TOOLS.has(event.toolName)) {
-			const project = detectProjectName(ctx?.cwd);
-			// Fire non-blocking cloud replication
-			syncProjectCloud(project).catch(() => {});
+		if (event && !event.isError) {
+			if (MEMORY_MUTATION_TOOLS.has(event.toolName)) {
+				const project = detectProjectName(ctx?.cwd);
+				// Fire non-blocking cloud replication
+				syncProjectCloud(project).catch(() => {});
+			}
+			if (FILE_OR_GIT_TOOLS.has(event.toolName)) {
+				invalidateSidebarGitAndTree();
+			}
 		}
 	});
 
 	// Monitor context threshold transitions on turn completion
 	pi.on("turn_end", async (_event, ctx) => {
+		invalidateSidebarGitAndTree();
 		if (ctx?.hasUI) {
 			contextMonitor.check(ctx);
 		}

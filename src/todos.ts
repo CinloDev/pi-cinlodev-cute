@@ -88,12 +88,34 @@ function glyphFor(c: CutePalette, status: TodoTask["status"]): string {
 	return c.dim("○");
 }
 
+function wrapWords(text: string, maxWidth: number): string[] {
+	if (maxWidth <= 0) return [text];
+	const words = text.split(/\s+/).filter((w) => w.length > 0);
+	if (words.length === 0) return [""];
+	const lines: string[] = [];
+	let current = "";
+	for (const word of words) {
+		if (!current) {
+			current = word;
+		} else if (visibleWidth(current + " " + word) <= maxWidth) {
+			current += " " + word;
+		} else {
+			lines.push(current);
+			current = word;
+		}
+	}
+	if (current) lines.push(current);
+	return lines;
+}
+
 /** Read-only mirror of the host harness todo checklist for the sidebar rail. */
 export class CinlodevTodoMirror implements Component {
 	private readonly ctx: ExtensionContext;
 	private readonly tui: TUI;
 	private readonly theme?: Theme;
 	private lastSignature = "";
+	private scrollOffset = 0;
+	private lastMaxScrollOffset = 0;
 
 	constructor(ctx: ExtensionContext, tui: TUI, theme?: Theme) {
 		this.ctx = ctx;
@@ -118,9 +140,31 @@ export class CinlodevTodoMirror implements Component {
 			const signature = JSON.stringify(tasks);
 			if (signature !== this.lastSignature) {
 				this.lastSignature = signature;
+				this.scrollOffset = 0;
 				this.tui.requestRender();
 			}
 		} catch {}
+	}
+
+	handleRailWheel(delta: number): boolean {
+		if (delta === 0) return false;
+		if (this.lastMaxScrollOffset <= 0) return false;
+		const step = delta > 0 ? 1 : -1;
+		const next = Math.max(0, Math.min(this.lastMaxScrollOffset, this.scrollOffset + step));
+		if (next !== this.scrollOffset) {
+			this.scrollOffset = next;
+			this.tui.requestRender();
+			return true;
+		}
+		return false;
+	}
+
+	handleMouse(event: any): any {
+		if (event?.wheelDelta) {
+			const handled = this.handleRailWheel(event.wheelDelta);
+			if (handled) return { handled: true };
+		}
+		return undefined;
 	}
 
 	private renderCard(width: number, maxRows: number): string[] {
@@ -153,15 +197,67 @@ export class CinlodevTodoMirror implements Component {
 		const top = `${frame(`${g.tl}${g.h} `)}${titleStr}${frame(` ${g.h.repeat(fillTop)}${g.tr}`)}`;
 		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
+		// Build all body lines with clean word wrapping for full text display
+		const allBodyLines: string[] = [];
+		const textIndentWidth = 2; // "  "
+		const textAvailableWidth = Math.max(10, innerWidth - textIndentWidth);
+
+		for (const task of tasks) {
+			const glyph = glyphFor(c, task.status);
+			const colorFn =
+				task.status === "in_progress"
+					? c.pinkBright
+					: task.status === "done"
+						? c.dim
+						: c.text;
+
+			const wrappedTitle = wrapWords(task.title, textAvailableWidth);
+			if (wrappedTitle.length === 0) {
+				allBodyLines.push(`${glyph} `);
+			} else {
+				allBodyLines.push(`${glyph} ${colorFn(wrappedTitle[0])}`);
+				for (let i = 1; i < wrappedTitle.length; i++) {
+					allBodyLines.push(`  ${colorFn(wrappedTitle[i])}`);
+				}
+			}
+
+			// If task is in_progress and has a note, display it cleanly wrapped below
+			if (task.note && task.status === "in_progress") {
+				const noteIndent = "  ↳ ";
+				const noteAvailableWidth = Math.max(8, innerWidth - visibleWidth(noteIndent));
+				const wrappedNote = wrapWords(task.note, noteAvailableWidth);
+				for (let i = 0; i < wrappedNote.length; i++) {
+					const prefix = i === 0 ? noteIndent : "    ";
+					allBodyLines.push(c.dim(`${prefix}${wrappedNote[i]}`));
+				}
+			}
+		}
+
+		// Calculate scrolling limits
+		const totalLines = allBodyLines.length;
+		const hasOverflow = totalLines > maxRows;
+		const maxVisibleLines = hasOverflow ? Math.max(1, maxRows - 1) : maxRows;
+		this.lastMaxScrollOffset = Math.max(0, totalLines - maxVisibleLines);
+		if (this.scrollOffset > this.lastMaxScrollOffset) {
+			this.scrollOffset = this.lastMaxScrollOffset;
+		}
+
+		const visibleSlice = allBodyLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 		const lines: string[] = [top];
-		for (const task of tasks.slice(0, maxRows)) {
-			lines.push(boxLine(`${glyphFor(c, task.status)} ${c.text(task.title)}`));
+
+		for (const line of visibleSlice) {
+			lines.push(boxLine(line));
 		}
-		if (tasks.length > maxRows) {
-			lines.push(
-				boxLine(c.dim(strings.moreFmt.replace("{remaining}", String(tasks.length - maxRows)))),
-			);
+
+		if (hasOverflow) {
+			const remainingBelow = Math.max(0, totalLines - (this.scrollOffset + visibleSlice.length));
+			const infoParts: string[] = [];
+			if (this.scrollOffset > 0) infoParts.push(`▲ ${this.scrollOffset} arriba`);
+			if (remainingBelow > 0) infoParts.push(`▼ ${remainingBelow} abajo`);
+			const scrollIndicator = c.dim(`... ${infoParts.join(" · ")} (wheel scroll)`);
+			lines.push(boxLine(scrollIndicator));
 		}
+
 		lines.push(bottom);
 		return lines;
 	}
