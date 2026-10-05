@@ -66,9 +66,16 @@ export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
 							}
 
 							// Si se renderiza como widget bottom (arriba del editor), usamos el marco CUTE
+							// solo si el sidebar no está activo y hay contenido para mostrar
 							if (mirror) {
 								return {
 									render(width: number) {
+										if (tui?.terminal) {
+											const state = sidebarState(tui);
+											if (state.active && state.ownsHost?.()) return [];
+										}
+										const raw = comp?.render?.(width);
+										if (!raw || raw.length === 0) return [];
 										return mirror.renderBottom(width);
 									},
 									handleMouse(event: any) {
