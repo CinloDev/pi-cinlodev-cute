@@ -15,7 +15,7 @@ import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
-import { formatProfileDisplay, loadCuteStrings, matchBracketProfile } from "./cute-strings.ts";
+import { formatProfileDisplay, loadCuteStrings, matchBracketProfile, detectSystemUser } from "./cute-strings.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
@@ -170,7 +170,7 @@ export class CinlodevCuteFooter implements Component {
 
 		// 1. Brand segment (texts from config/CinlodevCute.strings.json via loadCuteStrings())
 		const strings = loadCuteStrings();
-		const user = strings.welcomePersona.user || "Cinlo";
+		const user = strings.welcomePersona.user || detectSystemUser();
 		const brandText = strings.footerBrand.replace("{user}", user);
 		const brandSegment = `${c.pinkBright(strings.footerSymbol)} ${c.pinkAccent(brandText)}`;
 

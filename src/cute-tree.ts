@@ -47,6 +47,7 @@ export function scanDirectoryTree(
 	currentDepth = 0,
 	ignoredNames?: Set<string>,
 	rootPath?: string,
+	expandedDirs?: Set<string>,
 ): TreeNode[] {
 	const ignored = ignoredNames ?? DEFAULT_IGNORED_NAMES;
 	const root = rootPath ?? dirPath;
@@ -67,14 +68,16 @@ export function scanDirectoryTree(
 
 			if (isDirectory) {
 				let itemCount = 0;
-				try {
-					const subEntries = fs.readdirSync(absPath);
-					itemCount = subEntries.filter((name) => !ignored.has(name)).length;
-				} catch {}
-
 				let children: TreeNode[] | undefined;
-				if (currentDepth < maxDepth) {
-					children = scanDirectoryTree(absPath, maxDepth, currentDepth + 1, ignored, root);
+
+				if (currentDepth < maxDepth && (!expandedDirs || expandedDirs.has(relPath))) {
+					children = scanDirectoryTree(absPath, maxDepth, currentDepth + 1, ignored, root, expandedDirs);
+					itemCount = children.length;
+				} else {
+					try {
+						const subEntries = fs.readdirSync(absPath);
+						itemCount = subEntries.filter((name) => !ignored.has(name)).length;
+					} catch {}
 				}
 
 				dirs.push({
@@ -140,17 +143,36 @@ export function launchEditor(targetPath?: string, cwd?: string): boolean {
 		const terminal = detectTerminal();
 		const filePath = targetPath ? targetPath : ".";
 		const workingDir = cwd || process.cwd();
+		const termBin = path.basename(terminal).toLowerCase();
+		const title = `CUTE: ${path.basename(filePath)}`;
+
+		let args: string[];
+		switch (termBin) {
+			case "foot":
+				args = ["--app-id=cute-editor", "-T", title, editor, filePath];
+				break;
+			case "alacritty":
+				args = ["--class", "cute-editor,cute-editor", "-t", title, "-e", editor, filePath];
+				break;
+			case "kitty":
+				args = ["--class=cute-editor", "-T", title, editor, filePath];
+				break;
+			case "ghostty":
+				args = ["--class=cute-editor", "-e", editor, filePath];
+				break;
+			default:
+				args = ["-e", editor, filePath];
+				break;
+		}
 
 		// Spawn terminal with editor directly detached so it works in any Wayland/X11 environment
-		const child = spawn(
-			terminal,
-			["--app-id=cute-editor", "-T", `CUTE: ${path.basename(filePath)}`, editor, filePath],
-			{
-				detached: true,
-				stdio: "ignore",
-				cwd: workingDir,
-			},
-		);
+		const child = spawn(terminal, args, {
+			detached: true,
+			stdio: "ignore",
+			cwd: workingDir,
+		});
+
+		child.on("error", () => {});
 		child.unref();
 		return true;
 	} catch {
@@ -297,24 +319,30 @@ export class CinlodevProjectTreeCard implements Component {
 		} else {
 			this.expandedDirs.delete(relPath);
 		}
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	expandAll(): void {
-		const tree = this.getTree();
+		const tree = scanDirectoryTree(this.cwd);
 		collectAllDirRelPaths(tree, this.expandedDirs);
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	collapseAll(): void {
 		this.expandedDirs.clear();
+		this.cachedTree = undefined;
+		this.lastScanTime = 0;
 		this.tui?.requestRender();
 	}
 
 	private getTree(): TreeNode[] {
 		const now = Date.now();
 		if (!this.cachedTree || now - this.lastScanTime > 3000) {
-			this.cachedTree = scanDirectoryTree(this.cwd);
+			this.cachedTree = scanDirectoryTree(this.cwd, 5, 0, undefined, undefined, this.expandedDirs);
 			this.lastScanTime = now;
 		}
 		return this.cachedTree;
@@ -352,6 +380,8 @@ export class CinlodevProjectTreeCard implements Component {
 				} else {
 					this.expandedDirs.add(hit.node.relPath);
 				}
+				this.cachedTree = undefined;
+				this.lastScanTime = 0;
 				this.tui?.requestRender();
 				return true;
 			}
@@ -442,29 +472,52 @@ export class CinlodevProjectTreeCard implements Component {
 
 		const projectName = detectProjectName(this.cwd) || path.basename(this.cwd) || "project";
 		const editorRaw = path.basename(process.env.VISUAL || process.env.EDITOR || "nvim");
-		const editorBadgeRaw = `[ ↗ ${editorRaw} ]`;
-		const editorBadgeStyled = `${c.dim("[")} ${c.pink("↗")} ${c.gold(editorRaw)} ${c.dim("]")}`;
 
-		// Header calculation
+		const fullBadgeRaw = `[ ↗ ${editorRaw} ]`;
+		const compactBadgeRaw = "[ ↗ ]";
+		const useCompactBadge = safeWidth < 38;
+		const activeBadgeRaw = useCompactBadge ? compactBadgeRaw : fullBadgeRaw;
+		const activeBadgeStyled = useCompactBadge
+			? `${c.dim("[")} ${c.pink("↗")} ${c.dim("]")}`
+			: `${c.dim("[")} ${c.pink("↗")} ${c.gold(editorRaw)} ${c.dim("]")}`;
+		const activeBadgeLen = calcVisibleWidth(activeBadgeRaw);
+
+		// Header layout: tl + h + ' ' (3) ... ' ' + h*(fill) + ' ' (fill + 2) ... badge ... ' ' + h + tr (3)
+		// Total fixed overhead excluding title text and fill line: 3 + 2 + activeBadgeLen + 3 = 8 + activeBadgeLen
+		const fixedOverhead = 8 + activeBadgeLen;
+		const availableForTitle = Math.max(0, safeWidth - fixedOverhead);
+
 		const flowerIcon = g.flower || "✿";
-		const leftTitlePrefix = `${flowerIcon} PROYECTO · `;
-		const leftTitlePrefixLen = calcVisibleWidth(leftTitlePrefix);
-		const rightBadgeLen = calcVisibleWidth(editorBadgeRaw);
-		const borderAndGaps = 8; // tl(1) + h(1) + space(1) + space(1) + h*(fill) + space(1) + space(1) + h(1) + tr(1)
-		const availableForProjectName = Math.max(4, safeWidth - borderAndGaps - leftTitlePrefixLen - rightBadgeLen);
-		const displayProjectName =
-			calcVisibleWidth(projectName) > availableForProjectName
-				? truncateAnsiAware(projectName, availableForProjectName)
-                : projectName;
+		let titleStyled = "";
+		let titleRawLen = 0;
 
-		const leftTitleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")} ${c.dim("·")} ${c.cyan(displayProjectName)}`;
-		const leftTitleLen = calcVisibleWidth(`${flowerIcon} PROYECTO · ${displayProjectName}`);
+		const fullPrefixRaw = `${flowerIcon} PROYECTO · `;
+		const fullPrefixLen = calcVisibleWidth(fullPrefixRaw);
 
-		const fillLen = Math.max(1, safeWidth - (leftTitleLen + rightBadgeLen + borderAndGaps));
-		const top = `${frame(`${g.tl}${g.h} `)}${leftTitleStyled}${frame(` ${g.h.repeat(fillLen)} `)}${editorBadgeStyled}${frame(` ${g.h}${g.tr}`)}`;
+		if (availableForTitle >= 18) {
+			const maxProjectNameLen = availableForTitle - fullPrefixLen;
+			const displayProjectName =
+				calcVisibleWidth(projectName) > maxProjectNameLen
+					? truncateAnsiAware(projectName, maxProjectNameLen)
+					: projectName;
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")} ${c.dim("·")} ${c.cyan(displayProjectName)}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} PROYECTO · ${displayProjectName}`);
+		} else if (availableForTitle >= 11) {
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("PROYECTO")}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} PROYECTO`);
+		} else if (availableForTitle >= 6) {
+			titleStyled = `${c.pink(flowerIcon)} ${c.gold("TREE")}`;
+			titleRawLen = calcVisibleWidth(`${flowerIcon} TREE`);
+		} else if (availableForTitle >= 1) {
+			titleStyled = c.pink(flowerIcon);
+			titleRawLen = calcVisibleWidth(flowerIcon);
+		}
+
+		const fillLen = Math.max(0, safeWidth - (3 + titleRawLen + 2 + activeBadgeLen + 3));
+		const top = `${frame(`${g.tl}${g.h} `)}${titleStyled}${frame(` ${g.h.repeat(fillLen)} `)}${activeBadgeStyled}${frame(` ${g.h}${g.tr}`)}`;
 		const bottom = frame(`${g.bl}${g.h.repeat(safeWidth - 2)}${g.br}`);
 
-		const editorButtonStartX = safeWidth - 3 - rightBadgeLen;
+		const editorButtonStartX = safeWidth - 3 - activeBadgeLen;
 		const editorButtonEndX = safeWidth - 3;
 		this.hitboxes.push({
 			lineIndex: 0,

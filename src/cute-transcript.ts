@@ -1,6 +1,6 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { loadCuteStrings } from "./cute-strings.ts";
+import { loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
 import { loadCuteColors } from "./cute-colors.ts";
 import { safeFg, bolden, stripAnsi, transformTranscriptLines } from "./cute-theme.ts";
 
@@ -925,9 +925,30 @@ export function isBlankFloatLine(line: string): boolean {
 export function isAsciiArtOrBanner(lines: string[]): boolean {
 	if (!lines || lines.length === 0) return false;
 
-	// 1. Signature check: known banners or explicit logo titles
+	// 1. Signature check: known banners, custom partner/brand banners, or explicit logo titles
 	const combinedPlain = lines.map((l) => stripAnsi(l)).join("\n");
-	if (/N\s*e\s*k\s*o\s*-\s*p\s*i/i.test(combinedPlain) || /neko-banner/i.test(combinedPlain)) {
+	const strings = loadCuteStrings();
+	const partner = strings.sidebarBanner?.partner?.trim();
+	const brand = strings.sidebarBanner?.brand?.trim();
+
+	if (partner && partner.length > 2) {
+		const escapedPartner = partner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		if (new RegExp(escapedPartner, "i").test(combinedPlain)) {
+			return true;
+		}
+	}
+	if (brand && brand.length > 2) {
+		const escapedBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		if (new RegExp(escapedBrand, "i").test(combinedPlain)) {
+			return true;
+		}
+	}
+
+	if (
+		/neko[-_]?banner|neko[-_]?pi/i.test(combinedPlain) ||
+		/N\s*e\s*k\s*o\s*-\s*p\s*i/i.test(combinedPlain) ||
+		/banner|ascii[-_]?art/i.test(combinedPlain)
+	) {
 		return true;
 	}
 
@@ -1462,7 +1483,7 @@ export function formatTranscriptChild(
 	const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
 	const strings = loadCuteStrings();
 	const colors = loadCuteColors();
-	const user = strings.welcomePersona.user || "CinloDev";
+	const user = strings.welcomePersona.user || detectSystemUser();
 
 	// User Message (configurable via colors.userMessage, default 'heading' / #E0C27A)
 	if (name === "UserMessageComponent") {
@@ -1591,7 +1612,7 @@ export function formatTranscriptChildren(
 	const mouseChildren: Array<{ component: Component; height: number }> = [];
 	const strings = loadCuteStrings();
 	const colors = loadCuteColors();
-	const user = strings.welcomePersona.user || "CinloDev";
+	const user = strings.welcomePersona.user || detectSystemUser();
 
 	// Ensures exactly one blank breathing line before adding a card or block,
 	// maintaining 1-to-1 mouse layout alignment with a dummy non-interactive spacer.
