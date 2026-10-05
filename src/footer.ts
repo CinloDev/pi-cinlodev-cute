@@ -581,14 +581,24 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			handleRailWheel: (delta: number) => usageCard.handleWheel(delta),
 		};
 		const gitGraphRail = {
-			render: (width: number) => gitGraph.render(width),
+			render: (width: number, availableHeight?: number) => gitGraph.render(width, availableHeight),
 			invalidate: () => gitGraph.invalidate(),
-			handleRailClick: (lineIndex: number) => gitGraph.handleClick(lineIndex),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				typeof gitGraph.handleRailClick === "function"
+					? gitGraph.handleRailClick(lineIndex, button, localX)
+					: gitGraph.handleClick(lineIndex),
+			handleRailWheel: (delta: number) =>
+				typeof gitGraph.handleRailWheel === "function" ? gitGraph.handleRailWheel(delta) : false,
 		};
 		const workingTreeRail = {
-			render: (width: number) => workingTree.render(width),
+			render: (width: number, availableHeight?: number) => workingTree.render(width, availableHeight),
 			invalidate: () => workingTree.invalidate(),
-			handleRailClick: (lineIndex: number) => workingTree.handleClick(lineIndex),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				typeof workingTree.handleRailClick === "function"
+					? workingTree.handleRailClick(lineIndex, button, localX)
+					: workingTree.handleClick(lineIndex),
+			handleRailWheel: (delta: number) =>
+				typeof workingTree.handleRailWheel === "function" ? workingTree.handleRailWheel(delta) : false,
 		};
 		const engramHandoffRail = {
 			render: (width: number) => engramHandoff.render(width),

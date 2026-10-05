@@ -16,7 +16,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
@@ -32,6 +32,7 @@ function resetAll() {
 	resetActiveProfileCache();
 	resetGitGraphCache();
 	resetGitStatusCache();
+	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
 }
@@ -3771,6 +3772,147 @@ test("cute-tree - resolveSidebarTab resolves '6', 'tree', 'TREE' to projectTree"
 
 	// SIDEBAR_TAB_CARD_MAP
 	assert.deepEqual(SIDEBAR_TAB_CARD_MAP.tree, ["projectTree"]);
+});
+
+test("cute-git-graph - branches view and branch selection toggle", () => {
+	resetAll();
+	const cwd = process.cwd();
+	const branches = fetchGitBranches(cwd);
+	assert.ok(Array.isArray(branches), "fetchGitBranches must return an array");
+	assert.ok(branches.length >= 1, "There should be at least one branch in the repo");
+	assert.equal(branches[0].isCurrent, true, "First local branch in list should be the current branch");
+
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+	const mockCtx = { cwd } as any;
+
+	const card = new CinlodevGitGraphCard(mockCtx, mockTui);
+
+	// Toggle view mode to branches
+	setGitTabViewMode("branches", mockTui);
+	assert.equal(getGitTabViewMode(), "branches");
+	assert.equal(renderRequested, 1);
+
+	// Render branches view
+	const lines = card.render(50, 20);
+	assert.equal(lines.length, 20, "Fixed height with availableHeight=20 should return exactly 20 lines");
+	const joined = lines.join("\n");
+	assert.ok(joined.includes("ramas en repo"), "Should display branch count header");
+	assert.ok(joined.includes(branches[0].name.slice(0, 15)), "Should list the current branch");
+
+	// Click on a branch selects it
+	const targetBranch = branches.length > 1 ? branches[1].name : "test-branch";
+	setGitTabSelectedBranch(targetBranch, mockTui);
+	assert.equal(getGitTabSelectedBranch(), targetBranch);
+	assert.equal(renderRequested, 2);
+
+	// Re-rendering in branches view shows 'diff' indicator for selected branch
+	const selectedLines = card.render(50, 20);
+	assert.ok(selectedLines.some((l) => l.includes("diff")), "Selected branch should have diff badge");
+
+	// Clicking selected branch deselects it
+	setGitTabSelectedBranch(null, mockTui);
+	assert.equal(getGitTabSelectedBranch(), null);
+
+	// Switch back to graph view
+	setGitTabViewMode("graph", mockTui);
+	assert.equal(getGitTabViewMode(), "graph");
+});
+
+test("cute-git-graph - CinlodevWorkingTreeCard Diff mode and 50/50 fixed height", () => {
+	resetAll();
+	const cwd = process.cwd();
+	let renderRequested = 0;
+	const mockTui = {
+		requestRender: () => {
+			renderRequested++;
+		},
+	} as any;
+	const mockCtx = { cwd } as any;
+
+	const card = new CinlodevWorkingTreeCard(mockCtx, mockTui);
+
+	// 1. Working tree mode with fixed height (availableHeight = 16)
+	setGitTabSelectedBranch(null);
+	const wtLines = card.render(50, 16);
+	assert.equal(wtLines.length, 16, "Working tree card with availableHeight=16 should return exactly 16 lines");
+	assert.ok(wtLines[0].includes("Working Tree"), "Header should contain 'Working Tree'");
+
+	// 2. Select a branch to activate Diff mode
+	const branches = fetchGitBranches(cwd);
+	const targetBranch = branches.length > 1 ? branches[1].name : "develop";
+	setGitTabSelectedBranch(targetBranch, mockTui);
+	assert.equal(getGitTabSelectedBranch(), targetBranch);
+
+	// Render in Diff mode with availableHeight = 18
+	const diffLines = card.render(50, 18);
+	assert.equal(diffLines.length, 18, "Diff card with availableHeight=18 should return exactly 18 lines");
+	assert.ok(diffLines[0].includes("Diff"), "Header should contain 'Diff'");
+	assert.ok(diffLines[0].includes("✕"), "Header should contain close button '[ ✕ ]'");
+	assert.ok(diffLines[0].includes("↗"), "Header should contain diff launch button '[ ↗ ]'");
+
+	// 3. Click close button resets to Working tree mode
+	// Simulate click on line 0 (header) near the close button
+	card.handleRailClick(0, "left", 38);
+	assert.equal(getGitTabSelectedBranch(), null, "Clicking close on line 0 should reset selected branch to null");
+
+	// 4. Mouse wheel scrolling
+	assert.equal(card.handleRailWheel(0), false);
+	assert.equal(card.handleRailWheel(1), false); // No overflow -> returns false
+});
+
+test("sidebar tabs - switching to git tab renders 2 cards at 50/50 split without errors", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const mockLayoutRoot: any = {
+		render: () => ["line1", "line2"],
+		invalidate: () => {},
+	};
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockLayoutRoot, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: { render: () => [] }, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+		// Mount sidebar wrapper
+		mockLayoutRoot[NODE]();
+
+		// Switch to GIT tab
+		state.activeTabId = "git";
+
+		const nodeResult = mockLayoutRoot[NODE]();
+		assert.ok(nodeResult.entries.length >= 3, "Layout should have at least left, divider, and rail entries");
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "ScrollView rail entry must be mounted");
+
+		const layout = loadCuteLayout().sidebar;
+		const railLines = scrollEntry.component.render(layout.railWidth);
+		assert.ok(railLines.length > 10, "Git tab rail must render lines");
+
+		const joined = railLines.join("\n");
+		assert.ok(joined.includes("git graph"), "Git tab rail must render upper card 'git graph'");
+		assert.ok(joined.includes("Working Tree"), "Git tab rail must render lower card 'Working Tree'");
+	} finally {
+		cleanup();
+		resetAll();
+	}
 });
 
 
