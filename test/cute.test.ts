@@ -2256,17 +2256,16 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.equal(visibleWidth(unthemedBar.line), 50);
 	assert.equal(visibleWidth(unthemedBar.divider), 50);
 
-	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:PROF, 5:MEM, 6:TREE, 7:TODO
+	// Generates bar with expected tabs: 1:MAIN, 2:GIT, 3:AGENTS, 4:PROF, 5:MEM, 6:TREE
 	assert.ok(unthemedBar.line.includes("1:MAIN"));
 	assert.ok(unthemedBar.line.includes("2:GIT"));
 	assert.ok(unthemedBar.line.includes("3:AGENTS"));
 	assert.ok(unthemedBar.line.includes("4:PROF"));
 	assert.ok(unthemedBar.line.includes("5:MEM"));
 	assert.ok(unthemedBar.line.includes("6:TREE"));
-	assert.ok(unthemedBar.line.includes("7:TODO"));
 
-	// Non-empty hitboxes (7 tabs: MAIN, GIT, AGENTS, prof, MEM, TREE, TODO)
-	assert.equal(unthemedBar.hitboxes.length, 7);
+	// Non-empty hitboxes (6 tabs: MAIN, GIT, AGENTS, prof, MEM, TREE)
+	assert.equal(unthemedBar.hitboxes.length, 6);
 	for (const h of unthemedBar.hitboxes) {
 		assert.ok(h.id);
 		assert.ok(h.key);
@@ -2282,7 +2281,7 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
 	assert.equal(visibleWidth(themedBar.line), 50);
 	assert.equal(visibleWidth(themedBar.divider), 50);
-	assert.equal(themedBar.hitboxes.length, 7);
+	assert.equal(themedBar.hitboxes.length, 6);
 
 	// 3. Narrow rail edge case: visibleWidth must never exceed width
 	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
@@ -2427,14 +2426,14 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 		});
 		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
 
-		// Wheel backward from main (index 0) wraps to todo (index 6, last tab)
+		// Wheel backward from main (index 0) wraps to tree (index 5)
 		scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
 			y: 3,
 		});
-		assert.equal(state.activeTabId, "todo", "Wheel delta -1 from index 0 should wrap to todo");
+		assert.equal(state.activeTabId, "tree", "Wheel delta -1 from index 0 should wrap to tree");
 	} finally {
 		cleanup();
 		resetAll();
@@ -4236,25 +4235,13 @@ test("cute-git-graph - fetchGitFileChanges respects TTL cache and invalidation",
 	}
 });
 
-test("sidebar-tabs - gitSyncBadge renders cleanly in TabBar and 7:TODO tab resolves correctly", () => {
-	// 1. Git Sync badge en TabBar
+test("sidebar-tabs - gitSyncBadge renders cleanly in TabBar", () => {
+	// Git Sync badge en TabBar
 	const barWithBadge = renderCuteSidebarTabBar(60, "1", undefined, "▲2");
 	assert.ok(barWithBadge.line.includes("2:GIT ▲2"), "Debe incluir el badge ▲2 en la pestaña GIT");
 
 	const activeGitWithBadge = renderCuteSidebarTabBar(60, "2", undefined, "▲1▼1");
 	assert.ok(activeGitWithBadge.line.includes("2:GIT ▲1▼1"), "Debe incluir el badge de sync activo en la pestaña GIT");
-
-	// 2. Resolución de la pestaña TODO
-	const tabById = resolveSidebarTab("todo");
-	assert.equal(tabById.id, "todo");
-	assert.equal(tabById.key, "7");
-	assert.deepEqual(tabById.cards, ["todo"]);
-
-	const tabByKey = resolveSidebarTab("7");
-	assert.equal(tabByKey.id, "todo");
-
-	const tabByAlias = resolveSidebarTab("todos");
-	assert.equal(tabByAlias.id, "todo");
 });
 
 test("todos - CinlodevTodoMirror supports full-height availableHeight in renderRail", () => {

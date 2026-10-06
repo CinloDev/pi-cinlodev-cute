@@ -19,7 +19,6 @@ export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	forge: ["cute-profiles"],
 	mem: ["engram", "engramHandoff", "tools"],
 	tree: ["projectTree"],
-	todo: ["todo"],
 };
 
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
@@ -29,7 +28,6 @@ export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
 	{ id: "prof", key: "4", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
 	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
 	{ id: "tree", key: "6", label: "TREE", title: "Project Tree & Explorer", cards: SIDEBAR_TAB_CARD_MAP.tree },
-	{ id: "todo", key: "7", label: "TODO", title: "Todos & Task Checklist", cards: SIDEBAR_TAB_CARD_MAP.todo },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
@@ -38,7 +36,6 @@ export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
 		if (normalized === "forge") normalized = "prof";
 		if (normalized === "usage") normalized = "agents";
 		if (normalized === "projecttree" || normalized === "project-tree") normalized = "tree";
-		if (normalized === "todo" || normalized === "todos" || normalized === "task" || normalized === "tasks") normalized = "todo";
 		const match = CUTE_SIDEBAR_TABS.find(
 			(t) => t.id === normalized || t.key === normalized || t.label.toLowerCase() === normalized
 		);
@@ -70,7 +67,7 @@ export function renderCuteSidebarTabBar(
 	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
 	const warning = (s: string): string => (theme ? safeFg(theme, "warning", s) : s);
 
-	const compactActive = width < 48;
+	const compactActive = width < 44;
 
 	const tabVisuals = CUTE_SIDEBAR_TABS.map((tab) => {
 		const isActive = tab.id === activeTab.id;
