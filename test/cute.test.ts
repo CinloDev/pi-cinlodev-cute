@@ -17,7 +17,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState, getGitSyncBadge } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
@@ -4233,6 +4233,49 @@ test("cute-git-graph - fetchGitFileChanges respects TTL cache and invalidation",
 	} finally {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	}
+});
+
+test("sidebar-tabs - gitSyncBadge renders cleanly in TabBar", () => {
+	// Git Sync badge en TabBar
+	const barWithBadge = renderCuteSidebarTabBar(60, "1", undefined, "▲2");
+	assert.ok(barWithBadge.line.includes("2:GIT ▲2"), "Debe incluir el badge ▲2 en la pestaña GIT");
+
+	const activeGitWithBadge = renderCuteSidebarTabBar(60, "2", undefined, "▲1▼1");
+	assert.ok(activeGitWithBadge.line.includes("2:GIT ▲1▼1"), "Debe incluir el badge de sync activo en la pestaña GIT");
+});
+
+test("todos - CinlodevTodoMirror supports full-height availableHeight in renderRail", () => {
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: Array.from({ length: 20 }, (_, i) => ({
+									id: i + 1,
+									title: `Tarea extendida ${i + 1}`,
+									status: "pending" as const,
+								})),
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
+	// Invocación estándar (railMaxRows = 8)
+	const standardLines = mirror.renderRail(40);
+	// Con full-height en la pestaña 7:TODO (availableHeight = 25)
+	const fullHeightLines = mirror.renderRail(40, 25);
+
+	assert.ok(fullHeightLines.length > standardLines.length, "Con availableHeight debe renderizar más líneas verticales");
+	assert.ok(fullHeightLines.length >= 20, "Debe aprovechar la altura vertical disponible del rail");
 });
 
 
