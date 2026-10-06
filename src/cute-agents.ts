@@ -35,21 +35,39 @@ export interface OrchestratorStatus {
  * Returns dynamic role color based on semantic subagent name conventions.
  * Respects Zero-Hardcode Rule 4: Grouping by convention with safe fallbacks.
  */
-export function getAgentRoleColor(agentName: string, palette: any): (s: string) => string {
+export function getAgentRoleColor(agentName: string, colorsOrPalette: any): (s: string) => string {
 	const lower = agentName.toLowerCase();
+	// 1. Conventions matching 4:PROF
+	if (lower.startsWith("gentle-ai-")) {
+		return colorsOrPalette.celeste || colorsOrPalette.cyan || colorsOrPalette.mint; // Celeste
+	}
+	if (lower.startsWith("jd-")) {
+		return colorsOrPalette.gold; // Dorado
+	}
+	if (lower.startsWith("review-")) {
+		return colorsOrPalette.mint; // Menta
+	}
+	if (lower.startsWith("research-")) {
+		return colorsOrPalette.violet || colorsOrPalette.pinkAccent || colorsOrPalette.pink; // Violeta / Rosa
+	}
+
+	// 2. Semantic fallback keywords
 	if (lower.startsWith("arch") || lower.includes("architect") || lower.includes("plan") || lower.includes("lead")) {
-		return palette.cyan || palette.celeste || palette.mint; // Celeste
+		return colorsOrPalette.celeste || colorsOrPalette.cyan || colorsOrPalette.mint; // Celeste
 	}
 	if (lower.includes("research") || lower.includes("search") || lower.includes("explore") || lower.includes("investig")) {
-		return palette.gold; // Dorado
+		return colorsOrPalette.gold; // Dorado
 	}
 	if (lower.includes("write") || lower.includes("code") || lower.includes("impl") || lower.includes("dev") || lower.includes("worker")) {
-		return palette.mint; // Menta
+		return colorsOrPalette.celeste || colorsOrPalette.mint; // Celeste / Menta
 	}
-	if (lower.includes("review") || lower.includes("judge") || lower.includes("verify") || lower.includes("audit") || lower.includes("test")) {
-		return palette.salmon || palette.orange || palette.coral; // Salmón
+	if (lower.includes("review") || lower.includes("audit") || lower.includes("test")) {
+		return colorsOrPalette.mint; // Menta
 	}
-	return palette.pinkAccent || palette.pink || palette.gold; // Rosa CUTE por defecto
+	if (lower.includes("judge")) {
+		return colorsOrPalette.gold; // Dorado
+	}
+	return colorsOrPalette.pinkAccent || colorsOrPalette.pink || colorsOrPalette.gold; // Rosa CUTE por defecto
 }
 
 /**
@@ -312,6 +330,7 @@ export class CinlodevAgentsCard implements Component {
 			dim: (s: string): string => palette.dim(s),
 			celeste: (s: string): string => (theme ? safeFg(theme, "write", s) : s),
 			cyan: (s: string): string => (theme ? safeFg(theme, "write", s) : s),
+			violet: (s: string): string => (theme ? safeFg(theme, "border", s) : s),
 			salmon: (s: string): string => (theme ? safeFg(theme, "salmon", s) : s),
 			bold: (s: string): string => bolden(theme, s),
 		};
@@ -359,8 +378,8 @@ export class CinlodevAgentsCard implements Component {
 			hostStatusBadge = `${c.dim("●")} ${c.dim("En espera")}`;
 		}
 
-		// 3. Render Host Root Node
-		lines.push(boxLine(`${c.pink("┌─")} ${c.bold("Host Orchestrator")} ${c.dim(`[${activeProfileName}]`)}`, hostStatusBadge));
+		// 3. Render Host Root Node (violet like 4:PROF host)
+		lines.push(boxLine(`${c.pink("┌─")} ${c.bold(c.violet("Host Orchestrator"))} ${c.dim(`[${activeProfileName}]`)}`, hostStatusBadge));
 		lines.push(boxLine(`${c.pink("│")}  ${c.dim("Model:")} ${c.gold(hostModelShort)} ${c.dim(`[${hostEffort}]`)}`));
 
 		const sessId = (this.ctx?.sessionManager as any)?.getSessionId?.() || "";
@@ -407,7 +426,7 @@ export class CinlodevAgentsCard implements Component {
 					const taskConnector = isLastTask ? "└─►" : "├─►";
 					const taskSubBar = isLastTask ? "   " : "│  ";
 
-					const roleColor = getAgentRoleColor(t.agent, palette);
+					const roleColor = getAgentRoleColor(t.agent, c);
 					const agentTag = roleColor(`[${t.agent}]`);
 					const statusTag = formatSubagentStatusTag(t.status, palette);
 
@@ -467,35 +486,16 @@ export class CinlodevAgentsCard implements Component {
 			if (subagentEntries.length === 0) {
 				lines.push(boxLine(`    ${c.dim("No hay subagentes configurados en este perfil")}`));
 			} else {
-				// If viewMode === "roster" or allTasks.length === 0, render full vertical tree
-				if (this.viewMode === "roster" || allTasks.length === 0) {
-					for (let i = 0; i < subagentEntries.length; i++) {
-						const [name, cfg] = subagentEntries[i];
-						const isLast = i === subagentEntries.length - 1;
-						const conn = isLast ? "└──" : "├──";
-						const roleColor = getAgentRoleColor(name, palette);
-						const modelRaw = cfg.model || "default";
-						const modelShort = modelRaw.split("/").pop() || modelRaw;
-						const effort = cfg.effort || "med";
+				// Render vertical tree with PROF matching palette without model clutter
+				for (let i = 0; i < subagentEntries.length; i++) {
+					const [name] = subagentEntries[i];
+					const isLast = i === subagentEntries.length - 1;
+					const conn = isLast ? "└──" : "├──";
+					const roleColor = getAgentRoleColor(name, c);
 
-						lines.push(
-							boxLine(
-								`    ${c.pink(conn)} ${roleColor(`[${name}]`)} ${c.gold(modelShort)}`,
-								c.dim(`[${effort}]`)
-							)
-						);
-					}
-				} else {
-					// Compact pills row in combined mode
-					const pills: string[] = [];
-					for (const [name] of subagentEntries.slice(0, 4)) {
-						const roleColor = getAgentRoleColor(name, palette);
-						pills.push(roleColor(`[${name}]`));
-					}
-					if (subagentEntries.length > 4) {
-						pills.push(c.dim(`+${subagentEntries.length - 4}`));
-					}
-					lines.push(boxLine(`    ${c.pink("├─►")} ${pills.join(" ")}`, c.dim("(Clic: toggle)")));
+					lines.push(
+						boxLine(`    ${c.pink(conn)} ${roleColor(`[${name}]`)}`)
+					);
 				}
 			}
 		}

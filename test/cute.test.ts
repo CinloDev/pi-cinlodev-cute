@@ -677,6 +677,46 @@ test("formatAssistantProse - celeste body, bold headings, colored and fenced lin
 	assert.deepEqual(formatAssistantProse([], mockTheme), []);
 });
 
+test("formatAssistantProse - formats git status and diff lines inside fences with Dracula tones", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const proseWithGit = [
+		"### Estado de Git & Diff:",
+		"```",
+		"On branch feat/cool-feature",
+		"Changes not staged for commit:",
+		"  modified:   src/cute-agents.ts",
+		"```",
+		"```",
+		" src/cute-agents.ts | 10 +++++-----",
+		" 1 file changed, 5 insertions(+), 5 deletions(-)",
+		"```",
+		"────────────────────────────",
+	];
+
+	const out = formatAssistantProse(proseWithGit, mockTheme);
+
+	// 1. Divider in border tone
+	assert.ok(out.some((l) => l.includes("[border]────────────────────────────[/border]")));
+
+	// 2. Branch name in write (celeste)
+	assert.ok(out.some((l) => l.includes("[write]feat/cool-feature[/write]")));
+
+	// 3. Status heading in heading (gold)
+	assert.ok(out.some((l) => l.includes("[heading]Changes not staged for commit:[/heading]")));
+
+	// 4. File status entry: modified in warning, path in write
+	assert.ok(out.some((l) => l.includes("[warning]modified:[/warning]") && l.includes("[write]src/cute-agents.ts[/write]")));
+
+	// 5. Diff stat: file in write, + in mint, - in red
+	assert.ok(out.some((l) => l.includes("[mint]+[/mint]") && l.includes("[red]-[/red]")));
+
+	// 6. Diff summary: insertions in mint, deletions in red
+	assert.ok(out.some((l) => l.includes("[mint]5 insertions(+)[/mint]") && l.includes("[red]5 deletions(-)[/red]")));
+});
+
 test("highlightUncoloredSegments - keeps OSC 133 and APC sequences atomic without corruption", () => {
 	const mockHighlight = (t: string) => `[${t}]`;
 	const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -3091,11 +3131,14 @@ test("cute-agents - getAgentRoleColor and formatSubagentStatusTag conventions", 
 		dim: (s: string) => `dim(${s})`,
 	} as any;
 
-	// Convention grouping check
+	// Convention grouping check (aligned with 4:PROF palette)
 	assert.equal(getAgentRoleColor("architect", mockPalette)("test"), "cyan(test)");
 	assert.equal(getAgentRoleColor("researcher", mockPalette)("test"), "gold(test)");
 	assert.equal(getAgentRoleColor("writer", mockPalette)("test"), "mint(test)");
-	assert.equal(getAgentRoleColor("reviewer", mockPalette)("test"), "salmon(test)");
+	assert.equal(getAgentRoleColor("reviewer", mockPalette)("test"), "mint(test)");
+	assert.equal(getAgentRoleColor("gentle-ai-explore", mockPalette)("test"), "cyan(test)");
+	assert.equal(getAgentRoleColor("jd-judge-a", mockPalette)("test"), "gold(test)");
+	assert.equal(getAgentRoleColor("review-risk", mockPalette)("test"), "mint(test)");
 	assert.equal(getAgentRoleColor("custom-worker", mockPalette)("test"), "mint(test)");
 	assert.equal(getAgentRoleColor("unknown-bot", mockPalette)("test"), "pink(test)");
 
