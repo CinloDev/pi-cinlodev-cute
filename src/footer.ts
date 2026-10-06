@@ -671,7 +671,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			invalidate: () => todos.invalidate(),
 		};
 		const todoRail: Component & { dispose?(): void; handleRailWheel?(delta: number): boolean } = {
-			render: (width: number) => todos.renderRail(width),
+			render: (width: number, availableHeight?: number) => todos.renderRail(width, availableHeight),
 			invalidate: () => todos.invalidate(),
 			handleRailWheel: (delta: number) => todos.handleRailWheel(delta),
 		};

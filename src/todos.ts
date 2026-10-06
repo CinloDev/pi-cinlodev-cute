@@ -262,9 +262,13 @@ export class CinlodevTodoMirror implements Component {
 		return lines;
 	}
 
-	renderRail(width: number): string[] {
+	renderRail(width: number, availableHeight?: number): string[] {
 		try {
-			return this.renderCard(width, loadCuteLayout().todos.railMaxRows);
+			const rows =
+				typeof availableHeight === "number" && availableHeight >= 5
+					? Math.max(availableHeight - 2, loadCuteLayout().todos.railMaxRows)
+					: loadCuteLayout().todos.railMaxRows;
+			return this.renderCard(width, rows);
 		} catch {
 			return [];
 		}

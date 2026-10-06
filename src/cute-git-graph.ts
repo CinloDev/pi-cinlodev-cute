@@ -520,6 +520,28 @@ export function resetGitBranchesCache(): void {
 	cachedBranches = undefined;
 }
 
+/**
+ * Returns a concise sync badge for the current Git branch (e.g. "▲1", "▼2", "▲1▼2" or "").
+ * Uses cached branch information with 3-second TTL for zero render overhead.
+ */
+export function getGitSyncBadge(cwd: string = process.cwd()): string {
+	try {
+		const branches = fetchGitBranches(cwd);
+		const current = branches.find((b) => b.isCurrent);
+		if (!current) return "";
+		const parts: string[] = [];
+		if (typeof current.ahead === "number" && current.ahead > 0) {
+			parts.push(`▲${current.ahead}`);
+		}
+		if (typeof current.behind === "number" && current.behind > 0) {
+			parts.push(`▼${current.behind}`);
+		}
+		return parts.join("");
+	} catch {
+		return "";
+	}
+}
+
 export interface BranchDiffFile {
 	path: string;
 	status: "modified" | "added" | "deleted" | "renamed" | "unknown";

@@ -6,7 +6,7 @@ import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
-import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 import {
@@ -361,6 +361,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					const lines =
 						key !== "footer" &&
 						key !== "context" &&
+						key !== "todo" &&
 						key !== "engram" &&
 						key !== "engramHandoff" &&
 						key !== "engram-handoff" &&
@@ -423,7 +424,9 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				railLines.push("");
 			}
 
-			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme);
+			const cwd = (tui as any)?.cwd ?? process.cwd();
+			const gitSyncBadge = getGitSyncBadge(cwd);
+			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme, gitSyncBadge);
 			tabBarLineIndex = railLines.length;
 			railLines.push(" ".repeat(layout.railPadding) + tabLine + " ".repeat(layout.railPadding));
 			tabBarDividerLineIndex = railLines.length;
