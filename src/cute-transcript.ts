@@ -263,6 +263,12 @@ export function formatGrepLines(rawLines: string[], theme?: Theme): string[] {
  */
 const FETCH_TOOL_NAMES = new Set(["fetch", "fetch_content"]);
 
+const TOOL_GLYPH_PREFIX = "(?:[✿❀❁✾★✣≡⌕+☷⌖✎\\u270E$🌹*]\\s*)?";
+const FETCH_HEADER_RE = new RegExp(`^${TOOL_GLYPH_PREFIX}fetch\\s+`, "i");
+const SEARCH_HEADER_RE = new RegExp(`^${TOOL_GLYPH_PREFIX}search\\s+`, "i");
+const SUBAGENT_HEADER_RE = new RegExp(`^${TOOL_GLYPH_PREFIX}agent\\s+(?:status|run|result|reply|cancel|continue|list)`, "i");
+const AGENT_STATUS_HEADER_RE = new RegExp(`^${TOOL_GLYPH_PREFIX}agent\\s+status\\b`, "i");
+
 /**
  * Checks whether a transcript component is a fetch tool execution.
  * Matches by toolName (`fetch_content` / `fetch`) or, when the tool was
@@ -289,7 +295,7 @@ export function looksLikeFetchLines(rawLines: string[]): boolean {
 	for (const line of lines) {
 		const plain = stripAnsi(line).trim();
 		if (!plain) continue;
-		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E]\s*)?fetch\s+/i.test(plain);
+		return FETCH_HEADER_RE.test(plain);
 	}
 	return false;
 }
@@ -333,7 +339,7 @@ export function looksLikeSearchLines(rawLines: string[]): boolean {
 	for (const line of lines) {
 		const plain = stripAnsi(line).trim();
 		if (!plain) continue;
-		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E]\s*)?search\s+/i.test(plain);
+		return SEARCH_HEADER_RE.test(plain);
 	}
 	return false;
 }
@@ -534,7 +540,7 @@ export function isSubagentComponent(child: Component, renderedLines?: string[]):
 	const lines = renderedLines ?? tryRender(child, 80);
 	if (lines && lines.length > 0) {
 		const plain = stripAnsi(lines[0]).trim();
-		if (/^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E*]\s*)?agent\s+(?:status|run|result|reply|cancel|continue|list)/i.test(plain)) {
+		if (SUBAGENT_HEADER_RE.test(plain)) {
 			return true;
 		}
 	}
@@ -551,7 +557,7 @@ export function isAgentStatusComponent(child: Component, renderedLines?: string[
 	const lines = renderedLines ?? tryRender(child, 80);
 	if (lines && lines.length > 0) {
 		const plain = stripAnsi(lines[0]).trim();
-		return /^(?:[✿❀❁✾★✣≡⌕+☷⌖✎\u270E*]\s*)?agent\s+status\b/i.test(plain);
+		return AGENT_STATUS_HEADER_RE.test(plain);
 	}
 	return false;
 }
