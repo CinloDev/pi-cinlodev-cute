@@ -369,33 +369,7 @@ export function loadProfileDetails(name: string, cwd?: string): FullProfileData 
  * Reads details of the currently active profile.
  */
 export function getActiveProfileDetails(cwd?: string): FullProfileData | null {
-	const api = getSddProfilesApi();
-	let activeName: string | null = null;
-	if (api) {
-		try {
-			activeName = api.getActiveProfile();
-		} catch {}
-	}
-
-	if (!activeName) {
-		const workingDir = cwd ?? process.cwd();
-		const home = os.homedir();
-		const projectDir = path.join(workingDir, ".pi", "profiles");
-		const globalDir = path.join(home, ".pi", "agent", "profiles");
-		const projectActivePath = path.join(projectDir, ".active");
-		const globalActivePath = path.join(globalDir, ".active");
-
-		if (fs.existsSync(projectActivePath)) {
-			try {
-				activeName = fs.readFileSync(projectActivePath, "utf-8").trim();
-			} catch {}
-		}
-		if (!activeName && fs.existsSync(globalActivePath)) {
-			try {
-				activeName = fs.readFileSync(globalActivePath, "utf-8").trim();
-			} catch {}
-		}
-	}
+	const activeName = readActiveProfile(cwd);
 
 	if (activeName) {
 		const details = loadProfileDetails(activeName, cwd);
@@ -487,20 +461,7 @@ export function listAvailableProfiles(cwd?: string): ProfileItem[] {
 	const globalDir = path.join(home, ".pi", "agent", "profiles");
 	const builtinDir = findSddProfilesDir();
 
-	let activeName: string | null = null;
-	const projectActivePath = path.join(projectDir, ".active");
-	const globalActivePath = path.join(globalDir, ".active");
-
-	if (fs.existsSync(projectActivePath)) {
-		try {
-			activeName = fs.readFileSync(projectActivePath, "utf-8").trim();
-		} catch {}
-	}
-	if (!activeName && fs.existsSync(globalActivePath)) {
-		try {
-			activeName = fs.readFileSync(globalActivePath, "utf-8").trim();
-		} catch {}
-	}
+	const activeName = readActiveProfile(cwd) ?? null;
 
 	const profilesMap = new Map<string, ProfileItem>();
 
