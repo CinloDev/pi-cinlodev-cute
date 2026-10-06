@@ -14,7 +14,7 @@ import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installS
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
-import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
+import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard, getActiveProfileDetails } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
 import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState, getGitSyncBadge } from "../src/cute-git-graph.ts";
@@ -1525,6 +1525,50 @@ test("cute-profiles - switchProfile switches active profile via API and fallback
 	const notFound = await switchProfile("perfil-inexistente-xyz");
 	assert.equal(notFound.success, false);
 	assert.ok(notFound.message.includes("no encontrado"));
+});
+
+test("cute-profiles - getActiveProfileDetails resolves active profile via readActiveProfile and API", () => {
+	resetActiveProfileCache();
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-active-details-test-"));
+	try {
+		// 1. Filesystem project-local resolution
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "cinlo-custom", "utf8");
+		fs.writeFileSync(
+			path.join(projDir, "cinlo-custom.json"),
+			JSON.stringify({ name: "cinlo-custom", description: "Custom Test Profile" }),
+			"utf8",
+		);
+
+		const details = getActiveProfileDetails(tmpDir);
+		assert.ok(details, "should return profile details");
+		assert.equal(details?.name, "cinlo-custom");
+		assert.equal(details?.description, "Custom Test Profile");
+
+		// 2. Global SDD API override
+		fs.writeFileSync(
+			path.join(projDir, "api-active.json"),
+			JSON.stringify({ name: "api-active", description: "API Profile" }),
+			"utf8",
+		);
+		(globalThis as any)[SDD_PROFILES_API_SYMBOL] = {
+			getActiveProfile: () => "api-active",
+			listProfiles: () => [
+				{ name: "api-active", description: "API Profile", active: true },
+			],
+		};
+		resetActiveProfileCache();
+
+		const apiDetails = getActiveProfileDetails(tmpDir);
+		assert.ok(apiDetails, "should resolve via API");
+		assert.equal(apiDetails?.name, "api-active");
+		assert.equal(apiDetails?.description, "API Profile");
+	} finally {
+		delete (globalThis as any)[SDD_PROFILES_API_SYMBOL];
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetActiveProfileCache();
+	}
 });
 
 test("cute-notify - herdrAvailable and fallback notification dispatch", () => {
