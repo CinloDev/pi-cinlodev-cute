@@ -269,6 +269,18 @@ export function resetGitStatusCache(): void {
 	cachedStatus = undefined;
 }
 
+export interface GitFileChangesCache {
+	files: GitFileChange[];
+	readAt: number;
+	cwd: string;
+}
+
+let cachedFileChanges: GitFileChangesCache | undefined;
+
+export function resetGitFileChangesCache(): void {
+	cachedFileChanges = undefined;
+}
+
 export interface GitFileChange {
 	path: string;
 	status: "modified" | "added" | "deleted" | "untracked" | "conflict";
@@ -277,7 +289,12 @@ export interface GitFileChange {
 	linesDeleted: number;
 }
 
-export function fetchGitFileChanges(cwd: string): GitFileChange[] {
+export function fetchGitFileChanges(cwd: string, ttlMs = 2000): GitFileChange[] {
+	const now = Date.now();
+	if (cachedFileChanges && cachedFileChanges.cwd === cwd && now - cachedFileChanges.readAt < ttlMs) {
+		return cachedFileChanges.files;
+	}
+
 	try {
 		const statusOut = cp.execFileSync("git", ["status", "--porcelain=v1"], {
 			cwd,
@@ -328,8 +345,10 @@ export function fetchGitFileChanges(cwd: string): GitFileChange[] {
 				linesDeleted: num.deleted,
 			});
 		}
+		cachedFileChanges = { files, readAt: now, cwd };
 		return files;
 	} catch {
+		cachedFileChanges = { files: [], readAt: now, cwd };
 		return [];
 	}
 }
@@ -499,6 +518,28 @@ export function fetchGitBranches(cwd: string, ttlMs = 3000): GitBranchItem[] {
 
 export function resetGitBranchesCache(): void {
 	cachedBranches = undefined;
+}
+
+/**
+ * Returns a concise sync badge for the current Git branch (e.g. "▲1", "▼2", "▲1▼2" or "").
+ * Uses cached branch information with 3-second TTL for zero render overhead.
+ */
+export function getGitSyncBadge(cwd: string = process.cwd()): string {
+	try {
+		const branches = fetchGitBranches(cwd);
+		const current = branches.find((b) => b.isCurrent);
+		if (!current) return "";
+		const parts: string[] = [];
+		if (typeof current.ahead === "number" && current.ahead > 0) {
+			parts.push(`▲${current.ahead}`);
+		}
+		if (typeof current.behind === "number" && current.behind > 0) {
+			parts.push(`▼${current.behind}`);
+		}
+		return parts.join("");
+	} catch {
+		return "";
+	}
 }
 
 export interface BranchDiffFile {
@@ -810,6 +851,7 @@ export class CinlodevGitGraphCard implements Component {
 		resetGitStatusCache();
 		resetGitBranchesCache();
 		resetBranchDiffCache();
+		resetGitFileChangesCache();
 	}
 
 	render(width: number, availableHeight?: number): string[] {
@@ -1139,6 +1181,7 @@ export class CinlodevWorkingTreeCard implements Component {
 	invalidate(): void {
 		resetGitStatusCache();
 		resetBranchDiffCache();
+		resetGitFileChangesCache();
 	}
 
 	render(width: number, availableHeight?: number): string[] {

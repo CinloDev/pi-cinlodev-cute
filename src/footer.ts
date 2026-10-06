@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { cuteGlyphs, cutePalette, frameFg, type CutePalette } from "./cute-theme.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
-import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, resetGitFileChangesCache } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
@@ -59,6 +59,7 @@ export function getLatestUsageCard(): CinlodevUsageCard | undefined {
 }
 
 export function invalidateSidebarGitAndTree(): void {
+	resetGitFileChangesCache();
 	latestGitGraph?.invalidate();
 	latestWorkingTree?.invalidate();
 	latestProjectTree?.invalidate();
@@ -670,7 +671,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			invalidate: () => todos.invalidate(),
 		};
 		const todoRail: Component & { dispose?(): void; handleRailWheel?(delta: number): boolean } = {
-			render: (width: number) => todos.renderRail(width),
+			render: (width: number, availableHeight?: number) => todos.renderRail(width, availableHeight),
 			invalidate: () => todos.invalidate(),
 			handleRailWheel: (delta: number) => todos.handleRailWheel(delta),
 		};

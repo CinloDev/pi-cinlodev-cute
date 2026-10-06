@@ -6,3 +6,4 @@ dist/
 .atl/
 .pi/
 .codegraph/
+memory.db*

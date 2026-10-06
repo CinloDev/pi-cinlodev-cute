@@ -14,9 +14,7 @@ export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	main: ["footer", "context", "todo"],
 	git: ["gitGraph", "workingTree"],
 	agents: ["cute-agents"],
-	usage: ["cute-agents"],
 	prof: ["cute-profiles"],
-	forge: ["cute-profiles"],
 	mem: ["engram", "engramHandoff", "tools"],
 	tree: ["projectTree"],
 };
@@ -56,6 +54,7 @@ export function renderCuteSidebarTabBar(
 	width: number,
 	activeTabId: string,
 	theme?: Theme,
+	gitSyncBadge?: string,
 ): { line: string; divider: string; hitboxes: TabHitbox[] } {
 	const activeTab = resolveSidebarTab(activeTabId);
 	const hitboxes: TabHitbox[] = [];
@@ -64,20 +63,24 @@ export function renderCuteSidebarTabBar(
 	const muted = (s: string): string => (theme ? safeFg(theme, "muted", s) : s);
 	const pinkBright = (s: string): string => (theme ? safeFg(theme, "pinkBright", s) : s);
 	const subtle = (s: string): string => (theme ? safeFg(theme, "borderMuted", s) : s);
+	const warning = (s: string): string => (theme ? safeFg(theme, "warning", s) : s);
 
 	const compactActive = width < 44;
 
 	const tabVisuals = CUTE_SIDEBAR_TABS.map((tab) => {
 		const isActive = tab.id === activeTab.id;
+		const extraSuffix = tab.id === "git" && gitSyncBadge ? ` ${gitSyncBadge}` : "";
+
 		if (isActive) {
 			const label = compactActive
-				? `[${tab.key}:${tab.label}]`
-				: `[ ${tab.key}:${tab.label} ]`;
+				? `[${tab.key}:${tab.label}${extraSuffix}]`
+				: `[ ${tab.key}:${tab.label}${extraSuffix} ]`;
 			const styled = pinkBright(bolden(theme, label));
 			return { tab, isActive, styled, len: visibleWidth(label) };
 		} else {
-			const label = `${tab.key}:${tab.label}`;
-			const styled = `${dim(tab.key)}${dim(":")}${muted(tab.label)}`;
+			const label = `${tab.key}:${tab.label}${extraSuffix}`;
+			const badgeStyled = extraSuffix ? warning(extraSuffix) : "";
+			const styled = `${dim(tab.key)}${dim(":")}${muted(tab.label)}${badgeStyled}`;
 			return { tab, isActive, styled, len: visibleWidth(label) };
 		}
 	});

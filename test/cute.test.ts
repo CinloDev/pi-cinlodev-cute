@@ -14,10 +14,10 @@ import { renderCuteSidebarTabBar, resolveSidebarTab, CUTE_SIDEBAR_TABS, installS
 import { loadCutePaths, resetCutePathsCache, readActiveProfile, resetActiveProfileCache, readGitBranch } from "../src/cute-paths.ts";
 import { loadCuteColors, resetCuteColorsCache } from "../src/cute-colors.ts";
 import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
-import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard } from "../src/cute-profiles.ts";
+import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard, getActiveProfileDetails } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState, getGitSyncBadge } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
@@ -35,6 +35,7 @@ function resetAll() {
 	resetActiveProfileCache();
 	resetGitGraphCache();
 	resetGitStatusCache();
+	resetGitFileChangesCache();
 	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
@@ -674,6 +675,46 @@ test("formatAssistantProse - celeste body, bold headings, colored and fenced lin
 	assert.ok(out.includes("plain code line"), "fenced code untouched");
 	assert.ok(out.includes("```"));
 	assert.deepEqual(formatAssistantProse([], mockTheme), []);
+});
+
+test("formatAssistantProse - formats git status and diff lines inside fences with Dracula tones", () => {
+	const mockTheme = {
+		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
+	} as any;
+
+	const proseWithGit = [
+		"### Estado de Git & Diff:",
+		"```",
+		"On branch feat/cool-feature",
+		"Changes not staged for commit:",
+		"  modified:   src/cute-agents.ts",
+		"```",
+		"```",
+		" src/cute-agents.ts | 10 +++++-----",
+		" 1 file changed, 5 insertions(+), 5 deletions(-)",
+		"```",
+		"────────────────────────────",
+	];
+
+	const out = formatAssistantProse(proseWithGit, mockTheme);
+
+	// 1. Divider in border tone
+	assert.ok(out.some((l) => l.includes("[border]────────────────────────────[/border]")));
+
+	// 2. Branch name in write (celeste)
+	assert.ok(out.some((l) => l.includes("[write]feat/cool-feature[/write]")));
+
+	// 3. Status heading in heading (gold)
+	assert.ok(out.some((l) => l.includes("[heading]Changes not staged for commit:[/heading]")));
+
+	// 4. File status entry: modified in warning, path in write
+	assert.ok(out.some((l) => l.includes("[warning]modified:[/warning]") && l.includes("[write]src/cute-agents.ts[/write]")));
+
+	// 5. Diff stat: file in write, + in mint, - in red
+	assert.ok(out.some((l) => l.includes("[mint]+[/mint]") && l.includes("[red]-[/red]")));
+
+	// 6. Diff summary: insertions in mint, deletions in red
+	assert.ok(out.some((l) => l.includes("[mint]5 insertions(+)[/mint]") && l.includes("[red]5 deletions(-)[/red]")));
 });
 
 test("highlightUncoloredSegments - keeps OSC 133 and APC sequences atomic without corruption", () => {
@@ -1526,6 +1567,50 @@ test("cute-profiles - switchProfile switches active profile via API and fallback
 	assert.ok(notFound.message.includes("no encontrado"));
 });
 
+test("cute-profiles - getActiveProfileDetails resolves active profile via readActiveProfile and API", () => {
+	resetActiveProfileCache();
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-active-details-test-"));
+	try {
+		// 1. Filesystem project-local resolution
+		const projDir = path.join(tmpDir, ".pi", "profiles");
+		fs.mkdirSync(projDir, { recursive: true });
+		fs.writeFileSync(path.join(projDir, ".active"), "cinlo-custom", "utf8");
+		fs.writeFileSync(
+			path.join(projDir, "cinlo-custom.json"),
+			JSON.stringify({ name: "cinlo-custom", description: "Custom Test Profile" }),
+			"utf8",
+		);
+
+		const details = getActiveProfileDetails(tmpDir);
+		assert.ok(details, "should return profile details");
+		assert.equal(details?.name, "cinlo-custom");
+		assert.equal(details?.description, "Custom Test Profile");
+
+		// 2. Global SDD API override
+		fs.writeFileSync(
+			path.join(projDir, "api-active.json"),
+			JSON.stringify({ name: "api-active", description: "API Profile" }),
+			"utf8",
+		);
+		(globalThis as any)[SDD_PROFILES_API_SYMBOL] = {
+			getActiveProfile: () => "api-active",
+			listProfiles: () => [
+				{ name: "api-active", description: "API Profile", active: true },
+			],
+		};
+		resetActiveProfileCache();
+
+		const apiDetails = getActiveProfileDetails(tmpDir);
+		assert.ok(apiDetails, "should resolve via API");
+		assert.equal(apiDetails?.name, "api-active");
+		assert.equal(apiDetails?.description, "API Profile");
+	} finally {
+		delete (globalThis as any)[SDD_PROFILES_API_SYMBOL];
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetActiveProfileCache();
+	}
+});
+
 test("cute-notify - herdrAvailable and fallback notification dispatch", () => {
 	const origSocket = process.env.HERDR_SOCKET_PATH;
 	const origEnv = process.env.HERDR_ENV;
@@ -2319,10 +2404,11 @@ test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
 	assert.equal(resolveSidebarTab("mem").id, "mem");
 	assert.equal(resolveSidebarTab("0").id, "main", "legacy 0/all tab should safely fall back to main");
 
-	// SIDEBAR_TAB_CARD_MAP checks
+	// SIDEBAR_TAB_CARD_MAP checks - clean canonical 6 tabs
 	assert.ok(SIDEBAR_TAB_CARD_MAP.prof.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.prof must include cute-profiles");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.agents.includes("cute-agents"), "SIDEBAR_TAB_CARD_MAP.agents must include cute-agents");
-	assert.ok(SIDEBAR_TAB_CARD_MAP.forge.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.forge alias must include cute-profiles");
+	assert.equal(SIDEBAR_TAB_CARD_MAP.forge, undefined, "legacy forge should be pruned from map");
+	assert.equal(SIDEBAR_TAB_CARD_MAP.usage, undefined, "legacy usage should be pruned from map");
 
 	// Fallback to main on undefined or invalid
 	assert.equal(resolveSidebarTab(undefined).id, "main");
@@ -3046,11 +3132,14 @@ test("cute-agents - getAgentRoleColor and formatSubagentStatusTag conventions", 
 		dim: (s: string) => `dim(${s})`,
 	} as any;
 
-	// Convention grouping check
+	// Convention grouping check (aligned with 4:PROF palette)
 	assert.equal(getAgentRoleColor("architect", mockPalette)("test"), "cyan(test)");
 	assert.equal(getAgentRoleColor("researcher", mockPalette)("test"), "gold(test)");
 	assert.equal(getAgentRoleColor("writer", mockPalette)("test"), "mint(test)");
-	assert.equal(getAgentRoleColor("reviewer", mockPalette)("test"), "salmon(test)");
+	assert.equal(getAgentRoleColor("reviewer", mockPalette)("test"), "mint(test)");
+	assert.equal(getAgentRoleColor("gentle-ai-explore", mockPalette)("test"), "cyan(test)");
+	assert.equal(getAgentRoleColor("jd-judge-a", mockPalette)("test"), "gold(test)");
+	assert.equal(getAgentRoleColor("review-risk", mockPalette)("test"), "mint(test)");
 	assert.equal(getAgentRoleColor("custom-worker", mockPalette)("test"), "mint(test)");
 	assert.equal(getAgentRoleColor("unknown-bot", mockPalette)("test"), "pink(test)");
 
@@ -4192,6 +4281,89 @@ test("sidebar-state - sidebarState, sidebarPart and renderCUTESidebarBanner oper
 	assert.ok(banner.length > 0, "Debe retornar al menos 1 línea de banner");
 	assert.ok(banner[0].includes("✿"), "Debe contener el glifo decorativo del banner");
 	assert.ok(banner[0].toUpperCase().includes("CINLODEV"), "Debe contener la marca o usuario en el banner");
+});
+
+test("cute-git-graph - fetchGitFileChanges respects TTL cache and invalidation", () => {
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-git-cache-"));
+	try {
+		cp.execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: tempDir, stdio: "ignore" });
+		fs.writeFileSync(path.join(tempDir, "file1.txt"), "hello", "utf8");
+		cp.execFileSync("git", ["add", "."], { cwd: tempDir, stdio: "ignore" });
+		cp.execFileSync("git", ["commit", "-m", "init"], { cwd: tempDir, stdio: "ignore" });
+
+		// Modificar un archivo
+		fs.writeFileSync(path.join(tempDir, "file1.txt"), "hello world", "utf8");
+		resetGitFileChangesCache();
+
+		const firstCall = fetchGitFileChanges(tempDir, 5000);
+		assert.equal(firstCall.length, 1);
+		assert.equal(firstCall[0].path, "file1.txt");
+
+		// Agregar un segundo archivo sin resetear caché
+		fs.writeFileSync(path.join(tempDir, "file2.txt"), "new file", "utf8");
+		const cachedCall = fetchGitFileChanges(tempDir, 5000);
+		// Debe devolver la referencia en caché (1 archivo) sin invocar git nuevamente
+		assert.equal(cachedCall.length, 1);
+		assert.equal(cachedCall, firstCall, "Debe retornar la referencia en memoria dentro del TTL");
+
+		// Resetear caché
+		resetGitFileChangesCache();
+		const freshCall = fetchGitFileChanges(tempDir, 5000);
+		assert.equal(freshCall.length, 2, "Luego de resetear caché debe ver los 2 archivos");
+
+		// Verificar que invalidateSidebarGitAndTree resetea la caché
+		fs.writeFileSync(path.join(tempDir, "file3.txt"), "third file", "utf8");
+		assert.equal(fetchGitFileChanges(tempDir, 5000).length, 2, "Aún en caché debe ver 2");
+		invalidateSidebarGitAndTree();
+		assert.equal(fetchGitFileChanges(tempDir, 5000).length, 3, "Tras invalidateSidebarGitAndTree debe ver 3");
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});
+
+test("sidebar-tabs - gitSyncBadge renders cleanly in TabBar", () => {
+	// Git Sync badge en TabBar
+	const barWithBadge = renderCuteSidebarTabBar(60, "1", undefined, "▲2");
+	assert.ok(barWithBadge.line.includes("2:GIT ▲2"), "Debe incluir el badge ▲2 en la pestaña GIT");
+
+	const activeGitWithBadge = renderCuteSidebarTabBar(60, "2", undefined, "▲1▼1");
+	assert.ok(activeGitWithBadge.line.includes("2:GIT ▲1▼1"), "Debe incluir el badge de sync activo en la pestaña GIT");
+});
+
+test("todos - CinlodevTodoMirror supports full-height availableHeight in renderRail", () => {
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolName: "todo",
+						details: {
+							gentleTodo: {
+								tasks: Array.from({ length: 20 }, (_, i) => ({
+									id: i + 1,
+									title: `Tarea extendida ${i + 1}`,
+									status: "pending" as const,
+								})),
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+
+	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
+	// Invocación estándar (railMaxRows = 8)
+	const standardLines = mirror.renderRail(40);
+	// Con full-height en la pestaña 7:TODO (availableHeight = 25)
+	const fullHeightLines = mirror.renderRail(40, 25);
+
+	assert.ok(fullHeightLines.length > standardLines.length, "Con availableHeight debe renderizar más líneas verticales");
+	assert.ok(fullHeightLines.length >= 20, "Debe aprovechar la altura vertical disponible del rail");
 });
 
 

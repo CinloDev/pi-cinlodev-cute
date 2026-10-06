@@ -6,7 +6,7 @@ import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevAgentsCard } from "./cute-agents.ts";
-import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
+import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 import {
@@ -361,6 +361,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					const lines =
 						key !== "footer" &&
 						key !== "context" &&
+						key !== "todo" &&
 						key !== "engram" &&
 						key !== "engramHandoff" &&
 						key !== "engram-handoff" &&
@@ -423,7 +424,9 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				railLines.push("");
 			}
 
-			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme);
+			const cwd = (tui as any)?.cwd ?? process.cwd();
+			const gitSyncBadge = getGitSyncBadge(cwd);
+			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme, gitSyncBadge);
 			tabBarLineIndex = railLines.length;
 			railLines.push(" ".repeat(layout.railPadding) + tabLine + " ".repeat(layout.railPadding));
 			tabBarDividerLineIndex = railLines.length;
@@ -759,16 +762,31 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		}
 	};
 
+	let currentTimer: NodeJS.Timeout | undefined;
+
+	const scheduleNext = (delayMs: number) => {
+		if (stopped) return;
+		if (currentTimer) clearTimeout(currentTimer);
+		currentTimer = setTimeout(() => {
+			if (stopped) return;
+			attach();
+			const isAttached = !!host.layoutRoot && roots.has(host.layoutRoot);
+			const nextDelay = isAttached ? 400 : loadCuteLayout().sidebar.attachMs;
+			scheduleNext(nextDelay);
+		}, delayMs);
+		currentTimer.unref();
+	};
+
 	attach();
-	const timer = setInterval(attach, loadCuteLayout().sidebar.attachMs);
-	timer.unref();
+	const isAlreadyAttached = !!host.layoutRoot && roots.has(host.layoutRoot);
+	scheduleNext(isAlreadyAttached ? 400 : loadCuteLayout().sidebar.attachMs);
 
 	return () => {
 		stopped = true;
 		state.active = false;
 		activeTranscript = undefined;
 		activeDock = undefined;
-		clearInterval(timer);
+		if (currentTimer) clearTimeout(currentTimer);
 		scroll.hideTransientScrollbar();
 		for (const cleanup of cleanups.reverse()) cleanup();
 		tui.requestRender();
