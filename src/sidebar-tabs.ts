@@ -14,9 +14,7 @@ export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	main: ["footer", "context", "todo"],
 	git: ["gitGraph", "workingTree"],
 	agents: ["cute-agents"],
-	usage: ["cute-agents"],
 	prof: ["cute-profiles"],
-	forge: ["cute-profiles"],
 	mem: ["engram", "engramHandoff", "tools"],
 	tree: ["projectTree"],
 };

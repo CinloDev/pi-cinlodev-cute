@@ -2404,10 +2404,11 @@ test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
 	assert.equal(resolveSidebarTab("mem").id, "mem");
 	assert.equal(resolveSidebarTab("0").id, "main", "legacy 0/all tab should safely fall back to main");
 
-	// SIDEBAR_TAB_CARD_MAP checks
+	// SIDEBAR_TAB_CARD_MAP checks - clean canonical 6 tabs
 	assert.ok(SIDEBAR_TAB_CARD_MAP.prof.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.prof must include cute-profiles");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.agents.includes("cute-agents"), "SIDEBAR_TAB_CARD_MAP.agents must include cute-agents");
-	assert.ok(SIDEBAR_TAB_CARD_MAP.forge.includes("cute-profiles"), "SIDEBAR_TAB_CARD_MAP.forge alias must include cute-profiles");
+	assert.equal(SIDEBAR_TAB_CARD_MAP.forge, undefined, "legacy forge should be pruned from map");
+	assert.equal(SIDEBAR_TAB_CARD_MAP.usage, undefined, "legacy usage should be pruned from map");
 
 	// Fallback to main on undefined or invalid
 	assert.equal(resolveSidebarTab(undefined).id, "main");
