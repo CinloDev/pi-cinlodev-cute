@@ -556,6 +556,8 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		pi.on("session_start", refreshTodos);
 		pi.on("turn_end", refreshTodos);
 		pi.on("tool_execution_end", refreshTodos);
+		pi.on("entry_appended", refreshTodos);
+		pi.on("message_end", refreshTodos);
 	}
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		tuneTuiScroll(tui);
