@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { cuteGlyphs, cutePalette, safeFg, bolden, type CutePalette } from "./cute-theme.ts";
@@ -99,6 +102,101 @@ export function formatTaskDuration(ms: number): string {
 }
 
 /**
+ * Extracts a subagent task ID from arbitrary tool output or notification text.
+ */
+export function extractTaskIdFromText(text: string): string | undefined {
+	const match =
+		text.match(/task_id["':\s]+([a-zA-Z0-9_-]+)/i) ||
+		text.match(/(?:as|in|with)\s+task\s+([a-zA-Z0-9_-]+)/i) ||
+		text.match(/\(task\s+([a-zA-Z0-9_-]+)/i) ||
+		text.match(/task[:\s]+([a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+)/i);
+	return match ? match[1] : undefined;
+}
+
+let diskTasksCache: { timestamp: number; tasks: SubagentTaskRecord[] } | null = null;
+const DISK_TASKS_CACHE_TTL_MS = 2000;
+
+export function resetGentleAgentsTasksCache(): void {
+	diskTasksCache = null;
+}
+
+/**
+ * Loads recent or session-specific tasks from ~/.pi/agent/gentle-agents/tasks/
+ */
+export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, customDir?: string): SubagentTaskRecord[] {
+	const now = Date.now();
+	if (!customDir && !parentSessionId && diskTasksCache && (now - diskTasksCache.timestamp < DISK_TASKS_CACHE_TTL_MS)) {
+		return diskTasksCache.tasks.slice(0, limit);
+	}
+
+	const tasksDir = customDir || path.join(os.homedir(), ".pi", "agent", "gentle-agents", "tasks");
+	if (!fs.existsSync(tasksDir)) return [];
+
+	try {
+		const files = fs.readdirSync(tasksDir).filter((f) => f.endsWith(".json"));
+		if (files.length === 0) return [];
+
+		const fileStats = files.map((file) => {
+			const fullPath = path.join(tasksDir, file);
+			try {
+				const stat = fs.statSync(fullPath);
+				return { file, fullPath, mtimeMs: stat.mtimeMs };
+			} catch {
+				return { file, fullPath, mtimeMs: 0 };
+			}
+		});
+		fileStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+		const records: SubagentTaskRecord[] = [];
+		for (const { fullPath } of fileStats) {
+			try {
+				const content = fs.readFileSync(fullPath, "utf8");
+				const data = JSON.parse(content);
+				const t = data?.task;
+				if (!t || !t.id) continue;
+
+				if (parentSessionId && t.parentSessionId && t.parentSessionId !== parentSessionId) {
+					continue;
+				}
+
+				let status: SubagentTaskRecord["status"] = "running";
+				if (t.status === "completed") status = "completed";
+				else if (t.status === "failed") status = "failed";
+				else if (t.status === "cancelled") status = "cancelled";
+				else status = "running";
+
+				const label = String(t.label || t.prompt || `Task ${t.id}`).trim();
+				const resultPreview = t.result
+					? String(t.result).trim().replace(/\s+/g, " ")
+					: undefined;
+
+				records.push({
+					id: t.id,
+					agent: t.agent || "worker",
+					label: label.length > 36 ? label.slice(0, 35) + "…" : label,
+					task: String(t.prompt || ""),
+					mode: t.mode === "background" ? "background" : "task",
+					status,
+					startedAt: t.startedAt || t.createdAt || Date.now(),
+					finishedAt: t.endedAt || undefined,
+					resultSummary: resultPreview ? (resultPreview.length > 50 ? resultPreview.slice(0, 48) + "…" : resultPreview) : undefined,
+					error: t.error ? String(t.error) : undefined,
+				});
+
+				if (records.length >= limit) break;
+			} catch {}
+		}
+
+		if (!customDir && !parentSessionId) {
+			diskTasksCache = { timestamp: now, tasks: records };
+		}
+		return records;
+	} catch {
+		return [];
+	}
+}
+
+/**
  * Extracts and reconstructs subagent tasks from the active session branch history.
  */
 export function collectSessionSubagentTasks(ctx?: ExtensionContext | any): SubagentTaskRecord[] {
@@ -111,6 +209,37 @@ export function collectSessionSubagentTasks(ctx?: ExtensionContext | any): Subag
 	let taskSeq = 1;
 
 	for (const entry of branch) {
+		// 0. Handle custom_message from gentle-agents (e.g. gentle-agents.result)
+		const customType = entry.customType || entry.message?.customType;
+		if (entry.type === "custom_message" || customType) {
+			const content = typeof entry.content === "string"
+				? entry.content
+				: typeof entry.message?.content === "string"
+				? entry.message.content
+				: "";
+
+			if (customType?.startsWith?.("gentle-agents") || content.includes("Subagent ")) {
+				const taskId = extractTaskIdFromText(content);
+				const rec = taskId ? taskMapByTaskId.get(taskId) : undefined;
+				if (rec) {
+					rec.finishedAt = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
+					const lowerContent = content.toLowerCase();
+					if (lowerContent.includes("failed") || lowerContent.includes("error")) {
+						rec.status = "failed";
+					} else if (lowerContent.includes("cancelled") || lowerContent.includes("canceled")) {
+						rec.status = "cancelled";
+					} else {
+						rec.status = "completed";
+					}
+					const split = content.indexOf("\n\n");
+					const body = split >= 0 ? content.slice(split + 2).trim() : content.trim();
+					const cleanPreview = body.replace(/\s+/g, " ");
+					rec.resultSummary = cleanPreview.length > 50 ? cleanPreview.slice(0, 48) + "…" : cleanPreview;
+				}
+			}
+			continue;
+		}
+
 		if (entry.type !== "message" || !entry.message) continue;
 		const msg = entry.message;
 
@@ -119,7 +248,8 @@ export function collectSessionSubagentTasks(ctx?: ExtensionContext | any): Subag
 			for (const part of msg.content) {
 				if (!part || typeof part !== "object") continue;
 				if (part.type === "toolCall" && (part.name === "subagent_run" || part.name === "subagent_continue")) {
-					const args = part.arguments || {};
+					const rawArgs = part.args || part.arguments || {};
+					const args = typeof rawArgs === "string" ? (() => { try { return JSON.parse(rawArgs); } catch { return {}; } })() : rawArgs;
 					const agent = String(args.agent || args.name || "worker");
 					const label = String(args.label || args.task || args.prompt || `Task ${taskSeq}`).trim();
 					const fullTask = String(args.task || args.prompt || "");
@@ -142,7 +272,9 @@ export function collectSessionSubagentTasks(ctx?: ExtensionContext | any): Subag
 						taskMapByCallId.set(part.id, record);
 					}
 				} else if (part.type === "toolCall" && part.name === "subagent_cancel") {
-					const targetTaskId = String(part.arguments?.task_id || "").trim();
+					const rawArgs = part.args || part.arguments || {};
+					const args = typeof rawArgs === "string" ? (() => { try { return JSON.parse(rawArgs); } catch { return {}; } })() : rawArgs;
+					const targetTaskId = String(args.task_id || "").trim();
 					if (targetTaskId && taskMapByTaskId.has(targetTaskId)) {
 						const rec = taskMapByTaskId.get(targetTaskId)!;
 						rec.status = "cancelled";
@@ -156,30 +288,63 @@ export function collectSessionSubagentTasks(ctx?: ExtensionContext | any): Subag
 			const record = taskMapByCallId.get(msg.toolCallId);
 			if (record) {
 				const finishedAt = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
-				record.finishedAt = finishedAt;
 
 				if (msg.isError) {
+					record.finishedAt = finishedAt;
 					record.status = "failed";
 					record.error = String(msg.content ?? msg.text ?? "Execution error");
 				} else {
-					const contentStr = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "");
-					if (contentStr.toLowerCase().includes("cancelled") || contentStr.toLowerCase().includes("canceled")) {
-						record.status = "cancelled";
+					let contentStr = "";
+					if (typeof msg.content === "string") {
+						contentStr = msg.content;
+					} else if (Array.isArray(msg.content)) {
+						contentStr = msg.content.map((c: any) => c.text ?? JSON.stringify(c)).join(" ");
 					} else {
-						record.status = "completed";
+						contentStr = JSON.stringify(msg.content ?? "");
 					}
 
 					// Check if background task returned a task_id
-					try {
-						const match = contentStr.match(/task_id["':\s]+([a-zA-Z0-9_-]+)/i);
-						if (match && match[1]) {
-							taskMapByTaskId.set(match[1], record);
-							record.id = match[1];
-						}
-					} catch {}
+					const detailTaskId = msg.details?.gentleAgents?.taskId || msg.details?.taskId;
+					const extractedId = detailTaskId || extractTaskIdFromText(contentStr);
+					if (extractedId) {
+						taskMapByTaskId.set(extractedId, record);
+						record.id = extractedId;
+					}
 
-					const preview = contentStr.trim().replace(/\s+/g, " ");
-					record.resultSummary = preview.length > 50 ? preview.slice(0, 48) + "…" : preview;
+					const isBackground = record.mode === "background" ||
+						msg.details?.gentleAgents?.mode === "background" ||
+						contentStr.toLowerCase().includes("in the background");
+
+					if (contentStr.toLowerCase().includes("cancelled") || contentStr.toLowerCase().includes("canceled")) {
+						record.finishedAt = finishedAt;
+						record.status = "cancelled";
+					} else if (isBackground) {
+						// BACKGROUND TASK: still running in background
+						record.status = "running";
+						record.resultSummary = "En background…";
+					} else {
+						record.finishedAt = finishedAt;
+						record.status = "completed";
+						const preview = contentStr.trim().replace(/\s+/g, " ");
+						record.resultSummary = preview.length > 50 ? preview.slice(0, 48) + "…" : preview;
+					}
+				}
+			} else if (msg.toolName === "subagent_status" || msg.toolName === "subagent_result") {
+				const contentStr = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "");
+				for (const [tId, rec] of taskMapByTaskId.entries()) {
+					if (contentStr.includes(tId)) {
+						const lower = contentStr.toLowerCase();
+						if (lower.includes("completed") || lower.includes("finished")) {
+							rec.status = "completed";
+							rec.finishedAt = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+						} else if (lower.includes("failed") || lower.includes("error")) {
+							rec.status = "failed";
+							rec.finishedAt = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+						} else if (lower.includes("cancelled") || lower.includes("canceled")) {
+							rec.status = "cancelled";
+							rec.finishedAt = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+						}
+					}
 				}
 			}
 		}
@@ -219,14 +384,16 @@ export class CinlodevAgentsCard implements Component {
 		if (this.pi) {
 			this.pi.on("tool_execution_start", (event: any) => {
 				if (event?.toolName === "subagent_run" || event?.toolName === "subagent_continue") {
-					const args = event.arguments || {};
+					const args = event.args || event.arguments || {};
 					const agent = String(args.agent || args.name || "worker");
 					const label = String(args.label || args.task || args.prompt || "Subagent Task").trim();
 					const fullTask = String(args.task || args.prompt || "");
 					const mode = args.mode === "background" ? "background" : "task";
+					const toolCallId = event.toolCallId;
 
 					const newTask: SubagentTaskRecord = {
 						id: `live-${Date.now().toString(36)}`,
+						callId: toolCallId,
 						agent,
 						label: label.length > 36 ? label.slice(0, 35) + "…" : label,
 						task: fullTask,
@@ -241,22 +408,62 @@ export class CinlodevAgentsCard implements Component {
 
 			this.pi.on("tool_execution_end", (event: any) => {
 				if (event?.toolName === "subagent_run" || event?.toolName === "subagent_continue") {
-					if (this.liveTasks.length > 0 && this.liveTasks[0].status === "running") {
-						this.liveTasks[0].finishedAt = Date.now();
-						this.liveTasks[0].status = event.isError ? "failed" : "completed";
-						if (event.result) {
-							const str = String(event.result);
-							this.liveTasks[0].resultSummary = str.slice(0, 48);
+					const toolCallId = event.toolCallId;
+					const target = toolCallId
+						? this.liveTasks.find((t) => t.callId === toolCallId)
+						: this.liveTasks[0];
+
+					if (target && target.status === "running") {
+						if (event.isError) {
+							target.finishedAt = Date.now();
+							target.status = "failed";
+							target.error = String(event.result || "Execution error");
+						} else {
+							let contentStr = "";
+							if (typeof event.result === "string") {
+								contentStr = event.result;
+							} else if (Array.isArray(event.result?.content)) {
+								contentStr = event.result.content.map((c: any) => c.text ?? JSON.stringify(c)).join(" ");
+							} else {
+								contentStr = JSON.stringify(event.result ?? "");
+							}
+
+							const extractedId = extractTaskIdFromText(contentStr);
+							if (extractedId) {
+								target.id = extractedId;
+							}
+
+							const isBgStart = target.mode === "background" || contentStr.toLowerCase().includes("in the background");
+							if (isBgStart) {
+								target.status = "running";
+								target.resultSummary = "En background…";
+							} else {
+								target.finishedAt = Date.now();
+								target.status = "completed";
+								const preview = contentStr.trim().replace(/\s+/g, " ");
+								target.resultSummary = preview.length > 50 ? preview.slice(0, 48) + "…" : preview;
+							}
 						}
 					}
 					this.tui?.requestRender();
 				}
+			});
+
+			this.pi.on("entry_appended", () => {
+				this.invalidate();
+				this.tui?.requestRender();
+			});
+
+			this.pi.on("turn_end", () => {
+				this.invalidate();
+				this.tui?.requestRender();
 			});
 		}
 	}
 
 	invalidate(): void {
 		this.lastBranchLength = -1;
+		resetGentleAgentsTasksCache();
 	}
 
 	handleClick(_lineIndex?: number, button?: string, _localX?: number): boolean {
@@ -265,7 +472,7 @@ export class CinlodevAgentsCard implements Component {
 			this.viewMode = this.viewMode === "all" ? "tasks" : this.viewMode === "tasks" ? "roster" : "all";
 		} else {
 			// Left click toggles expanding recent task details
-			const allTasks = this.getUnifiedTasks();
+			const { tasks: allTasks } = this.getUnifiedTasks();
 			if (allTasks.length > 0) {
 				const firstId = allTasks[0].id;
 				this.expandedTaskId = this.expandedTaskId === firstId ? null : firstId;
@@ -279,7 +486,7 @@ export class CinlodevAgentsCard implements Component {
 
 	handleWheel(delta: number): boolean {
 		if (delta === 0) return false;
-		const allTasks = this.getUnifiedTasks();
+		const { tasks: allTasks } = this.getUnifiedTasks();
 		if (allTasks.length <= 3) return false;
 
 		const maxOffset = Math.max(0, allTasks.length - 3);
@@ -300,7 +507,7 @@ export class CinlodevAgentsCard implements Component {
 		return this.handleWheel(delta);
 	}
 
-	private getUnifiedTasks(): SubagentTaskRecord[] {
+	private getUnifiedTasks(): { tasks: SubagentTaskRecord[]; isHistory: boolean } {
 		const sessionTasks = collectSessionSubagentTasks(this.ctx);
 		// Deduplicate: prepend liveTasks that are not in sessionTasks
 		const ids = new Set(sessionTasks.map((t) => t.id));
@@ -310,8 +517,24 @@ export class CinlodevAgentsCard implements Component {
 				combined.unshift(lt);
 			}
 		}
-		// Sort newest first
-		return combined.sort((a, b) => b.startedAt - a.startedAt);
+
+		if (combined.length > 0) {
+			return {
+				tasks: combined.sort((a, b) => b.startedAt - a.startedAt),
+				isHistory: false,
+			};
+		}
+
+		// Fallback: If session has NO tasks, load recent tasks from disk store
+		const diskTasks = loadGentleAgentsDiskTasks(undefined, 5);
+		if (diskTasks.length > 0) {
+			return {
+				tasks: diskTasks,
+				isHistory: true,
+			};
+		}
+
+		return { tasks: [], isHistory: false };
 	}
 
 	render(width: number): string[] {
@@ -360,7 +583,7 @@ export class CinlodevAgentsCard implements Component {
 		// 2. Load Active Profile details for Host and Subagents roster
 		const activeProfileName = readActiveProfile(this.cwd);
 		const profileDetails = loadProfileDetails(activeProfileName, this.cwd);
-		const allTasks = this.getUnifiedTasks();
+		const { tasks: allTasks, isHistory } = this.getUnifiedTasks();
 
 		const runningTasks = allTasks.filter((t) => t.status === "running");
 		const completedTasks = allTasks.filter((t) => t.status === "completed");
@@ -384,10 +607,11 @@ export class CinlodevAgentsCard implements Component {
 
 		const sessId = (this.ctx?.sessionManager as any)?.getSessionId?.() || "";
 		const shortSess = sessId ? `sess-${sessId.slice(0, 6)}` : "local";
+		const sessTasksCount = isHistory ? "0" : String(allTasks.length);
 		lines.push(
 			boxLine(
 				`${c.pink("│")}  ${c.dim("Sess:")} ${c.muted(shortSess)}`,
-				`${c.cyan(String(allTasks.length))} ${c.dim("tareas")}`
+				`${c.cyan(sessTasksCount)} ${c.dim("tareas")}`
 			)
 		);
 
@@ -396,16 +620,18 @@ export class CinlodevAgentsCard implements Component {
 
 		// 4. Render Subagents Activity / Tasks Section (if viewMode !== "roster")
 		if (this.viewMode !== "roster") {
-			const tasksHeaderBadge = runningTasks.length > 0
-				? `${c.mint(`${runningTasks.length} act`)} · ${c.dim(`${completedTasks.length} ok`)}`
-				: `${c.dim(`${allTasks.length} total`)}`;
+			const tasksHeaderBadge = isHistory
+				? `${c.dim("recientes (")}${c.cyan(String(allTasks.length))}${c.dim(")")}`
+				: (runningTasks.length > 0
+					? `${c.mint(`${runningTasks.length} act`)} · ${c.dim(`${completedTasks.length} ok`)}`
+					: `${c.dim(`${allTasks.length} total`)}`);
 
 			const hasTasks = allTasks.length > 0;
 			const treeConnector = this.viewMode === "tasks" || !profileDetails?.model_profiles ? "└─" : "├─";
 
 			lines.push(
 				boxLine(
-					`${c.pink(treeConnector)} ${c.bold("Tareas Delegadas")}`,
+					`${c.pink(treeConnector)} ${c.bold(isHistory ? "Tareas Recientes" : "Tareas Delegadas")}`,
 					tasksHeaderBadge
 				)
 			);
