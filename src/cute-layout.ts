@@ -192,7 +192,7 @@ const DEFAULTS: CuteLayout = {
 		tierMediumMin: 80,
 	},
 	todos: {
-		railMaxRows: 8,
+		railMaxRows: 20,
 		bottomMaxRows: 4,
 		minWidth: 30,
 	},

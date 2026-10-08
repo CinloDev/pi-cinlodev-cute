@@ -4319,7 +4319,7 @@ test("todos - CinlodevTodoMirror performs word wrapping for long titles", () => 
 
 test("todos - CinlodevTodoMirror handles mouse wheel scrolling on overflow", () => {
 	resetAll();
-	const manyTasks = Array.from({ length: 15 }, (_, i) => ({
+	const manyTasks = Array.from({ length: 25 }, (_, i) => ({
 		id: i + 1,
 		title: `Tarea de prueba numero ${i + 1}`,
 		status: i < 3 ? "done" as const : "pending" as const,
@@ -4509,7 +4509,7 @@ test("todos - CinlodevTodoMirror supports full-height availableHeight in renderR
 						toolName: "todo",
 						details: {
 							gentleTodo: {
-								tasks: Array.from({ length: 20 }, (_, i) => ({
+								tasks: Array.from({ length: 40 }, (_, i) => ({
 									id: i + 1,
 									title: `Tarea extendida ${i + 1}`,
 									status: "pending" as const,
@@ -4523,13 +4523,13 @@ test("todos - CinlodevTodoMirror supports full-height availableHeight in renderR
 	};
 
 	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
-	// Invocación estándar (railMaxRows = 8)
+	// Invocación estándar (railMaxRows = 20)
 	const standardLines = mirror.renderRail(40);
-	// Con full-height en la pestaña 7:TODO (availableHeight = 25)
-	const fullHeightLines = mirror.renderRail(40, 25);
+	// Con full-height en la pestaña con availableHeight = 45
+	const fullHeightLines = mirror.renderRail(40, 45);
 
 	assert.ok(fullHeightLines.length > standardLines.length, "Con availableHeight debe renderizar más líneas verticales");
-	assert.ok(fullHeightLines.length >= 20, "Debe aprovechar la altura vertical disponible del rail");
+	assert.ok(fullHeightLines.length >= 25, "Debe aprovechar la altura vertical disponible del rail");
 });
 
 

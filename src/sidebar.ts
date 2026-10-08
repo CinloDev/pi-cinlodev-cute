@@ -295,6 +295,23 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 				const half = Math.floor(availableForCards / 2);
 				const secondHalf = availableForCards - half;
 				cardHeights = [half, secondHalf];
+			} else if (targetCardKeys.includes("todo")) {
+				// Multi-card layout with todo (e.g. 1:MAIN with footer, context, todo):
+				// Calculate lines used by prior non-todo cards to give todo the remaining available height
+				let priorLines = 0;
+				for (const key of targetCardKeys) {
+					if (key === "todo") break;
+					const comp = state.parts.get(key);
+					const raw = [...(comp?.render(netWidth) ?? [])];
+					while (raw.length && raw[raw.length - 1]?.trim() === "") raw.pop();
+					if (raw.length > 0) {
+						priorLines += raw.length + 1; // card height + empty spacer line
+					}
+				}
+				const remainingForTodo = Math.max(loadCuteLayout().todos.railMaxRows, totalTargetHeight - priorLines);
+				availableCardHeight = remainingForTodo;
+				const todoIndex = targetCardKeys.indexOf("todo");
+				cardHeights[todoIndex] = remainingForTodo;
 			}
 
 			const sectionData = targetCardKeys
@@ -353,7 +370,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("projectTree", component);
 						}
 					}
-					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree")
+					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree" || key === "todo")
 						? (cardHeights[index] ?? availableCardHeight)
 						: undefined;
 					const rawLines = [...(component?.render(netWidth, renderHeight as any) ?? [])];
