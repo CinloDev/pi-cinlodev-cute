@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🌸 pi-cinlodev-cute 💜</h1>
   <p align="center">
-    <strong>An exclusive high-density visual suite, aesthetic theme pack, Dracula syntax engine, and live telemetry sidebar for Pi Coding Agent and la Gentlewoman.</strong>
+    <strong>An exclusive high-density visual suite, aesthetic theme pack, Dracula syntax engine, and live telemetry multi-tab sidebar for Pi Coding Agent and la Gentlewoman.</strong>
   </p>
 </p>
 
@@ -11,10 +11,11 @@
 
 <p align="center">
   <a href="#-overview">Overview</a> •
+  <a href="#-sidebar-tabs-showcase">Sidebar Tabs</a> •
   <a href="#-design-highlights">Highlights</a> •
-  <a href="#-interactive-sidebar--telemetry-cards">Sidebar Cards</a> •
+  <a href="#-interactive-cards-reference">Cards Reference</a> •
   <a href="#-installation">Installation</a> •
-  <a href="#-shortcuts--cheat-sheet">Hotkeys</a> •
+  <a href="#-navigation--mouse-controls">Controls</a> •
   <a href="#-user-overrides--customization">Customization</a>
 </p>
 
@@ -24,7 +25,50 @@
 
 **`pi-cinlodev-cute`** elevates the [Pi Coding Agent](https://github.com/earendil-works/pi) terminal experience into a cohesive, elegant, and responsive developer workspace. Designed with the distinctive **Cinlodev CUTE** aesthetic—deep obsidian backdrops, double violet structural rails, pastel pink accents, warm golden highlights, and Dracula syntax coloring—it combines visual delight with senior-grade density.
 
-Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI** ecosystem, `pi-cinlodev-cute` provides live telemetry, effort-aware prompt framing, persistent ambient monitoring, and unified tool transcript cards.
+Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI** ecosystem, `pi-cinlodev-cute` provides live telemetry across a multi-tab sidebar rail, effort-aware prompt framing, persistent ambient monitoring, and unified Dracula tool transcript cards.
+
+---
+
+## 🎛️ Sidebar Tabs Showcase (`1:MAIN` → `6:TREE`)
+
+The sidebar rail (`railWidth: 52`) organizes all session vital information into an interactive 6-tab navigation bar (`CUTE_SIDEBAR_TABS`), navigable via mouse click or scroll-wheel cycling:
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <strong>1:MAIN · Dashboard</strong><br/><br/>
+      <img src="./public/nav.png" alt="1:MAIN Tab - Status, Context Gauge and Expanded Todos" width="280" /><br/><br/>
+      <sub>Project status, model details, real-time token gauge, and dynamic full-height Todos checklist.</sub>
+    </td>
+    <td width="33%" align="center">
+      <strong>2:GIT · Graph & Diff</strong><br/><br/>
+      <img src="./public/nav2.png" alt="2:GIT Tab - Git Graph and Working Tree Inspector" width="280" /><br/><br/>
+      <sub>50/50 split view with ASCII Dracula commit graph and clickable Working Tree diff inspector.</sub>
+    </td>
+    <td width="33%" align="center">
+      <strong>3:AGENTS · Orchestrator</strong><br/><br/>
+      <img src="./public/nav3.png" alt="3:AGENTS Tab - Orchestrator and Subagent Activity" width="280" /><br/><br/>
+      <sub>Host node status, project-scoped subagent tasks, live background execution, and roster topology.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center">
+      <strong>4:PROF · Profiles</strong><br/><br/>
+      <img src="./public/nav4.png" alt="4:PROF Tab - Profiles Switcher and Quota Gauges" width="280" /><br/><br/>
+      <sub>Multi-account model profiles, interactive switcher, and live subagent quota semaphores.</sub>
+    </td>
+    <td width="33%" align="center">
+      <strong>5:MEM · Memory Vault</strong><br/><br/>
+      <img src="./public/nav5.png" alt="5:MEM Tab - Engram Daemon, Handoff and Graph Memory" width="280" /><br/><br/>
+      <sub>Local Engram daemon, handoffs, tools metrics, and interactive SQLite Knowledge Graph card.</sub>
+    </td>
+    <td width="33%" align="center">
+      <strong>6:TREE · Project Explorer</strong><br/><br/>
+      <img src="./public/nav6.png" alt="6:TREE Tab - Project File Tree with Git Badges" width="280" /><br/><br/>
+      <sub>Interactive directory tree with live Git status badges (M, ?, ●), directory toggling, and editor launcher.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -38,24 +82,7 @@ Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI**
 
 ---
 
-### 2. 🎛️ Interactive Sidebar & Telemetry Cards (`src/sidebar.ts`)
-
-<p align="center">
-  <img src="./public/cute-02.png" alt="Interactive Sidebar Cards: Status, Context, Engram, Quotas, Git Graph and Tools" width="340" />
-</p>
-
-The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated, auto-updating cards:
-
-* **👑 Status Card:** Shows active Project path, Git branch with dirty count, active Model and thinking level, MCP server count, and active profile.
-* **🧠 Context Gauge Card:** Real-time token progress bar with dynamic semáforo thresholds (mint → yellow → orange → coral), In/Out token counters, and accumulated session cost.
-* **🧠 Engram Memory Card (`src/cute-engram.ts`):** Live status of your local Engram daemon (`Local · Online · N obs`), cloud synchronization status, direct dashboard shortcut (`dashboard ↗`), and interactive enroll/sync controls.
-* **⚡ Quotas & Usage Tracker Card (`src/cute-usage.ts`):** Displays real-time API quota limits for Gemini and Claude/GPT models (5h and weekly windows), dynamic 4-tier semáforo gauges, and reset countdowns (`en 3h 33m`). Toggle anytime with **`Alt+Q`**.
-* **🌿 Enhanced Git Graph Card (`src/cute-git-graph.ts`):** Renders an ASCII commit history graph with Dracula branch styling, dirty file counts (`5 mod · ?1 untracked`), session diff summary (`+783 -47`), and interactive `/gentle:changes` viewer hint.
-* **🛠️ Live Tools Telemetry Card (`src/cute-tools.ts`):** Summarizes tool execution metrics (`read`, `write`, `bash`, `engram`, `other`) into clean visual pills with total call count (`31 calls`).
-
----
-
-### 3. 👑 Welcome Dashboard (`src/welcome.ts`)
+### 2. 👑 Welcome Dashboard (`src/welcome.ts`)
 
 <p align="center">
   <img src="./public/cute-04.png" alt="la Gentlewoman Welcome Dashboard with Specs and Telemetry" width="860" />
@@ -69,7 +96,7 @@ The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated,
 
 ---
 
-### 4. ✿ Double-Line Effort-Aware Prompt Editor (`src/editor.ts`)
+### 3. ✿ Double-Line Effort-Aware Prompt Editor (`src/editor.ts`)
 * **Double Frame:** Seamlessly wraps your command input at full terminal width, perfectly aligned with native Pi cards.
 * **Effort-Aware Dynamic Frame:** The border color follows your active thinking level—mint `#B4E7C7` for low/minimal, gold `#E0C27A` for medium, violet `#8e44ad` for high/max—repainting live when you cycle with `Shift+Tab`.
 * **Animated Status Indicator:** The petal icon spins through animated frames (`✿` → `❀` → `❁` → `✾`) while executing, or switches to expressive kaomojis (`/(xx)\_` / `preset: cats`) according to your configured preset.
@@ -78,7 +105,7 @@ The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated,
 
 ---
 
-### 5. 📜 Dracula Transcript & Minimalist Statusline (`src/cute-transcript.ts` & `src/footer.ts`)
+### 4. 📜 Dracula Transcript & Minimalist Statusline (`src/cute-transcript.ts` & `src/footer.ts`)
 
 <p align="center">
   <img src="./public/cute-03.png" alt="Dracula Syntax Transcript and Minimalist Statusline Dock" width="600" />
@@ -92,24 +119,48 @@ The sidebar rail (`railWidth: 52`) organizes your session vitals into dedicated,
   * 🧊 **Light Blue:** Code modifications (`write`, `edit`)
   * 🌹 **Dusty Rose:** Web searches (`web_search`)
   * 🌸 **Pastel Pink:** Content retrieval (`fetch_content`)
-  * 🍣 **Salmon:** Persistent memory (`mem_*`)
+  * 🍣 **Salmon:** Persistent memory (`mem_*`, `graph_mem_*`)
   * 🪸 **Coral:** Errors and exceptions
 * **Assistant Prose & User Boxes:** Assistant text is styled in soft celeste for zero eye fatigue; user inputs are wrapped in warm golden boxes (`E0C27A`).
-* **CUTE Minimalist Statusline Footer:** Single-line responsive dock showing branch, model, context gauge, cost, MCP status, and working tree changes (`7 files · +783 -47 /gentle:changes`). Auto-compacts gracefully on narrow splits.
+* **CUTE Minimalist Statusline Footer:** Single-line responsive dock showing branch, model, context gauge, cost, MCP status, and working tree changes (`8 files · +830 -38 /gentle:changes`). Auto-compacts gracefully on narrow splits.
 
 ---
 
-## ⌨️ Shortcuts & Cheat Sheet
+## 🧩 Interactive Cards Reference
 
-| Shortcut / Command | Action | Description |
+| Component | Tab | Description |
+| :--- | :---: | :--- |
+| **Status Card** | `1:MAIN` | Project path, Git branch with dirty count, active Model/Effort, Context7 & Stitch indicators, and active profile badge. |
+| **Context Gauge Card** | `1:MAIN` | Real-time token usage gauge with 4-tier semáforo thresholds (mint → yellow → orange → coral), In/Out token counters, and accumulated session cost. |
+| **Todos Mirror Card** | `1:MAIN` | Dynamic full-height task mirror of Pi's todo list. Automatically expands to consume available vertical space down to the prompt line with clean word wrapping and delayed mouse wheel scrolling. |
+| **Git Graph Card** | `2:GIT` | ASCII Git graph with Dracula branch styling, commit hashes, branch tags, and scrollable history. Shares a 50/50 split view with Working Tree. |
+| **Working Tree Card** | `2:GIT` | Live list of staged, modified, and untracked files with addition/deletion stats. Click any file to inspect diffs or launch the external viewer. |
+| **Agents Orchestrator Card** | `3:AGENTS` | Host orchestrator status node, project-scoped subagent execution history, live background task tracking (`● RUNNING`), and visual subagent topology. |
+| **Profiles Extended Card** | `4:PROF` | Interactive cluster profile switcher (Alt+M / click to switch), listing orchestrator models and subagent quota bars with weekly/5h limits. |
+| **Engram Card** | `5:MEM` | Local Engram daemon health (`localhost:7437`), observation counts, cloud sync status, and click target to launch the web dashboard (`dashboard ↗`). |
+| **Active Handoff Card** | `5:MEM` | Formatted preview of the active session summary or memory handoff for seamless context continuity across sessions. |
+| **Memory Graph Card** | `5:MEM` | SQLite knowledge graph card for `pi-memory-graph`. Displays memories count, relational nodes/edges, active leases, last memory snippet, `[explorer ↗]` browser launcher (port 7474), and one-click `[💾 Retener Sesión]`. |
+| **Tools Telemetry Card** | `5:MEM` | Live counter summarizing tool execution metrics (`read`, `write`, `bash`, `grep`, `other`) into clean visual pills with total call count. |
+| **Project Tree Card** | `6:TREE` | Interactive directory tree with Git porcelain badges (`M`, `?`, `●`), directory collapse/expand toggles, mouse-wheel scrolling, and direct click-to-edit in `$EDITOR` (`[ ↗ nvim ]`). |
+
+---
+
+## ⌨️ Navigation & Mouse Controls
+
+| Input / Action | Context | Description |
 | :--- | :--- | :--- |
-| **`Alt+Q`** | Toggle Quotas Card | Show or hide the Antigravity API quotas card in the sidebar. |
-| **`Alt+G`** | `/gentle:changes` | Open interactive two-pane diff viewer for modified working tree files. |
-| **`Ctrl+O`** (`^O`) | `/welcome` | Expand or collapse the Welcome Dashboard. |
-| **`Shift+Tab`** | Cycle Thinking Effort | Cycle thinking levels (editor border live-updates to mint, gold, or violet). |
-| **`/cinlodev`** | Hot Reload | Instantly reload configuration files and re-apply all CUTE components. |
-| **`/hud [full\|compact\|off]`** | HUD Mode | Configure persistent HUD above the input. |
-| **`/welcome [full\|compact\|off]`** | Welcome Mode | Configure or toggle the Welcome Dashboard. |
+| **Click Tab** | TabBar | Switch active sidebar tab (`1:MAIN`, `2:GIT`, `3:AGENTS`, `4:PROF`, `5:MEM`, `6:TREE`). |
+| **Mouse Wheel** | TabBar | Cycle through sidebar tabs forward or backward. |
+| **Mouse Wheel** | Over Cards | Scroll vertically inside overflowing cards (Todos, Git Graph, Tree, Profiles, Agents). |
+| **Click File** | `2:GIT` / `6:TREE` | Open file directly in configured editor (`$EDITOR` or `nvim`). |
+| **Click `[explorer ↗]`** | `5:MEM` | Launch `pi-memory-graph` Cytoscape interactive graph explorer in the browser (port 7474). |
+| **Click `[💾 Retener]`**| `5:MEM` | Extract current session takeaways and persist a durable memory record into `.pi/memory.db`. |
+| **Click `[dashboard ↗]`**| `5:MEM` | Open Engram Cloud web dashboard for the current project. |
+| **Click Profile** | `4:PROF` | Switch active model profile instantly without restarting Pi. |
+| **`Shift+Tab`** | Input Editor | Cycle thinking effort level (mint: minimal/low, gold: medium, violet: high). |
+| **`Alt+G`** | Anywhere | Launch `/gentle:changes` working tree interactive diff inspector. |
+| **`Ctrl+O`** (`^O`) | Anywhere | Toggle full / compact Welcome Dashboard. |
+| **`/cinlodev`** | Command | Hot-reload all CUTE configuration files and re-apply styles without restart. |
 
 ---
 
@@ -133,6 +184,7 @@ pi install ./pi-cinlodev-cute
 * **Ecosystem Companions:** Automatically lights up extra sidebar features when paired with:
   * [`gentle-shell`](https://github.com/Gentleman-Programming/gentle-shell) (Welcome dashboard, `/gentle:changes`, sidebar harmony).
   * [`gentle-engram`](https://github.com/Gentleman-Programming/gentle-engram) (Interactive memory card & cloud dashboard sync).
+  * [`pi-memory-graph`](https://github.com/CinloDev/pi-memory-graph) (SQLite knowledge graph, local vector embeddings, Cytoscape explorer).
   * Antigravity / CLIProxyAPI (Live Gemini & Claude quota monitoring).
 
 ---
@@ -148,7 +200,11 @@ All colors, strings, layout dimensions, and filesystem paths are cleanly separat
   "preset": "kittens",
   "layout": {
     "sidebar": {
-      "railWidth": 52
+      "railWidth": 52,
+      "defaultTab": "1"
+    },
+    "todos": {
+      "railMaxRows": 20
     }
   }
 }
@@ -173,7 +229,7 @@ All colors, strings, layout dimensions, and filesystem paths are cleanly separat
 ## 🛡️ Architecture & Upstream Protection
 
 `pi-cinlodev-cute` is built strictly as a non-destructive adapter:
-* Hooks cleanly into standard Pi lifecycle events (`session_start`, `agent_start`, `agent_end`).
+* Hooks cleanly into standard Pi lifecycle events (`session_start`, `agent_start`, `agent_end`, `message_end`).
 * Zero mutation of external source files or foreign state.
 * Preserves all terminal escape sequences (OSC 133 / Kitty APC) atomically without breaking scroll or click semantics.
 

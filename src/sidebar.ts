@@ -9,6 +9,7 @@ import { CinlodevAgentsCard } from "./cute-agents.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
+import { CinlodevMemoryGraphCard } from "./cute-memory-graph.ts";
 import {
 	measureDockMetrics,
 	measureDockHeight,
@@ -370,6 +371,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("projectTree", component);
 						}
 					}
+					if (!component && (key === "memoryGraph" || key === "memory-graph")) {
+						component = state.parts.get("memoryGraph") || state.parts.get("memory-graph");
+						if (!component) {
+							component = new CinlodevMemoryGraphCard(undefined, tui, theme);
+							state.parts.set("memoryGraph", component);
+						}
+					}
 					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree" || key === "todo")
 						? (cardHeights[index] ?? availableCardHeight)
 						: undefined;
@@ -392,6 +400,8 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 						key !== "cute-agents" &&
 						key !== "agents" &&
 						key !== "profiles" &&
+						key !== "memoryGraph" &&
+						key !== "memory-graph" &&
 						key !== "projectTree" &&
 						key !== "project-tree"
 							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
