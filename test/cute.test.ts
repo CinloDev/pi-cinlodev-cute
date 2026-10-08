@@ -21,6 +21,7 @@ import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGi
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
+import { CinlodevMemoryGraphCard, resolveMemoryGraphDbCandidate, queryMemoryGraphStats, resetMemoryGraphCache } from "../src/cute-memory-graph.ts";
 import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag, extractTaskIdFromText, loadGentleAgentsDiskTasks, resetGentleAgentsTasksCache } from "../src/cute-agents.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
 import { CinlodevTodoMirror } from "../src/todos.ts";
@@ -39,6 +40,7 @@ function resetAll() {
 	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
+	resetMemoryGraphCache();
 	resetGentleAgentsTasksCache();
 }
 
@@ -3603,6 +3605,95 @@ Found 1 memories:
 	// Tab mappings check
 	assert.ok(SIDEBAR_TAB_CARD_MAP.git.includes("workingTree"), "git tab must include workingTree");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("engramHandoff"), "mem tab must include engramHandoff");
+	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("memoryGraph"), "mem tab must include memoryGraph");
+});
+
+test("cute-memory-graph - candidate resolution, stats querying and card rendering", async () => {
+	resetAll();
+	const tmpDir = path.join(os.tmpdir(), `memory-graph-test-${Date.now()}`);
+	const piDir = path.join(tmpDir, ".pi");
+	fs.mkdirSync(piDir, { recursive: true });
+
+	try {
+		// 1. Candidate resolution: non-existent project db
+		const nonExistentTmp = path.join(os.tmpdir(), `non-existent-${Date.now()}`);
+		assert.equal(resolveMemoryGraphDbCandidate(nonExistentTmp, false), null);
+
+		// 2. Candidate resolution: .pi/memory.db
+		const dbFile = path.join(piDir, "memory.db");
+		fs.writeFileSync(dbFile, "sqlite-dummy-content");
+
+		const candidate = resolveMemoryGraphDbCandidate(tmpDir);
+		assert.ok(candidate);
+		assert.equal(candidate.path, dbFile);
+		assert.equal(candidate.scope, "project");
+
+		// 3. Query stats on simulated file
+		const stats = await queryMemoryGraphStats(tmpDir);
+		assert.ok(stats.available);
+		assert.equal(stats.scope, "project");
+
+		// 4. Render card with stats
+		const mockCtx: any = { cwd: tmpDir };
+		const card = new CinlodevMemoryGraphCard(mockCtx, undefined, undefined, tmpDir);
+
+		// Set mock cached stats for UI verification
+		(card as any).getCachedOrTrigger = () => ({
+			available: true,
+			dbPath: dbFile,
+			scope: "project",
+			memoriesCount: 42,
+			entitiesCount: 15,
+			relationsCount: 28,
+			activeLeasesCount: 1,
+			lastMemorySnippet: "Arquitectura modular de SQLite Knowledge Graph",
+			lastCheckedAt: Date.now(),
+		});
+
+		const lines = card.render(50);
+		assert.ok(lines.length > 5);
+		for (const line of lines) {
+			assert.equal(visibleWidth(line), 50);
+		}
+
+		assert.ok(lines.some((l) => l.includes("GRAPH MEMORY")));
+		assert.ok(lines.some((l) => l.includes("SQLite Knowledge Graph")));
+		assert.ok(lines.some((l) => l.includes("Recuerdos:")));
+		assert.ok(lines.some((l) => l.includes("42")));
+		assert.ok(lines.some((l) => l.includes("Grafo:")));
+		assert.ok(lines.some((l) => l.includes("15")));
+		assert.ok(lines.some((l) => l.includes("28")));
+		assert.ok(lines.some((l) => l.includes("Retener Sesión")));
+		assert.ok(lines.some((l) => l.includes("Arquitectura modular")));
+
+		// 5. Inactive / Not available fallback rendering
+		const emptyCard = new CinlodevMemoryGraphCard(undefined, undefined, undefined, tmpDir);
+		(emptyCard as any).getCachedOrTrigger = () => ({
+			available: false,
+			dbPath: null,
+			scope: "none",
+			memoriesCount: 0,
+			entitiesCount: 0,
+			relationsCount: 0,
+			activeLeasesCount: 0,
+			lastCheckedAt: Date.now(),
+		});
+		const emptyLines = emptyCard.render(50);
+		assert.ok(emptyLines.some((l) => l.includes("inactivo")));
+		assert.ok(emptyLines.some((l) => l.includes("Sin base .pi/memory.db detectada")));
+		assert.ok(emptyLines.some((l) => l.includes("+ inicializar memoria")));
+
+		// 6. Interactive click on Explorer and Retain Session
+		let actionRan = false;
+		(card as any).clickTargets = [
+			{ lineIndex: 1, action: () => { actionRan = true; } },
+		];
+		assert.equal(card.handleClick(1), true);
+		assert.equal(actionRan, true);
+		assert.equal(card.handleClick(99), false);
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
 });
 
 test("cute-tree - scanDirectoryTree returns sorted directories and files, ignoring default patterns", () => {
