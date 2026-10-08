@@ -21,7 +21,7 @@ import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGi
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
-import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag } from "../src/cute-agents.ts";
+import { CinlodevAgentsCard, collectSessionSubagentTasks, getAgentRoleColor, formatSubagentStatusTag, extractTaskIdFromText, loadGentleAgentsDiskTasks, resetGentleAgentsTasksCache } from "../src/cute-agents.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
 import { CinlodevTodoMirror } from "../src/todos.ts";
 import { invalidateSidebarGitAndTree } from "../src/footer.ts";
@@ -39,6 +39,7 @@ function resetAll() {
 	resetGitTabState();
 	resetUsageCache();
 	resetEngramCache();
+	resetGentleAgentsTasksCache();
 }
 
 const userConfigFile = path.join(os.homedir(), ".pi", "agent", "cute.json");
@@ -3248,6 +3249,185 @@ test("cute-agents - collectSessionSubagentTasks parses session history correctly
 	assert.equal(task2.id, "bg-task-99");
 });
 
+test("cute-agents - extractTaskIdFromText matches various task string patterns", () => {
+	assert.equal(extractTaskIdFromText("Background task queued with task_id: bg-task-99"), "bg-task-99");
+	assert.equal(extractTaskIdFromText("Started gentle-ai-worker in the background as task mu80euaw-1-4t4i. Retain id."), "mu80euaw-1-4t4i");
+	assert.equal(extractTaskIdFromText("Subagent gentle-ai-explore (task musj1q0j-2-yukz, \"explore\") finished."), "musj1q0j-2-yukz");
+	assert.equal(extractTaskIdFromText("Started worker with task muv1234a-9-zz11"), "muv1234a-9-zz11");
+	assert.equal(extractTaskIdFromText("Nothing here"), undefined);
+});
+
+test("cute-agents - loadGentleAgentsDiskTasks reads tasks from disk store", () => {
+	resetAll();
+	const tmpDir = path.join(os.tmpdir(), `gentle-agents-test-${Date.now()}`);
+	fs.mkdirSync(tmpDir, { recursive: true });
+
+	try {
+		const taskFile1 = path.join(tmpDir, "task-abc-1.json");
+		fs.writeFileSync(
+			taskFile1,
+			JSON.stringify({
+				task: {
+					id: "task-abc-1",
+					agent: "gentle-ai-explore",
+					prompt: "investigate memory leaks",
+					label: "investigate memory",
+					mode: "background",
+					status: "completed",
+					createdAt: 1000,
+					startedAt: 1000,
+					endedAt: 5000,
+					result: "Found leak in cache listener",
+					parentSessionId: "sess-123",
+					cwd: "/home/user/project-alpha",
+				},
+			})
+		);
+
+		const taskFile2 = path.join(tmpDir, "task-abc-2.json");
+		fs.writeFileSync(
+			taskFile2,
+			JSON.stringify({
+				task: {
+					id: "task-abc-2",
+					agent: "gentle-ai-worker",
+					prompt: "fix styles",
+					label: "fix styles",
+					mode: "task",
+					status: "running",
+					createdAt: 6000,
+					startedAt: 6000,
+					parentSessionId: "sess-999",
+					cwd: "/home/user/project-beta",
+				},
+			})
+		);
+
+		// Read all
+		const all = loadGentleAgentsDiskTasks(undefined, 10, tmpDir);
+		assert.equal(all.length, 2);
+		assert.ok(all.some((t) => t.id === "task-abc-1" && t.status === "completed"));
+		assert.ok(all.some((t) => t.id === "task-abc-2" && t.status === "running"));
+
+		// Filter by parentSessionId
+		const filtered = loadGentleAgentsDiskTasks("sess-123", 10, tmpDir);
+		assert.equal(filtered.length, 1);
+		assert.equal(filtered[0].id, "task-abc-1");
+		assert.equal(filtered[0].resultSummary, "Found leak in cache listener");
+
+		// Filter strictly by targetCwd
+		const alphaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-alpha");
+		assert.equal(alphaTasks.length, 1);
+		assert.equal(alphaTasks[0].id, "task-abc-1");
+
+		const betaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-beta");
+		assert.equal(betaTasks.length, 1);
+		assert.equal(betaTasks[0].id, "task-abc-2");
+
+		const gammaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-gamma");
+		assert.equal(gammaTasks.length, 0, "Non-existent project cwd should return 0 tasks");
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("cute-agents - collectSessionSubagentTasks handles custom_message completion", () => {
+	const mockCtx: any = {
+		sessionManager: {
+			getBranch: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "tc-bg-1",
+								name: "subagent_run",
+								args: {
+									agent: "gentle-ai-worker",
+									task: "build components",
+									label: "build components",
+									mode: "background",
+								},
+							},
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "tc-bg-1",
+						content: "Started gentle-ai-worker in the background as task mu-bg-42. Retain id.",
+					},
+				},
+				{
+					type: "custom_message",
+					customType: "gentle-agents.result",
+					content: 'Subagent gentle-ai-worker (task mu-bg-42, "build components") finished.\n\nAll components built and styled perfectly.',
+				},
+			],
+		},
+	};
+
+	const tasks = collectSessionSubagentTasks(mockCtx);
+	assert.equal(tasks.length, 1);
+	assert.equal(tasks[0].id, "mu-bg-42");
+	assert.equal(tasks[0].status, "completed");
+	assert.equal(tasks[0].mode, "background");
+	assert.ok(tasks[0].resultSummary?.includes("All components built"));
+});
+
+test("cute-agents - CinlodevAgentsCard renders recent tasks when session has no tasks", () => {
+	resetAll();
+	const tmpDir = path.join(os.tmpdir(), `gentle-agents-empty-sess-${Date.now()}`);
+	fs.mkdirSync(tmpDir, { recursive: true });
+
+	try {
+		const taskFile = path.join(tmpDir, "task-historical-1.json");
+		fs.writeFileSync(
+			taskFile,
+			JSON.stringify({
+				task: {
+					id: "task-hist-1",
+					agent: "research-writer",
+					prompt: "generate architectural spec",
+					label: "generate architectural spec",
+					mode: "task",
+					status: "completed",
+					createdAt: 2000,
+					startedAt: 2000,
+					endedAt: 6000,
+					result: "Architectural spec generated successfully",
+				},
+			})
+		);
+
+		const mockCtx: any = {
+			cwd: process.cwd(),
+			sessionManager: {
+				getSessionId: () => "sess-empty",
+				getBranch: () => [],
+			},
+		};
+
+		const card = new CinlodevAgentsCard(mockCtx, undefined, undefined);
+		// Override disk loader for test isolation
+		(card as any).getUnifiedTasks = () => {
+			const tasks = loadGentleAgentsDiskTasks(undefined, 5, tmpDir);
+			return { tasks, isHistory: true };
+		};
+
+		const lines = card.render(50);
+		assert.ok(lines.some((l) => l.includes("Tareas Recientes")));
+		assert.ok(lines.some((l) => l.includes("research-writer")));
+		assert.ok(lines.some((l) => l.includes("generate arch")));
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
 test("cute-agents - CinlodevAgentsCard rendering, views, and mouse interactions", () => {
 	resetAll();
 	const mockCtx: any = {
@@ -4153,7 +4333,7 @@ test("todos - CinlodevTodoMirror performs word wrapping for long titles", () => 
 
 test("todos - CinlodevTodoMirror handles mouse wheel scrolling on overflow", () => {
 	resetAll();
-	const manyTasks = Array.from({ length: 15 }, (_, i) => ({
+	const manyTasks = Array.from({ length: 25 }, (_, i) => ({
 		id: i + 1,
 		title: `Tarea de prueba numero ${i + 1}`,
 		status: i < 3 ? "done" as const : "pending" as const,
@@ -4343,7 +4523,7 @@ test("todos - CinlodevTodoMirror supports full-height availableHeight in renderR
 						toolName: "todo",
 						details: {
 							gentleTodo: {
-								tasks: Array.from({ length: 20 }, (_, i) => ({
+								tasks: Array.from({ length: 40 }, (_, i) => ({
 									id: i + 1,
 									title: `Tarea extendida ${i + 1}`,
 									status: "pending" as const,
@@ -4357,13 +4537,13 @@ test("todos - CinlodevTodoMirror supports full-height availableHeight in renderR
 	};
 
 	const mirror = new CinlodevTodoMirror(mockCtx, { requestRender: () => {} } as any);
-	// Invocación estándar (railMaxRows = 8)
+	// Invocación estándar (railMaxRows = 20)
 	const standardLines = mirror.renderRail(40);
-	// Con full-height en la pestaña 7:TODO (availableHeight = 25)
-	const fullHeightLines = mirror.renderRail(40, 25);
+	// Con full-height en la pestaña con availableHeight = 45
+	const fullHeightLines = mirror.renderRail(40, 45);
 
 	assert.ok(fullHeightLines.length > standardLines.length, "Con availableHeight debe renderizar más líneas verticales");
-	assert.ok(fullHeightLines.length >= 20, "Debe aprovechar la altura vertical disponible del rail");
+	assert.ok(fullHeightLines.length >= 25, "Debe aprovechar la altura vertical disponible del rail");
 });
 
 
