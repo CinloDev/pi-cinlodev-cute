@@ -3279,6 +3279,7 @@ test("cute-agents - loadGentleAgentsDiskTasks reads tasks from disk store", () =
 					endedAt: 5000,
 					result: "Found leak in cache listener",
 					parentSessionId: "sess-123",
+					cwd: "/home/user/project-alpha",
 				},
 			})
 		);
@@ -3297,6 +3298,7 @@ test("cute-agents - loadGentleAgentsDiskTasks reads tasks from disk store", () =
 					createdAt: 6000,
 					startedAt: 6000,
 					parentSessionId: "sess-999",
+					cwd: "/home/user/project-beta",
 				},
 			})
 		);
@@ -3312,6 +3314,18 @@ test("cute-agents - loadGentleAgentsDiskTasks reads tasks from disk store", () =
 		assert.equal(filtered.length, 1);
 		assert.equal(filtered[0].id, "task-abc-1");
 		assert.equal(filtered[0].resultSummary, "Found leak in cache listener");
+
+		// Filter strictly by targetCwd
+		const alphaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-alpha");
+		assert.equal(alphaTasks.length, 1);
+		assert.equal(alphaTasks[0].id, "task-abc-1");
+
+		const betaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-beta");
+		assert.equal(betaTasks.length, 1);
+		assert.equal(betaTasks[0].id, "task-abc-2");
+
+		const gammaTasks = loadGentleAgentsDiskTasks(undefined, 10, tmpDir, "/home/user/project-gamma");
+		assert.equal(gammaTasks.length, 0, "Non-existent project cwd should return 0 tasks");
 	} finally {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	}

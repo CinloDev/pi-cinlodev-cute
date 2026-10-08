@@ -113,7 +113,7 @@ export function extractTaskIdFromText(text: string): string | undefined {
 	return match ? match[1] : undefined;
 }
 
-let diskTasksCache: { timestamp: number; tasks: SubagentTaskRecord[] } | null = null;
+let diskTasksCache: { timestamp: number; cwd?: string; tasks: SubagentTaskRecord[] } | null = null;
 const DISK_TASKS_CACHE_TTL_MS = 2000;
 
 export function resetGentleAgentsTasksCache(): void {
@@ -122,10 +122,11 @@ export function resetGentleAgentsTasksCache(): void {
 
 /**
  * Loads recent or session-specific tasks from ~/.pi/agent/gentle-agents/tasks/
+ * If targetCwd is provided, strictly filters tasks that belong to that project root.
  */
-export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, customDir?: string): SubagentTaskRecord[] {
+export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, customDir?: string, targetCwd?: string): SubagentTaskRecord[] {
 	const now = Date.now();
-	if (!customDir && !parentSessionId && diskTasksCache && (now - diskTasksCache.timestamp < DISK_TASKS_CACHE_TTL_MS)) {
+	if (!customDir && !parentSessionId && diskTasksCache && diskTasksCache.cwd === targetCwd && (now - diskTasksCache.timestamp < DISK_TASKS_CACHE_TTL_MS)) {
 		return diskTasksCache.tasks.slice(0, limit);
 	}
 
@@ -147,6 +148,7 @@ export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, 
 		});
 		fileStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
+		const normalizedTargetCwd = targetCwd ? path.resolve(targetCwd) : undefined;
 		const records: SubagentTaskRecord[] = [];
 		for (const { fullPath } of fileStats) {
 			try {
@@ -156,6 +158,17 @@ export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, 
 				if (!t || !t.id) continue;
 
 				if (parentSessionId && t.parentSessionId && t.parentSessionId !== parentSessionId) {
+					continue;
+				}
+
+				if (normalizedTargetCwd && t.cwd) {
+					const taskCwd = path.resolve(t.cwd);
+					// Must match exact cwd or be within target directory
+					if (taskCwd !== normalizedTargetCwd && !taskCwd.startsWith(normalizedTargetCwd + path.sep)) {
+						continue;
+					}
+				} else if (normalizedTargetCwd && !t.cwd) {
+					// If task has no cwd recorded, exclude from project-scoped views
 					continue;
 				}
 
@@ -188,7 +201,7 @@ export function loadGentleAgentsDiskTasks(parentSessionId?: string, limit = 10, 
 		}
 
 		if (!customDir && !parentSessionId) {
-			diskTasksCache = { timestamp: now, tasks: records };
+			diskTasksCache = { timestamp: now, cwd: targetCwd, tasks: records };
 		}
 		return records;
 	} catch {
@@ -525,8 +538,8 @@ export class CinlodevAgentsCard implements Component {
 			};
 		}
 
-		// Fallback: If session has NO tasks, load recent tasks from disk store
-		const diskTasks = loadGentleAgentsDiskTasks(undefined, 5);
+		// Fallback: If session has NO tasks, load recent tasks from disk store filtered by current project cwd
+		const diskTasks = loadGentleAgentsDiskTasks(undefined, 5, undefined, this.cwd);
 		if (diskTasks.length > 0) {
 			return {
 				tasks: diskTasks,
@@ -638,7 +651,7 @@ export class CinlodevAgentsCard implements Component {
 
 			if (!hasTasks) {
 				const subBar = treeConnector === "└─" ? "  " : `${c.pink("│")} `;
-				lines.push(boxLine(`${subBar}${c.dim("(Sin tareas delegadas en esta sesión)")}`));
+				lines.push(boxLine(`${subBar}${c.dim("(Sin tareas delegadas en este proyecto)")}`));
 				lines.push(boxLine(`${subBar}${c.dim("Esperando llamadas a subagent_run…")}`));
 			} else {
 				// Display top tasks with pagination/scrolling window of 3
