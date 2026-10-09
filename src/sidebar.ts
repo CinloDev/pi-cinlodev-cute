@@ -5,7 +5,6 @@ import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcri
 import { loadCuteStrings } from "./cute-strings.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
-import { CinlodevAgentsCard } from "./cute-agents.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
@@ -86,10 +85,6 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	if (!state.parts.has("cute-profiles")) {
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme);
 		state.parts.set("cute-profiles", profilesCard);
-	}
-	if (!state.parts.has("cute-agents")) {
-		const agentsCard = new CinlodevAgentsCard(undefined, tui, theme);
-		state.parts.set("cute-agents", agentsCard);
 	}
 	const cleanups: Array<() => void> = [];
 	const roots = new Set<LayoutRoot>();
@@ -258,7 +253,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			state.activeTabId = activeTab.id;
 
 			const targetCardKeys = !tabsEnabled
-				? ["footer", "context", "engram", "gitGraph", "tools", "cute-agents", "cute-profiles", "todo"]
+				? ["footer", "context", "engram", "gitGraph", "tools", "cute-profiles", "todo"]
 				: activeTab.cards;
 
 			const branding = renderCUTESidebarBanner(netWidth, theme);
@@ -331,18 +326,6 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 							state.parts.set("cute-profiles", component);
 						}
 					}
-					if (
-						!component &&
-						(key === "cute-agents" || key === "agents")
-					) {
-						component =
-							state.parts.get("cute-agents") ||
-							state.parts.get("agents");
-						if (!component) {
-							component = new CinlodevAgentsCard(undefined, tui, theme);
-							state.parts.set("cute-agents", component);
-						}
-					}
 					if (!component && (key === "gitGraph" || key === "git-graph")) {
 						component = state.parts.get("gitGraph") || state.parts.get("git-graph");
 						if (!component) {
@@ -397,8 +380,6 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 						key !== "tools" &&
 						key !== "cute-profiles" &&
 						key !== "cute-profiles-extended" &&
-						key !== "cute-agents" &&
-						key !== "agents" &&
 						key !== "profiles" &&
 						key !== "memoryGraph" &&
 						key !== "memory-graph" &&

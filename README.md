@@ -29,9 +29,9 @@ Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI**
 
 ---
 
-## 🎛️ Sidebar Tabs Showcase (`1:MAIN` → `6:TREE`)
+## 🎛️ Sidebar Tabs Showcase (`1:MAIN` → `5:TREE`)
 
-The sidebar rail (`railWidth: 52`) organizes all session vital information into an interactive 6-tab navigation bar (`CUTE_SIDEBAR_TABS`), navigable via mouse click or scroll-wheel cycling:
+The sidebar rail (`railWidth: 52`) organizes all session vital information into an interactive 5-tab navigation bar (`CUTE_SIDEBAR_TABS`), navigable via mouse click or scroll-wheel cycling:
 
 <table>
   <tr>
@@ -46,26 +46,24 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
       <sub>50/50 split view with ASCII Dracula commit graph and clickable Working Tree diff inspector.</sub>
     </td>
     <td width="33%" align="center">
-      <strong>3:AGENTS · Orchestrator</strong><br/><br/>
-      <img src="./public/nav3.png" alt="3:AGENTS Tab - Orchestrator and Subagent Activity" width="280" /><br/><br/>
-      <sub>Host node status, project-scoped subagent tasks, live background execution, and roster topology.</sub>
+      <strong>3:PROF · Profiles & Quotas</strong><br/><br/>
+      <img src="./public/nav4.png" alt="3:PROF Tab - Profiles Switcher and Quota Gauges" width="280" /><br/><br/>
+      <sub>Multi-account model profiles, subagents roster, interactive switcher, and live provider quota semaphores.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center">
-      <strong>4:PROF · Profiles</strong><br/><br/>
-      <img src="./public/nav4.png" alt="4:PROF Tab - Profiles Switcher and Quota Gauges" width="280" /><br/><br/>
-      <sub>Multi-account model profiles, interactive switcher, and live subagent quota semaphores.</sub>
-    </td>
-    <td width="33%" align="center">
-      <strong>5:MEM · Memory Vault</strong><br/><br/>
-      <img src="./public/nav5.png" alt="5:MEM Tab - Engram Daemon, Handoff and Graph Memory" width="280" /><br/><br/>
+      <strong>4:MEM · Memory Vault</strong><br/><br/>
+      <img src="./public/nav5.png" alt="4:MEM Tab - Engram Daemon, Handoff and Graph Memory" width="280" /><br/><br/>
       <sub>Local Engram daemon, handoffs, tools metrics, and interactive SQLite Knowledge Graph card.</sub>
     </td>
     <td width="33%" align="center">
-      <strong>6:TREE · Project Explorer</strong><br/><br/>
-      <img src="./public/nav6.png" alt="6:TREE Tab - Project File Tree with Git Badges" width="280" /><br/><br/>
+      <strong>5:TREE · Project Explorer</strong><br/><br/>
+      <img src="./public/nav6.png" alt="5:TREE Tab - Project File Tree with Git Badges" width="280" /><br/><br/>
       <sub>Interactive directory tree with live Git status badges (M, ?, ●), directory toggling, and editor launcher.</sub>
+    </td>
+    <td width="33%" align="center">
+      <!-- Balanced 5-tab layout -->
     </td>
   </tr>
 </table>
@@ -135,13 +133,12 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
 | **Todos Mirror Card** | `1:MAIN` | Dynamic full-height task mirror of Pi's todo list. Automatically expands to consume available vertical space down to the prompt line with clean word wrapping and delayed mouse wheel scrolling. |
 | **Git Graph Card** | `2:GIT` | ASCII Git graph with Dracula branch styling, commit hashes, branch tags, and scrollable history. Shares a 50/50 split view with Working Tree. |
 | **Working Tree Card** | `2:GIT` | Live list of staged, modified, and untracked files with addition/deletion stats. Click any file to inspect diffs or launch the external viewer. |
-| **Agents Orchestrator Card** | `3:AGENTS` | Host orchestrator status node, project-scoped subagent execution history, live background task tracking (`● RUNNING`), and visual subagent topology. |
-| **Profiles Extended Card** | `4:PROF` | Interactive cluster profile switcher (Alt+M / click to switch), listing orchestrator models and subagent quota bars with weekly/5h limits. |
-| **Engram Card** | `5:MEM` | Local Engram daemon health (`localhost:7437`), observation counts, cloud sync status, and click target to launch the web dashboard (`dashboard ↗`). |
-| **Active Handoff Card** | `5:MEM` | Formatted preview of the active session summary or memory handoff for seamless context continuity across sessions. |
-| **Memory Graph Card** | `5:MEM` | SQLite knowledge graph card for `pi-memory-graph`. Displays memories count, relational nodes/edges, active leases, last memory snippet, `[explorer ↗]` browser launcher (port 7474), and one-click `[💾 Retener Sesión]`. |
-| **Tools Telemetry Card** | `5:MEM` | Live counter summarizing tool execution metrics (`read`, `write`, `bash`, `grep`, `other`) into clean visual pills with total call count. |
-| **Project Tree Card** | `6:TREE` | Interactive directory tree with Git porcelain badges (`M`, `?`, `●`), directory collapse/expand toggles, mouse-wheel scrolling, and direct click-to-edit in `$EDITOR` (`[ ↗ nvim ]`). |
+| **Profiles Extended Card** | `3:PROF` | Interactive cluster profile switcher (Alt+M / click to switch), listing orchestrator models, subagents roster, and quota bars with weekly/5h limits. |
+| **Engram Card** | `4:MEM` | Local Engram daemon health (`localhost:7437`), observation counts, cloud sync status, and click target to launch the web dashboard (`dashboard ↗`). |
+| **Active Handoff Card** | `4:MEM` | Formatted preview of the active session summary or memory handoff for seamless context continuity across sessions. |
+| **Memory Graph Card** | `4:MEM` | SQLite knowledge graph card for `pi-memory-graph`. Displays memories count, relational nodes/edges, active leases, last memory snippet, `[explorer ↗]` browser launcher (port 7474), and one-click `[💾 Retener Sesión]`. |
+| **Tools Telemetry Card** | `4:MEM` | Live counter summarizing tool execution metrics (`read`, `write`, `bash`, `grep`, `other`) into clean visual pills with total call count. |
+| **Project Tree Card** | `5:TREE` | Interactive directory tree with Git porcelain badges (`M`, `?`, `●`), directory collapse/expand toggles, mouse-wheel scrolling, and direct click-to-edit in `$EDITOR` (`[ ↗ nvim ]`). |
 
 ---
 
@@ -149,14 +146,14 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
 
 | Input / Action | Context | Description |
 | :--- | :--- | :--- |
-| **Click Tab** | TabBar | Switch active sidebar tab (`1:MAIN`, `2:GIT`, `3:AGENTS`, `4:PROF`, `5:MEM`, `6:TREE`). |
+| **Click Tab** | TabBar | Switch active sidebar tab (`1:MAIN`, `2:GIT`, `3:PROF`, `4:MEM`, `5:TREE`). |
 | **Mouse Wheel** | TabBar | Cycle through sidebar tabs forward or backward. |
-| **Mouse Wheel** | Over Cards | Scroll vertically inside overflowing cards (Todos, Git Graph, Tree, Profiles, Agents). |
-| **Click File** | `2:GIT` / `6:TREE` | Open file directly in configured editor (`$EDITOR` or `nvim`). |
-| **Click `[explorer ↗]`** | `5:MEM` | Launch `pi-memory-graph` Cytoscape interactive graph explorer in the browser (port 7474). |
-| **Click `[💾 Retener]`**| `5:MEM` | Extract current session takeaways and persist a durable memory record into `.pi/memory.db`. |
-| **Click `[dashboard ↗]`**| `5:MEM` | Open Engram Cloud web dashboard for the current project. |
-| **Click Profile** | `4:PROF` | Switch active model profile instantly without restarting Pi. |
+| **Mouse Wheel** | Over Cards | Scroll vertically inside overflowing cards (Todos, Git Graph, Tree, Profiles). |
+| **Click File** | `2:GIT` / `5:TREE` | Open file directly in configured editor (`$EDITOR` or `nvim`). |
+| **Click `[explorer ↗]`** | `4:MEM` | Launch `pi-memory-graph` Cytoscape interactive graph explorer in the browser (port 7474). |
+| **Click `[💾 Retener]`**| `4:MEM` | Extract current session takeaways and persist a durable memory record into `.pi/memory.db`. |
+| **Click `[dashboard ↗]`**| `4:MEM` | Open Engram Cloud web dashboard for the current project. |
+| **Click Profile** | `3:PROF` | Switch active model profile instantly without restarting Pi. |
 | **`Shift+Tab`** | Input Editor | Cycle thinking effort level (mint: minimal/low, gold: medium, violet: high). |
 | **`Alt+G`** | Anywhere | Launch `/gentle:changes` working tree interactive diff inspector. |
 | **`Ctrl+O`** (`^O`) | Anywhere | Toggle full / compact Welcome Dashboard. |
