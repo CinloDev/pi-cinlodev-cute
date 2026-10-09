@@ -17,7 +17,7 @@ import { formatTokenCount, getContextThreshold } from "../src/cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, SDD_PROFILES_API_SYMBOL, extractAccountFromModel, extractUniqueAccounts, loadProfileDetails, CinlodevProfilesExtendedCard, getActiveProfileDetails } from "../src/cute-profiles.ts";
 import { herdrAvailable, notify } from "../src/cute-notify.ts";
 import { CuteContextMonitor } from "../src/cute-context-monitor.ts";
-import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState, getGitSyncBadge } from "../src/cute-git-graph.ts";
+import { colorizeGitGraphLine, CinlodevGitGraphCard, resetGitGraphCache, parseGitStatusPorcelain, parseGitNumstat, formatGitStatusBadges, resetGitStatusCache, fetchGitFileChanges, resetGitFileChangesCache, CinlodevWorkingTreeCard, fetchGitBranches, fetchBranchDiff, getGitTabSelectedBranch, setGitTabSelectedBranch, getGitTabViewMode, setGitTabViewMode, resetGitTabState, getGitSyncBadge, launchFileDiff } from "../src/cute-git-graph.ts";
 import { collectToolCounts, recordToolCall, formatToolPill, wrapToolPills, CinlodevToolsCard, createEmptyToolCounts } from "../src/cute-tools.ts";
 import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevUsageCard, resetUsageCache, prioritizeActiveAccount, setCachedAccountsForTesting, getQuotaThreshold } from "../src/cute-usage.ts";
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
@@ -3911,16 +3911,23 @@ test("cute-tree - renders Git status badges and dirty directory bullets", () => 
 	}
 });
 
-test("cute-git-graph - CinlodevWorkingTreeCard file clicking", () => {
+test("cute-git-graph - CinlodevWorkingTreeCard file clicking and launchFileDiff", () => {
 	resetAll();
 	const card = new CinlodevWorkingTreeCard(undefined, undefined, undefined);
 	const lines = card.render(60, 20);
 
-	// Line 3 is first modified file if dirty
-	if (lines.length > 4 && lines[3].includes("src/")) {
-		const handled = card.handleRailClick(3);
-		assert.equal(handled, true, "Clicking on modified file row should return true");
+	// Line 4 is first modified file if dirty (line 0 top, line 1 badge, line 2 help, line 3 divider)
+	if (lines.length > 4) {
+		const handledLeft = card.handleRailClick(4, "left");
+		assert.equal(handledLeft, true, "Left-clicking on file row should return true (opens in nvim)");
+
+		const handledRight = card.handleRailClick(4, "right");
+		assert.equal(handledRight, true, "Right-clicking on file row should return true (opens file diff)");
 	}
+
+	// Verify launchFileDiff runs safely in test environment
+	assert.equal(launchFileDiff("src/cute-git-graph.ts", undefined), true);
+	assert.equal(launchFileDiff("src/cute-git-graph.ts", "feat/test-branch"), true);
 });
 
 test("footer - invalidateSidebarGitAndTree executes safely", () => {
