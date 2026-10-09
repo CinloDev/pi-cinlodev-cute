@@ -673,11 +673,68 @@ export function resetBranchDiffCache(): void {
 	cachedBranchDiff = undefined;
 }
 
+/**
+ * Launches an interactive diff for a specific file (against HEAD or targetBranch).
+ */
+export function launchFileDiff(filePath: string, targetBranch?: string | null, cwd?: string): boolean {
+	if (isTestEnvironment()) return true;
+	const workingDir = cwd || process.cwd();
+	const baseName = path.basename(filePath);
+	const targetDesc = targetBranch ? targetBranch : "HEAD";
+	const title = `diff: ${baseName} (${targetDesc})`;
+	const gitDiffTarget = targetBranch ? `HEAD...${targetBranch}` : "HEAD";
+	const cmd = `git -c color.ui=always diff --color=always ${gitDiffTarget} -- "${filePath}" | less -R`;
+
+	// 1. If running inside Herdr, open as a focused full-screen tab
+	if (herdrAvailable()) {
+		if (launchInHerdrTab(cmd, title, workingDir)) {
+			return true;
+		}
+	}
+
+	// 2. Fallback to external terminal
+	try {
+		const terminal = detectTerminal();
+		const termBin = path.basename(terminal).toLowerCase();
+		const termTitle = `CUTE Diff: ${baseName}`;
+
+		let args: string[];
+		switch (termBin) {
+			case "foot":
+				args = ["--app-id=cute-diff", "-T", termTitle, "sh", "-c", cmd];
+				break;
+			case "alacritty":
+				args = ["--class", "cute-diff,cute-diff", "-t", termTitle, "-e", "sh", "-c", cmd];
+				break;
+			case "kitty":
+				args = ["--class=cute-editor", "-T", termTitle, "sh", "-c", cmd];
+				break;
+			case "ghostty":
+				args = ["--class=cute-diff", "-e", "sh", "-c", cmd];
+				break;
+			default:
+				args = ["-e", "sh", "-c", cmd];
+				break;
+		}
+
+		const child = cp.spawn(terminal, args, {
+			detached: true,
+			stdio: "ignore",
+			cwd: workingDir,
+		});
+		child.on("error", () => {});
+		child.unref();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function launchGitDiff(branch: string, cwd?: string): boolean {
 	if (isTestEnvironment()) return true;
 	const workingDir = cwd || process.cwd();
 	const title = `diff: ${branch}`;
-	const cmd = `git diff HEAD...${branch} | less -R`;
+	const cmd = `git -c color.ui=always diff --color=always HEAD...${branch} | less -R`;
 
 	// 1. If running inside Herdr, open as a focused full-screen tab
 	if (herdrAvailable()) {
@@ -1107,7 +1164,7 @@ export class CinlodevWorkingTreeCard implements Component {
 	private lastMaxScrollOffset = 0;
 	private hitboxClose?: { start: number; end: number };
 	private hitboxOpen?: { start: number; end: number };
-	private fileHitboxes: Array<{ lineIndex: number; filePath: string }> = [];
+	private fileHitboxes: Array<{ lineIndex: number; filePath: string; diffStartX: number }> = [];
 
 	constructor(ctx?: ExtensionContext, tui?: TUI, theme?: Theme) {
 		this.ctx = ctx;
@@ -1142,7 +1199,7 @@ export class CinlodevWorkingTreeCard implements Component {
 		return false;
 	}
 
-	handleRailClick(lineIndex: number, _button?: string, localX?: number): boolean {
+	handleRailClick(lineIndex: number, button?: string, localX?: number): boolean {
 		const selectedBranch = getGitTabSelectedBranch();
 		if (selectedBranch) {
 			if (lineIndex === 0 && typeof localX === "number") {
@@ -1160,7 +1217,12 @@ export class CinlodevWorkingTreeCard implements Component {
 			const hit = this.fileHitboxes.find((h) => h.lineIndex === lineIndex);
 			if (hit) {
 				const cwd = this.ctx?.cwd ?? process.cwd();
-				launchEditor(hit.filePath, cwd);
+				const isDiff = button === "right" || (typeof localX === "number" && localX >= hit.diffStartX);
+				if (isDiff) {
+					launchFileDiff(hit.filePath, selectedBranch, cwd);
+				} else {
+					launchEditor(hit.filePath, cwd);
+				}
 				return true;
 			}
 			return true;
@@ -1170,7 +1232,12 @@ export class CinlodevWorkingTreeCard implements Component {
 			const hit = this.fileHitboxes.find((h) => h.lineIndex === lineIndex);
 			if (hit) {
 				const cwd = this.ctx?.cwd ?? process.cwd();
-				launchEditor(hit.filePath, cwd);
+				const isDiff = button === "right" || (typeof localX === "number" && localX >= hit.diffStartX);
+				if (isDiff) {
+					launchFileDiff(hit.filePath, null, cwd);
+				} else {
+					launchEditor(hit.filePath, cwd);
+				}
 				return true;
 			}
 		}
@@ -1258,6 +1325,9 @@ export class CinlodevWorkingTreeCard implements Component {
 					? `${c.mint(`+${diff.totalAdded}`)}  ${c.coral(`−${diff.totalDeleted}`)}`
 					: "";
 			allRows.push({ line: summaryBadge, right: deltasTotal });
+			if (diff.files.length > 0) {
+				allRows.push({ line: c.dim("click: nvim · [diff]: ver diff"), right: "" });
+			}
 			allRows.push({ line: "", right: "", isDivider: true });
 
 			if (diff.files.length === 0) {
@@ -1269,7 +1339,8 @@ export class CinlodevWorkingTreeCard implements Component {
 					else if (f.status === "deleted") badge = c.coral("D");
 					else if (f.status === "renamed") badge = c.cyan("R");
 
-					const rightParts: string[] = [];
+					const diffBtn = `${c.dim("[")}${c.pink("diff")}${c.dim("]")}`;
+					const rightParts: string[] = [diffBtn];
 					if (f.linesAdded > 0) rightParts.push(c.mint(`+${f.linesAdded}`));
 					if (f.linesDeleted > 0) rightParts.push(c.coral(`−${f.linesDeleted}`));
 					const rightStr = rightParts.join(" ");
@@ -1298,7 +1369,9 @@ export class CinlodevWorkingTreeCard implements Component {
 					const currentIdx = lines.length;
 					lines.push(boxLine(r.line, r.right));
 					if (r.filePath) {
-						this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath });
+						const rightWidth = calcVisibleWidth(r.right);
+						const diffStartX = Math.max(0, safeWidth - 2 - rightWidth - 1);
+						this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath, diffStartX });
 					}
 				}
 			}
@@ -1370,6 +1443,9 @@ export class CinlodevWorkingTreeCard implements Component {
 				? `${c.mint(`+${status.linesAdded}`)}  ${c.coral(`−${status.linesDeleted}`)}`
 				: "";
 		allRows.push({ line: summaryBadge, right: deltasTotal });
+		if (files.length > 0) {
+			allRows.push({ line: c.dim("click: nvim · [diff]: ver diff"), right: "" });
+		}
 		allRows.push({ line: "", right: "", isDivider: true });
 
 		for (const f of files) {
@@ -1379,7 +1455,8 @@ export class CinlodevWorkingTreeCard implements Component {
 			else if (f.status === "untracked") badge = c.pink("?");
 			else if (f.status === "conflict") badge = c.coral("U");
 
-			const rightParts: string[] = [];
+			const diffBtn = `${c.dim("[")}${c.pink("diff")}${c.dim("]")}`;
+			const rightParts: string[] = [diffBtn];
 			if (f.linesAdded > 0) rightParts.push(c.mint(`+${f.linesAdded}`));
 			if (f.linesDeleted > 0) rightParts.push(c.coral(`−${f.linesDeleted}`));
 			const rightStr = rightParts.join(" ");
@@ -1407,7 +1484,9 @@ export class CinlodevWorkingTreeCard implements Component {
 				const currentIdx = lines.length;
 				lines.push(boxLine(r.line, r.right));
 				if (r.filePath) {
-					this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath });
+					const rightWidth = calcVisibleWidth(r.right);
+					const diffStartX = Math.max(0, safeWidth - 2 - rightWidth - 1);
+					this.fileHitboxes.push({ lineIndex: currentIdx, filePath: r.filePath, diffStartX });
 				}
 			}
 		}

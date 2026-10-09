@@ -142,13 +142,15 @@ export function detectTerminal(): string {
 export function launchEditor(targetPath?: string, cwd?: string): boolean {
 	if (isTestEnvironment()) return true;
 	const editor = process.env.VISUAL || process.env.EDITOR || "nvim";
-	const filePath = targetPath ? targetPath : ".";
 	const workingDir = cwd || process.cwd();
+	const filePath = targetPath
+		? (path.isAbsolute(targetPath) ? targetPath : path.resolve(workingDir, targetPath))
+		: workingDir;
 	const title = `nvim: ${path.basename(filePath)}`;
 
 	// 1. If running inside Herdr, open as a focused full-screen tab
 	if (herdrAvailable()) {
-		if (launchInHerdrTab(`${editor} ${filePath}`, title, workingDir)) {
+		if (launchInHerdrTab(`${editor} "${filePath}"`, title, workingDir)) {
 			return true;
 		}
 	}
