@@ -13,7 +13,6 @@ export interface CuteSidebarTab {
 export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	main: ["footer", "context", "todo"],
 	git: ["gitGraph", "workingTree"],
-	agents: ["cute-agents"],
 	prof: ["cute-profiles"],
 	mem: ["engram", "engramHandoff", "memoryGraph", "tools"],
 	tree: ["projectTree"],
@@ -22,17 +21,15 @@ export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
 	{ id: "main", key: "1", label: "MAIN", title: "Main Dashboard", cards: SIDEBAR_TAB_CARD_MAP.main },
 	{ id: "git", key: "2", label: "GIT", title: "Git Graph & Working Tree", cards: SIDEBAR_TAB_CARD_MAP.git },
-	{ id: "agents", key: "3", label: "AGENTS", title: "Orchestrator & Subagents", cards: SIDEBAR_TAB_CARD_MAP.agents },
-	{ id: "prof", key: "4", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
-	{ id: "mem", key: "5", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
-	{ id: "tree", key: "6", label: "TREE", title: "Project Tree & Explorer", cards: SIDEBAR_TAB_CARD_MAP.tree },
+	{ id: "prof", key: "3", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
+	{ id: "mem", key: "4", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
+	{ id: "tree", key: "5", label: "TREE", title: "Project Tree & Explorer", cards: SIDEBAR_TAB_CARD_MAP.tree },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
 	if (tabIdOrKey) {
 		let normalized = tabIdOrKey.toLowerCase();
-		if (normalized === "forge") normalized = "prof";
-		if (normalized === "usage") normalized = "agents";
+		if (normalized === "forge" || normalized === "agents" || normalized === "usage") normalized = "prof";
 		if (normalized === "projecttree" || normalized === "project-tree") normalized = "tree";
 		const match = CUTE_SIDEBAR_TABS.find(
 			(t) => t.id === normalized || t.key === normalized || t.label.toLowerCase() === normalized

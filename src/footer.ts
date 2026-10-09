@@ -21,7 +21,6 @@ import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatCwd, quoteGitCwd } from "./cute-paths.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { listAvailableProfiles, switchProfile, type ProfileItem, CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
-import { CinlodevAgentsCard } from "./cute-agents.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 
 export { formatTokenCount, getContextThreshold };
@@ -41,7 +40,6 @@ let latestUsageCard: CinlodevUsageCard | undefined;
 let latestEngramCard: CinlodevEngramCard | undefined;
 let latestEngramHandoff: CinlodevEngramHandoffCard | undefined;
 let latestMemoryGraph: CinlodevMemoryGraphCard | undefined;
-let latestAgentsCard: CinlodevAgentsCard | undefined;
 let latestProjectTree: CinlodevProjectTreeCard | undefined;
 
 export function getLatestTodoMirror(): CinlodevTodoMirror | undefined {
@@ -547,7 +545,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				latestEngramCard?.invalidate();
 				latestEngramHandoff?.invalidate();
 				latestMemoryGraph?.invalidate();
-				latestAgentsCard?.invalidate();
 				latestTodoMirror?.invalidate();
 				if (latestTodoTui && (latestTodoTui as any).__cuteTodoRail) {
 					const state = sidebarState(latestTodoTui);
@@ -570,7 +567,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const engramHandoff = new CinlodevEngramHandoffCard(ctx, tui, theme);
 		const memoryGraph = new CinlodevMemoryGraphCard(ctx, tui, theme);
 		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
-		const agentsCard = new CinlodevAgentsCard(ctx, tui, theme, pi);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const workingTree = new CinlodevWorkingTreeCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
@@ -586,7 +582,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		latestEngramCard = engramCard;
 		latestEngramHandoff = engramHandoff;
 		latestMemoryGraph = memoryGraph;
-		latestAgentsCard = agentsCard;
 		const rail = {
 			render: (width: number) => bottom.renderSidebarCard(width),
 			invalidate: () => bottom.invalidate(),
@@ -644,13 +639,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => toolsCard.render(width),
 			invalidate: () => toolsCard.invalidate(),
 		};
-		const agentsRail = {
-			render: (width: number) => agentsCard.render(width),
-			invalidate: () => agentsCard.invalidate(),
-			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
-				agentsCard.handleClick(lineIndex, button, localX),
-			handleRailWheel: (delta: number) => agentsCard.handleWheel(delta),
-		};
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme, undefined, ctx, pi);
 		const profilesRail = {
 			render: (width: number, availableHeight?: number) => profilesCard.render(width, availableHeight),
@@ -674,7 +662,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const engramHandoffPart = sidebarPart(tui, "engramHandoff", { render: () => [] }, engramHandoffRail);
 		const memoryGraphPart = sidebarPart(tui, "memoryGraph", { render: () => [] }, memoryGraphRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
-		const agentsPart = sidebarPart(tui, "cute-agents", { render: () => [] }, agentsRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const workingTreePart = sidebarPart(tui, "workingTree", { render: () => [] }, workingTreeRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
@@ -702,7 +689,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				engramHandoffPart.dispose?.();
 				memoryGraphPart.dispose?.();
 				usagePart.dispose?.();
-				agentsPart.dispose?.();
 				gitGraphPart.dispose?.();
 				workingTreePart.dispose?.();
 				engramHandoffPart.dispose?.();
