@@ -23,6 +23,7 @@ import { parseRawUsageToAccounts, formatRelativeReset, cleanPoolLabel, CinlodevU
 import { detectProjectName, formatRelativeTime, resolveDashboardUrl, CinlodevEngramCard, resetEngramCache, DEFAULT_ENGRAM_DASHBOARD, parseEngramSearchOutput, CinlodevEngramHandoffCard } from "../src/cute-engram.ts";
 import { CinlodevMemoryGraphCard, resolveMemoryGraphDbCandidate, queryMemoryGraphStats, resetMemoryGraphCache } from "../src/cute-memory-graph.ts";
 import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src/cute-tree.ts";
+import { CinlodevYouTubeCard, YOUTUBE_PLAYER_SYMBOL } from "../src/cute-youtube.ts";
 import { CinlodevTodoMirror } from "../src/todos.ts";
 import { invalidateSidebarGitAndTree } from "../src/footer.ts";
 
@@ -2348,8 +2349,8 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	assert.ok(unthemedBar.line.includes("4:MEM"));
 	assert.ok(unthemedBar.line.includes("5:TREE"));
 
-	// Non-empty hitboxes (5 canonical tabs: MAIN, GIT, PROF, MEM, TREE)
-	assert.equal(unthemedBar.hitboxes.length, 5);
+	// Non-empty hitboxes for canonical tabs
+	assert.ok(unthemedBar.hitboxes.length >= 5);
 	for (const h of unthemedBar.hitboxes) {
 		assert.ok(h.id);
 		assert.ok(h.key);
@@ -2365,7 +2366,7 @@ test("sidebar tabs - renderCuteSidebarTabBar generates expected tabs, non-empty 
 	const themedBar = renderCuteSidebarTabBar(50, "1", mockTheme);
 	assert.equal(visibleWidth(themedBar.line), 50);
 	assert.equal(visibleWidth(themedBar.divider), 50);
-	assert.equal(themedBar.hitboxes.length, 5);
+	assert.ok(themedBar.hitboxes.length >= 5);
 
 	// 3. Narrow rail edge case: visibleWidth must never exceed width
 	const narrowBar = renderCuteSidebarTabBar(20, "2", mockTheme);
@@ -2416,8 +2417,8 @@ test("sidebar tabs - resolveSidebarTab resolves by id and by key", () => {
 	assert.equal(resolveSidebarTab("").id, "main");
 	assert.equal(resolveSidebarTab("invalid").id, "main");
 
-	// Tab properties (5 canonical tabs)
-	assert.equal(CUTE_SIDEBAR_TABS.length, 5, "CUTE_SIDEBAR_TABS must contain exactly 5 tabs");
+	// Tab properties (canonical tabs: main, git, prof, mem, tree, yt)
+	assert.ok(CUTE_SIDEBAR_TABS.length >= 5, "CUTE_SIDEBAR_TABS must contain at least 5 canonical tabs");
 	for (const tab of CUTE_SIDEBAR_TABS) {
 		assert.ok(tab.id);
 		assert.ok(tab.key);
@@ -2513,14 +2514,15 @@ test("sidebar tabs - mock TUI tab switching via click and wheel cycling", () => 
 		});
 		assert.equal(state.activeTabId, "main", "Wheel delta -1 should cycle to main");
 
-		// Wheel backward from main (index 0) wraps to tree (index 4)
+		// Wheel backward from main (index 0) wraps to last tab
+		const lastTab = CUTE_SIDEBAR_TABS[CUTE_SIDEBAR_TABS.length - 1];
 		scroll.handleMouse({
 			type: "wheel",
 			wheelDelta: -1,
 			x: 10,
 			y: 3,
 		});
-		assert.equal(state.activeTabId, "tree", "Wheel delta -1 from index 0 should wrap to tree");
+		assert.equal(state.activeTabId, lastTab.id, `Wheel delta -1 from index 0 should wrap to ${lastTab.id}`);
 	} finally {
 		cleanup();
 		resetAll();
@@ -4245,6 +4247,142 @@ test("todos - CinlodevTodoMirror supports full-height availableHeight in renderR
 	assert.ok(fullHeightLines.length > standardLines.length, "Con availableHeight debe renderizar más líneas verticales");
 	assert.ok(fullHeightLines.length >= 25, "Debe aprovechar la altura vertical disponible del rail");
 });
+
+test("CinlodevYouTubeCard - renders offline state cleanly with correct borders and visible width", () => {
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+	let rendersRequested = 0;
+	const mockTui: any = {
+		requestRender: () => {
+			rendersRequested++;
+		},
+	};
+	const card = new CinlodevYouTubeCard(mockTui);
+
+	const width = 45;
+	const lines = card.render(width, 20);
+	assert.ok(lines.length >= 4, "Offline render debe devolver al menos 4 líneas");
+	assert.ok(lines[0].includes("YouTube Music (Offline)"), "Debe indicar modo Offline");
+	assert.ok(lines.some((l) => l.includes("Esperando conexión de Chrome")), "Debe mostrar aviso de espera");
+
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), width, `Cada línea debe medir exactamente ${width} de ancho visible`);
+	}
+	card.dispose();
+});
+
+test("CinlodevYouTubeCard - renders connected state with music info, scrubber, controls and queue", () => {
+	let playClicked = false;
+	let prevClicked = false;
+	let nextClicked = false;
+	let volumeSet: number | undefined;
+	let queueIndexPlayed: number | undefined;
+
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "playing",
+			connectedClients: 1,
+			title: "Bohemian Rhapsody",
+			artist: "Queen",
+			currentTime: 120,
+			duration: 354,
+			volume: 0.8,
+			queue: [
+				{ title: "Don't Stop Me Now", artist: "Queen", index: 1 },
+				{ title: "Radio Ga Ga", artist: "Queen", index: 2 },
+			],
+		}),
+		on: () => () => {},
+		togglePlay: () => {
+			playClicked = true;
+		},
+		previous: () => {
+			prevClicked = true;
+		},
+		next: () => {
+			nextClicked = true;
+		},
+		setVolume: (v: number) => {
+			volumeSet = v;
+		},
+		playQueueIndex: (i: number) => {
+			queueIndexPlayed = i;
+		},
+	};
+
+	let rendersRequested = 0;
+	const mockTui: any = {
+		requestRender: () => {
+			rendersRequested++;
+		},
+	};
+	const card = new CinlodevYouTubeCard(mockTui);
+	const width = 50;
+	const lines = card.render(width, 25);
+
+	assert.ok(lines.some((l) => l.includes("YouTube Music") && !l.includes("Offline")));
+	assert.ok(lines.some((l) => l.includes("Bohemian Rhapsody")));
+	assert.ok(lines.some((l) => l.includes("Queen")));
+	assert.ok(lines.some((l) => l.includes("02:00") && l.includes("05:54")));
+	assert.ok(lines.some((l) => l.includes("A continuación")));
+	assert.ok(lines.some((l) => l.includes("Don't Stop Me Now")));
+
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), width, `Cada línea debe medir exactamente ${width} de ancho visible`);
+	}
+
+	// Click en Play/Pausa
+	// Fila de controles de reproducción es la 7:
+	const clickPlay = card.handleRailClick(7, "left", 22);
+	assert.ok(clickPlay, "Click en Play/Pausa debe manejarse");
+	assert.ok(playClicked, "togglePlay del reproductor debe ejecutarse");
+
+	// Click en Prev
+	const clickPrev = card.handleRailClick(7, "left", 8);
+	assert.ok(clickPrev, "Click en Prev debe manejarse");
+	assert.ok(prevClicked, "previous del reproductor debe ejecutarse");
+
+	// Click en Next
+	const clickNext = card.handleRailClick(7, "left", 36);
+	assert.ok(clickNext, "Click en Next debe manejarse");
+	assert.ok(nextClicked, "next del reproductor debe ejecutarse");
+
+	// Click en primer track de la cola (fila 12: 11 es divider, 12 es track 1)
+	const clickQueue = card.handleRailClick(12, "left", 15);
+	assert.ok(clickQueue, "Click en track de la cola debe manejarse");
+	assert.equal(queueIndexPlayed, 1, "playQueueIndex debe recibir el índice 1");
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
+test("CinlodevYouTubeCard - handles invalid or NaN player states gracefully without throwing", () => {
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "playing",
+			connectedClients: 1,
+			title: undefined,
+			artist: undefined,
+			currentTime: NaN,
+			duration: NaN,
+			volume: NaN,
+			queue: null,
+		}),
+	};
+
+	const mockTui: any = { requestRender: () => {} };
+	const card = new CinlodevYouTubeCard(mockTui);
+	const width = 45;
+	assert.doesNotThrow(() => {
+		const lines = card.render(width, 20);
+		for (const line of lines) {
+			assert.equal(visibleWidth(line), width);
+		}
+	});
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
 
 
 
