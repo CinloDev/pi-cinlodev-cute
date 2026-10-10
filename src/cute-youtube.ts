@@ -262,14 +262,14 @@ export class CinlodevYouTubeCard {
 		lines.push(qDivider);
 
 		// 9. Lista de Tracks en Cola (Click to Play)
-		const queue = (Array.isArray(state?.queue) ? state.queue : []).slice(0, 15);
+		const queue = Array.isArray(state?.queue) ? state.queue : [];
 		if (queue.length === 0) {
 			const emptyMsg = `  ${dim("La cola de reproducción está vacía")}`;
 			const emptyPad = Math.max(0, width - 2 - calcVisibleWidth(emptyMsg));
 			lines.push(`${border(g.v)}${emptyMsg}${" ".repeat(emptyPad)}${border(g.v)}`);
 		} else {
-			const maxLines = availableHeight ? Math.max(3, availableHeight - lines.length - 2) : 15;
-			const displayQueue = queue.slice(0, maxLines);
+			// Mostrar siempre hasta 15 canciones de la cola recibidas desde la extensión
+			const displayQueue = queue.slice(0, 15);
 
 			// Encontrar exactamente el índice de la canción que está sonando (a lo sumo 1)
 			const curTitle = cleanTitle(state?.title);
