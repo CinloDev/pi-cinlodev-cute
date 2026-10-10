@@ -16,6 +16,7 @@ export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
 	prof: ["cute-profiles"],
 	mem: ["engram", "engramHandoff", "memoryGraph", "tools"],
 	tree: ["projectTree"],
+	yt: ["youtubePlayer"],
 };
 
 export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
@@ -24,6 +25,7 @@ export const CUTE_SIDEBAR_TABS: readonly CuteSidebarTab[] = [
 	{ id: "prof", key: "3", label: "PROF", title: "Profiles & Clusters", cards: SIDEBAR_TAB_CARD_MAP.prof },
 	{ id: "mem", key: "4", label: "MEM", title: "Memory & Tools", cards: SIDEBAR_TAB_CARD_MAP.mem },
 	{ id: "tree", key: "5", label: "TREE", title: "Project Tree & Explorer", cards: SIDEBAR_TAB_CARD_MAP.tree },
+	{ id: "yt", key: "6", label: "YT", title: "YouTube Music Player", cards: SIDEBAR_TAB_CARD_MAP.yt },
 ];
 
 export function resolveSidebarTab(tabIdOrKey?: string): CuteSidebarTab {
