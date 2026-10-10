@@ -1,23 +1,27 @@
-import { ScrollView, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import { ScrollView, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { cuteGlyphs, safeFg, transformTranscriptLines, unifySidebarCardFrame } from "./cute-theme.ts";
-import { formatTranscriptChild, formatTranscriptChildren } from "./cute-transcript.ts";
-import { loadCuteStrings } from "./cute-strings.ts";
+import { cuteGlyphs, safeFg, transformTranscriptLines } from "./cute-theme.ts";
+import { formatTranscriptChildren } from "./cute-transcript.ts";
 import { loadCuteLayout, resolveEdgeInsets, tuneTuiScroll } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
-import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
-import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
-import { CinlodevProjectTreeCard } from "./cute-tree.ts";
-import { CinlodevMemoryGraphCard } from "./cute-memory-graph.ts";
 import {
-	measureDockMetrics,
-	measureDockHeight,
-	getVisibleInputBottomOffset,
 	findDock,
 	findTranscript,
 	NODE,
-	type DockMetrics,
 } from "./sidebar-dock.ts";
+import {
+	sidebarState,
+	sidebarPart,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
+} from "./sidebar-state.ts";
+import {
+	createSidebarMouseHandler,
+	type SectionMapping,
+} from "./sidebar-mouse.ts";
+import {
+	buildSidebarRailLines,
+} from "./sidebar-rail-builder.ts";
 import {
 	CUTE_SIDEBAR_TABS,
 	SIDEBAR_TAB_CARD_MAP,
@@ -26,47 +30,28 @@ import {
 	type CuteSidebarTab,
 	type TabHitbox,
 } from "./sidebar-tabs.ts";
-import {
-	sidebarState,
-	sidebarPart,
-	renderCUTESidebarBanner,
-	SIDEBAR_STATE_KEY,
-	type SidebarState,
-} from "./sidebar-state.ts";
 
 export {
-	measureDockMetrics,
-	measureDockHeight,
-	getVisibleInputBottomOffset,
-	findDock,
-	findTranscript,
-	NODE,
-	type DockMetrics,
+	sidebarState,
+	sidebarPart,
+	SIDEBAR_STATE_KEY,
+	type SidebarState,
 	CUTE_SIDEBAR_TABS,
 	SIDEBAR_TAB_CARD_MAP,
 	resolveSidebarTab,
 	renderCuteSidebarTabBar,
 	type CuteSidebarTab,
 	type TabHitbox,
-	sidebarState,
-	sidebarPart,
-	renderCUTESidebarBanner,
-	SIDEBAR_STATE_KEY,
-	type SidebarState,
 };
 
-// Cinlodev CUTE sidebar colors come from the active Theme via safeFg/frameFg
-// (keys resolved by themes/CinlodevCute.json to the same hex as before):
-// borderSubtle #5c2c74 via "borderMuted", pink #F095C8 via "accent",
-// pinkBright #FFB1DD via "pinkBright", violet frame #8e44ad via "border",
-// text #F6EFF3 via "text". No hardcoded ANSI here.
+interface Host extends TUI {
+	layoutRoot?: LayoutRoot;
+	mode?: string;
+}
 
-// Single/rounded frame tokens map to the configured double (or ascii) preset
-// via cuteGlyphs at render time, so frameStyle switches stay consistent.
-
-type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: string };
-type LayoutRoot = Component & { [NODE]?: () => LayoutNode };
-type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };
+interface LayoutRoot extends Component {
+	[NODE]?: () => any;
+}
 
 // Marker symbol to avoid double-wrapping layoutRoot
 export const CUTE_LAYOUT_WRAPPER = Symbol.for("pi-cinlodev-cute.layout-wrapper");
@@ -91,12 +76,7 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	let stopped = false;
 	let failed = false;
 	let railLines: string[] = [];
-	interface SectionMapping {
-		key: string;
-		component: any;
-		startLine: number;
-		lineCount: number;
-	}
+
 	let sectionMappings: SectionMapping[] = [];
 	let tabHitboxes: TabHitbox[] = [];
 	let tabBarLineIndex = -1;
@@ -133,113 +113,16 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 	});
 
 	const nativeMouse = scroll.handleMouse.bind(scroll);
-	scroll.handleMouse = (event) => {
-		const scrollTop = (scroll as any).currentScrollTop ?? 0;
-		const targetLine = event.y + scrollTop;
-		const layout = loadCuteLayout().sidebar;
-
-		// 0. Wheel over TabBar to cycle tabs
-		if (event.type === "wheel") {
-			if (
-				layout.tabsEnabled !== false &&
-				tabBarLineIndex >= 0 &&
-				(targetLine === tabBarLineIndex || targetLine === tabBarDividerLineIndex) &&
-				event.wheelDelta !== 0
-			) {
-				const currentTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
-				const currentIndex = CUTE_SIDEBAR_TABS.findIndex((t) => t.id === currentTab.id);
-				const delta = event.wheelDelta > 0 ? 1 : -1;
-				const nextIndex = (currentIndex + delta + CUTE_SIDEBAR_TABS.length) % CUTE_SIDEBAR_TABS.length;
-				state.activeTabId = CUTE_SIDEBAR_TABS[nextIndex].id;
-				tui.requestRender();
-				return { handled: true, render: true };
-			}
-
-			// 1. Wheel scroll over interactive rail cards (fast account switcher)
-			for (const mapping of sectionMappings) {
-				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
-					if (typeof mapping.component?.handleRailWheel === "function") {
-						const handled = mapping.component.handleRailWheel(event.wheelDelta ?? 0);
-						if (handled) {
-							tui.requestRender();
-							return { handled: true, render: true };
-						}
-					}
-				}
-			}
-
-			scroll.scrollBy(event.wheelDelta ?? 0);
-			return {
-				handled: true,
-				render: true,
-				target: {
-					component: scroll,
-					originX: event.screenX - event.x,
-					originY: event.screenY - event.y,
-					width: event.width,
-					height: event.height,
-				},
-			};
-		}
-
-		// 2. Click on rail cards or TabBar (left click / right click)
-		if (event.type === "click") {
-			// TabBar click handling
-			if (
-				layout.tabsEnabled !== false &&
-				tabBarLineIndex >= 0 &&
-				(targetLine === tabBarLineIndex || targetLine === tabBarDividerLineIndex) &&
-				(!event.button || event.button === "left" || event.button === 0)
-			) {
-				const localX = event.x - layout.railPadding;
-				let clickedTab = tabHitboxes.find((h) => localX >= h.startX && localX < h.endX);
-				if (!clickedTab && tabHitboxes.length > 0) {
-					for (let i = 0; i < tabHitboxes.length; i++) {
-						const h = tabHitboxes[i];
-						const next = tabHitboxes[i + 1];
-						if (next && localX >= h.endX && localX < next.startX) {
-							const mid = (h.endX + next.startX) / 2;
-							clickedTab = localX < mid ? h : next;
-							break;
-						}
-					}
-				}
-				if (clickedTab) {
-					state.activeTabId = clickedTab.id;
-					const footerComp = state.parts.get("footer") as any;
-					if (typeof footerComp?.isProfileDropdownOpen === "function" && footerComp.isProfileDropdownOpen()) {
-						footerComp.closeProfileDropdown();
-					}
-					tui.requestRender();
-					return { handled: true, render: true };
-				}
-			}
-
-			for (const mapping of sectionMappings) {
-				if (targetLine >= mapping.startLine && targetLine < mapping.startLine + mapping.lineCount) {
-					const localIndex = targetLine - mapping.startLine;
-					if (typeof mapping.component?.handleRailClick === "function") {
-						const localX = event.x - layout.railPadding;
-						const handled = mapping.component.handleRailClick(localIndex, event.button, localX);
-						if (handled) {
-							tui.requestRender();
-							return { handled: true, render: true };
-						}
-					}
-				}
-			}
-
-			// If click was outside any interactive card element, check if dropdown should close
-			const footerComp = state.parts.get("footer") as any;
-			if (typeof footerComp?.isProfileDropdownOpen === "function" && footerComp.isProfileDropdownOpen()) {
-				footerComp.closeProfileDropdown();
-				tui.requestRender();
-				return { handled: true, render: true };
-			}
-		}
-
-		return nativeMouse(event);
-	};
+	scroll.handleMouse = createSidebarMouseHandler({
+		scroll,
+		state,
+		tui,
+		getSectionMappings: () => sectionMappings,
+		getTabHitboxes: () => tabHitboxes,
+		getTabBarLineIndex: () => tabBarLineIndex,
+		getTabBarDividerLineIndex: () => tabBarDividerLineIndex,
+		nativeMouse,
+	});
 
 	const prepare = (width: number): boolean => {
 		state.active = false;
@@ -247,227 +130,25 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		if (stopped || failed || host.mode !== "fullscreen" || width < layout.breakpoint) return false;
 		try {
 			const contentWidth = scroll.getContentWidth(layout.railWidth);
-			const netWidth = contentWidth - layout.railPadding * 2;
-			const tabsEnabled = layout.tabsEnabled !== false;
-			const activeTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
-			state.activeTabId = activeTab.id;
+			const result = buildSidebarRailLines({
+				state,
+				tui,
+				theme,
+				activeDock,
+				activeTranscript,
+				contentWidth,
+			});
 
-			const targetCardKeys = !tabsEnabled
-				? ["footer", "context", "engram", "gitGraph", "tools", "cute-profiles", "todo"]
-				: activeTab.cards;
-
-			const branding = renderCUTESidebarBanner(netWidth, theme);
-			const bannerLinesCount = (branding && branding.length) ? branding.length + 1 : 0;
-			const tabsLinesCount = tabsEnabled ? 2 : 0;
-			// Lines before the card: initial empty line (1) + banner lines + tab bar lines + empty line before card (1)
-			const headerLines = 1 + bannerLinesCount + tabsLinesCount + 1;
-
-			let availableCardHeight: number | undefined;
-			let cardHeights: (number | undefined)[] = [];
-			const termRows = tui.terminal?.rows ?? loadCuteLayout().sidebar.fallbackRows ?? 45;
-			const dockWidth = Math.max(10, (tui.terminal?.columns ?? 100) - layout.railWidth);
-			const { totalHeight: dockHeight, visibleInputBottomOffset } = measureDockMetrics(activeDock, dockWidth);
-			const transcriptHeight = activeTranscript?.viewportHeight;
-
-			// The input box's bottom horizontal line is at:
-			// transcript.viewportHeight + visibleInputBottomOffset.
-			// If transcript is not yet laid out, fall back to termRows - dockHeight + visibleInputBottomOffset.
-			const inputBottomRow = (typeof transcriptHeight === "number" && transcriptHeight > 10)
-				? transcriptHeight + visibleInputBottomOffset
-				: Math.max(15, termRows - dockHeight + visibleInputBottomOffset);
-
-			// availableCardHeight must never exceed termRows - headerLines so railLines never overflows terminal
-			const maxAllowedHeight = Math.max(10, termRows - headerLines);
-			const targetHeight = inputBottomRow - headerLines;
-			const totalTargetHeight = Math.min(maxAllowedHeight, Math.max(10, targetHeight));
-
-			if (targetCardKeys.length === 1) {
-				availableCardHeight = totalTargetHeight;
-				cardHeights = [totalTargetHeight];
-			} else if (targetCardKeys.length === 2) {
-				// 2 cards split 50/50 sharing the full rail height down to the input line
-				const interCardGap = 1; // empty line between the 2 cards
-				const availableForCards = Math.max(14, totalTargetHeight - interCardGap);
-				const half = Math.floor(availableForCards / 2);
-				const secondHalf = availableForCards - half;
-				cardHeights = [half, secondHalf];
-			} else if (targetCardKeys.includes("todo")) {
-				// Multi-card layout with todo (e.g. 1:MAIN with footer, context, todo):
-				// Calculate lines used by prior non-todo cards to give todo the remaining available height
-				let priorLines = 0;
-				for (const key of targetCardKeys) {
-					if (key === "todo") break;
-					const comp = state.parts.get(key);
-					const raw = [...(comp?.render(netWidth) ?? [])];
-					while (raw.length && raw[raw.length - 1]?.trim() === "") raw.pop();
-					if (raw.length > 0) {
-						priorLines += raw.length + 1; // card height + empty spacer line
-					}
-				}
-				const remainingForTodo = Math.max(loadCuteLayout().todos.railMaxRows, totalTargetHeight - priorLines);
-				availableCardHeight = remainingForTodo;
-				const todoIndex = targetCardKeys.indexOf("todo");
-				cardHeights[todoIndex] = remainingForTodo;
+			if (!result.success) {
+				state.active = false;
+				return false;
 			}
 
-			const sectionData = targetCardKeys
-				.map((key, index) => {
-					let component = state.parts.get(key);
-					if (
-						!component &&
-						(key === "cute-profiles" || key === "cute-profiles-extended" || key === "profiles")
-					) {
-						component =
-							state.parts.get("cute-profiles") ||
-							state.parts.get("cute-profiles-extended") ||
-							state.parts.get("profiles");
-						if (!component) {
-							component = new CinlodevProfilesExtendedCard(tui, theme);
-							state.parts.set("cute-profiles", component);
-						}
-					}
-					if (!component && (key === "gitGraph" || key === "git-graph")) {
-						component = state.parts.get("gitGraph") || state.parts.get("git-graph");
-						if (!component) {
-							component = new CinlodevGitGraphCard(undefined as any, tui, theme);
-							state.parts.set("gitGraph", component);
-						}
-					}
-					if (!component && (key === "workingTree" || key === "working-tree")) {
-						component = state.parts.get("workingTree") || state.parts.get("working-tree");
-						if (!component) {
-							component = new CinlodevWorkingTreeCard(undefined as any, tui, theme);
-							state.parts.set("workingTree", component);
-						}
-					}
-					if (!component && (key === "engramHandoff" || key === "engram-handoff")) {
-						component = state.parts.get("engramHandoff") || state.parts.get("engram-handoff");
-						if (!component) {
-							component = new CinlodevEngramHandoffCard(undefined as any, tui, theme);
-							state.parts.set("engramHandoff", component);
-						}
-					}
-					if (!component && (key === "projectTree" || key === "project-tree")) {
-						component = state.parts.get("projectTree") || state.parts.get("project-tree");
-						if (!component) {
-							component = new CinlodevProjectTreeCard(undefined as any, tui, theme);
-							state.parts.set("projectTree", component);
-						}
-					}
-					if (!component && (key === "memoryGraph" || key === "memory-graph")) {
-						component = state.parts.get("memoryGraph") || state.parts.get("memory-graph");
-						if (!component) {
-							component = new CinlodevMemoryGraphCard(undefined, tui, theme);
-							state.parts.set("memoryGraph", component);
-						}
-					}
-					const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree" || key === "todo")
-						? (cardHeights[index] ?? availableCardHeight)
-						: undefined;
-					const rawLines = [...(component?.render(netWidth, renderHeight as any) ?? [])];
-					while (rawLines.length && rawLines[rawLines.length - 1]?.trim() === "") rawLines.pop();
-					const lines =
-						key !== "footer" &&
-						key !== "context" &&
-						key !== "todo" &&
-						key !== "engram" &&
-						key !== "engramHandoff" &&
-						key !== "engram-handoff" &&
-						key !== "usage" &&
-						key !== "gitGraph" &&
-						key !== "workingTree" &&
-						key !== "working-tree" &&
-						key !== "tools" &&
-						key !== "cute-profiles" &&
-						key !== "cute-profiles-extended" &&
-						key !== "profiles" &&
-						key !== "memoryGraph" &&
-						key !== "memory-graph" &&
-						key !== "projectTree" &&
-						key !== "project-tree"
-							? rawLines.map((line) => unifySidebarCardFrame(line, theme))
-							: rawLines;
-					return { key, component, lines };
-				})
-				.filter((s) => s.lines.length > 0);
-
-
-			railLines = [""];
-			sectionMappings = [];
-			tabHitboxes = [];
-			tabBarLineIndex = -1;
-			tabBarDividerLineIndex = -1;
-
-			if (!tabsEnabled) {
-				if (sectionData.length && branding.length) {
-					railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
-					railLines.push("");
-				}
-
-				for (let i = 0; i < sectionData.length; i++) {
-					if (i > 0) {
-						railLines.push("");
-					}
-					const s = sectionData[i];
-					const startLine = railLines.length;
-					for (const line of s.lines) {
-						railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
-					}
-					sectionMappings.push({
-						key: s.key,
-						component: s.component,
-						startLine,
-						lineCount: s.lines.length,
-					});
-				}
-
-				if (!railLines.length || !sectionData.length || railLines.some((line) => visibleWidth(line) > contentWidth)) return false;
-				state.active = true;
-				return true;
-			}
-
-			// Tabs enabled flow
-			if (branding.length) {
-				railLines.push(...branding.map((line) => " ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding)));
-				railLines.push("");
-			}
-
-			const cwd = (tui as any)?.cwd ?? process.cwd();
-			const gitSyncBadge = getGitSyncBadge(cwd);
-			const { line: tabLine, divider: dividerLine, hitboxes } = renderCuteSidebarTabBar(netWidth, activeTab.id, theme, gitSyncBadge);
-			tabBarLineIndex = railLines.length;
-			railLines.push(" ".repeat(layout.railPadding) + tabLine + " ".repeat(layout.railPadding));
-			tabBarDividerLineIndex = railLines.length;
-			railLines.push(" ".repeat(layout.railPadding) + dividerLine + " ".repeat(layout.railPadding));
-			tabHitboxes = hitboxes;
-
-			if (sectionData.length === 0) {
-				railLines.push("");
-				const dim = (s: string): string => (theme ? safeFg(theme, "dim", s) : s);
-				const emptyMsg = dim("Sin información disponible en esta pestaña.");
-				const pad = Math.max(0, Math.floor((netWidth - visibleWidth(emptyMsg)) / 2));
-				railLines.push(" ".repeat(layout.railPadding + pad) + emptyMsg);
-			} else {
-				railLines.push("");
-				for (let i = 0; i < sectionData.length; i++) {
-					if (i > 0) {
-						railLines.push("");
-					}
-					const s = sectionData[i];
-					const startLine = railLines.length;
-					for (const line of s.lines) {
-						railLines.push(" ".repeat(layout.railPadding) + line + " ".repeat(layout.railPadding));
-					}
-					sectionMappings.push({
-						key: s.key,
-						component: s.component,
-						startLine,
-						lineCount: s.lines.length,
-					});
-				}
-			}
-
-			if (!railLines.length || railLines.some((line) => visibleWidth(line) > contentWidth)) return false;
+			railLines = result.railLines;
+			sectionMappings = result.sectionMappings;
+			tabHitboxes = result.tabHitboxes;
+			tabBarLineIndex = result.tabBarLineIndex;
+			tabBarDividerLineIndex = result.tabBarDividerLineIndex;
 			state.active = true;
 			return true;
 		} catch {
@@ -493,10 +174,12 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 			if (typeof root[NODE] === "function" && (root[NODE] as any)[CUTE_LAYOUT_WRAPPER]) {
 				return;
 			}
-			const original = root[NODE]!;
+
+			const original = root[NODE];
 			const descriptor = Object.getOwnPropertyDescriptor(root, NODE);
 			const transcript = activeTranscript;
-			const originalScrollbar = transcript?.scrollbar ?? "auto";
+
+			const originalScrollbar = transcript ? transcript.scrollbar : "auto";
 			const originalScrollbarTrackStyle = transcript ? (transcript as any).scrollbarTrackStyle : undefined;
 			const originalScrollbarThumbStyle = transcript ? (transcript as any).scrollbarThumbStyle : undefined;
 
@@ -662,12 +345,13 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 					}
 				}
 
+				if (active) {
+					applyCuteScrollbars();
+				}
+
 				const edgeSpacer = (): Component => ({
-					render(width: number) {
-						const rows = Math.max(1, tui.terminal?.rows ?? layout.fallbackRows);
-						return Array(rows).fill(" ".repeat(Math.max(0, width)));
-					},
-					invalidate() {},
+					render: (w: number) => Array(tui.terminal.rows).fill(" ".repeat(w)),
+					invalidate: () => {},
 				});
 
 				const entries: any[] = [];
