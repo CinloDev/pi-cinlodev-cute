@@ -29,9 +29,9 @@ Whether running standalone or paired with the **la Gentlewoman** / **Gentle AI**
 
 ---
 
-## 🎛️ Sidebar Tabs Showcase (`1:MAIN` → `5:TREE`)
+## 🎛️ Sidebar Tabs Showcase (`1:MAIN` → `6:YT`)
 
-The sidebar rail (`railWidth: 52`) organizes all session vital information into an interactive 5-tab navigation bar (`CUTE_SIDEBAR_TABS`), navigable via mouse click or scroll-wheel cycling:
+The sidebar rail (`railWidth: 52`) organizes all session vital information into an interactive 6-tab navigation bar (`CUTE_SIDEBAR_TABS`), navigable via mouse click or scroll-wheel cycling:
 
 <table>
   <tr>
@@ -47,23 +47,25 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
     </td>
     <td width="33%" align="center">
       <strong>3:PROF · Profiles & Quotas</strong><br/><br/>
-      <img src="./public/nav4.png" alt="3:PROF Tab - Profiles Switcher and Quota Gauges" width="280" /><br/><br/>
+      <img src="./public/nav3.png" alt="3:PROF Tab - Profiles Switcher and Quota Gauges" width="280" /><br/><br/>
       <sub>Multi-account model profiles, subagents roster, interactive switcher, and live provider quota semaphores.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center">
       <strong>4:MEM · Memory Vault</strong><br/><br/>
-      <img src="./public/nav5.png" alt="4:MEM Tab - Engram Daemon, Handoff and Graph Memory" width="280" /><br/><br/>
+      <img src="./public/nav4.png" alt="4:MEM Tab - Engram Daemon, Handoff and Graph Memory" width="280" /><br/><br/>
       <sub>Local Engram daemon, handoffs, tools metrics, and interactive SQLite Knowledge Graph card.</sub>
     </td>
     <td width="33%" align="center">
       <strong>5:TREE · Project Explorer</strong><br/><br/>
-      <img src="./public/nav6.png" alt="5:TREE Tab - Project File Tree with Git Badges" width="280" /><br/><br/>
+      <img src="./public/nav5.png" alt="5:TREE Tab - Project File Tree with Git Badges" width="280" /><br/><br/>
       <sub>Interactive directory tree with live Git status badges (M, ?, ●), directory toggling, and editor launcher.</sub>
     </td>
     <td width="33%" align="center">
-      <!-- Balanced 5-tab layout -->
+      <strong>6:YT · YouTube Music</strong><br/><br/>
+      <img src="./public/nav6.png" alt="6:YT Tab - Interactive YouTube Music Player and Up Next Queue" width="280" /><br/><br/>
+      <sub>Native player widget powered by <a href="https://github.com/CinloDev/pi-youtube-player">pi-youtube-player</a> with live progress scrubber, centered controls, and active track indicator (🎙️).</sub>
     </td>
   </tr>
 </table>
@@ -139,6 +141,7 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
 | **Memory Graph Card** | `4:MEM` | SQLite knowledge graph card for `pi-memory-graph`. Displays memories count, relational nodes/edges, active leases, last memory snippet, `[explorer ↗]` browser launcher (port 7474), and one-click `[💾 Retener Sesión]`. |
 | **Tools Telemetry Card** | `4:MEM` | Live counter summarizing tool execution metrics (`read`, `write`, `bash`, `grep`, `other`) into clean visual pills with total call count. |
 | **Project Tree Card** | `5:TREE` | Interactive directory tree with Git porcelain badges (`M`, `?`, `●`), directory collapse/expand toggles, mouse-wheel scrolling, and direct click-to-edit in `$EDITOR` (`[ ↗ nvim ]`). |
+| **YouTube Music Card** | `6:YT` | Interactive YouTube Music player integrated via [pi-youtube-player](https://github.com/CinloDev/pi-youtube-player). Displays track info, live scrubber timeline, centered transport controls (`[ ⏮  Prev ]`, `[ ⏸  Pausa ]`, `[ ⏭  Next ]`), volume step controls (`[-]`, `[+]`), and clickable Up Next queue with live active track indicator (`🎙️`). |
 
 ---
 
@@ -146,10 +149,12 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
 
 | Input / Action | Context | Description |
 | :--- | :--- | :--- |
-| **Click Tab** | TabBar | Switch active sidebar tab (`1:MAIN`, `2:GIT`, `3:PROF`, `4:MEM`, `5:TREE`). |
+| **Click Tab** | TabBar | Switch active sidebar tab (`1:MAIN`, `2:GIT`, `3:PROF`, `4:MEM`, `5:TREE`, `6:YT`). |
 | **Mouse Wheel** | TabBar | Cycle through sidebar tabs forward or backward. |
-| **Mouse Wheel** | Over Cards | Scroll vertically inside overflowing cards (Todos, Git Graph, Tree, Profiles). |
+| **Mouse Wheel** | Over Cards | Scroll vertically inside overflowing cards (Todos, Git Graph, Tree, Profiles, Queue). |
 | **Click File** | `2:GIT` / `5:TREE` | Open file directly in configured editor (`$EDITOR` or `nvim`). |
+| **Click Media Controls** | `6:YT` | Toggle playback (`Play` / `Pausa`), skip track (`Next` / `Prev`), and increase/decrease volume (`[+]` / `[-]`). |
+| **Click Queue Track** | `6:YT` | Jump immediately to any upcoming song in the Up Next queue. |
 | **Click `[explorer ↗]`** | `4:MEM` | Launch `pi-memory-graph` Cytoscape interactive graph explorer in the browser (port 7474). |
 | **Click `[💾 Retener]`**| `4:MEM` | Extract current session takeaways and persist a durable memory record into `.pi/memory.db`. |
 | **Click `[dashboard ↗]`**| `4:MEM` | Open Engram Cloud web dashboard for the current project. |
