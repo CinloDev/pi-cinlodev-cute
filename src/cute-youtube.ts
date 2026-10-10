@@ -12,6 +12,14 @@ interface ClickableHitbox {
 	action: () => void;
 }
 
+function cleanTitle(t?: string): string {
+	return (t || "")
+		.replace(/[\u00A0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, " ")
+		.replace(/\s+/g, " ")
+		.toLowerCase()
+		.trim();
+}
+
 /**
  * Tarjeta interactiva del reproductor de YouTube Music para la sidebar CUTE
  */
@@ -254,22 +262,30 @@ export class CinlodevYouTubeCard {
 		lines.push(qDivider);
 
 		// 9. Lista de Tracks en Cola (Click to Play)
-		const queue = (Array.isArray(state?.queue) ? state.queue : []).slice(0, 10);
+		const queue = (Array.isArray(state?.queue) ? state.queue : []).slice(0, 15);
 		if (queue.length === 0) {
 			const emptyMsg = `  ${dim("La cola de reproducción está vacía")}`;
 			const emptyPad = Math.max(0, width - 2 - calcVisibleWidth(emptyMsg));
 			lines.push(`${border(g.v)}${emptyMsg}${" ".repeat(emptyPad)}${border(g.v)}`);
 		} else {
-			const maxLines = availableHeight ? Math.max(3, availableHeight - lines.length - 2) : 10;
+			const maxLines = availableHeight ? Math.max(3, availableHeight - lines.length - 2) : 15;
 			const displayQueue = queue.slice(0, maxLines);
+
+			// Encontrar exactamente el índice de la canción que está sonando (a lo sumo 1)
+			const curTitle = cleanTitle(state?.title);
+			let playingIndex = -1;
+
+			if (curTitle) {
+				playingIndex = displayQueue.findIndex((t) => {
+					if (t?.isCurrent) return true;
+					const thisTitle = cleanTitle(t?.title);
+					return thisTitle && (curTitle === thisTitle || curTitle.startsWith(thisTitle) || thisTitle.startsWith(curTitle));
+				});
+			}
 
 			for (let i = 0; i < displayQueue.length; i++) {
 				const track = displayQueue[i];
-				const isTrackPlaying = track?.isCurrent || (
-					state?.title &&
-					track?.title &&
-					state.title.toLowerCase().trim() === track.title.toLowerCase().trim()
-				);
+				const isTrackPlaying = (i === playingIndex);
 
 				const qIndex = (i + 1).toString().padStart(2, "0");
 				const trackTitle = track?.title ?? "Desconocido";
@@ -277,8 +293,8 @@ export class CinlodevYouTubeCard {
 
 				let trackLineRaw = "";
 				if (isTrackPlaying) {
-					// Destacado brillante en verde/cyan con icono de ecualizador para el tema activo
-					trackLineRaw = `  ${mint("▶")} ${mint(bolden(this.theme, trackTitle))}${trackArtist}`;
+					// Destacado vibrante con micrófono 🎙️ ÚNICAMENTE en la canción que está sonando
+					trackLineRaw = `  ${mint("🎙️")}  ${mint(bolden(this.theme, trackTitle))}${trackArtist}`;
 				} else {
 					trackLineRaw = `  ${gold(qIndex)}  ${textFg(trackTitle)}${trackArtist}`;
 				}
