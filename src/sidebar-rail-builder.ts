@@ -53,6 +53,16 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 		? ["footer", "context", "engram", "gitGraph", "tools", "cute-profiles", "todo"]
 		: activeTab.cards;
 
+	const hasYouTube = targetCardKeys.some(
+		(key) => key === "youtubePlayer" || key === "youtube-player" || key === "yt",
+	);
+	if (!hasYouTube) {
+		const ytCard = state.parts.get("youtubePlayer") as any;
+		if (ytCard && typeof ytCard.clearCover === "function") {
+			ytCard.clearCover();
+		}
+	}
+
 	const branding = renderCUTESidebarBanner(netWidth, theme);
 	const bannerLinesCount = (branding && branding.length) ? branding.length + 1 : 0;
 	const tabsLinesCount = tabsEnabled ? 2 : 0;

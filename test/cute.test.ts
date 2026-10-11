@@ -26,6 +26,7 @@ import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src
 import { CinlodevYouTubeCard, YOUTUBE_PLAYER_SYMBOL } from "../src/cute-youtube.ts";
 import { CinlodevTodoMirror } from "../src/todos.ts";
 import { invalidateSidebarGitAndTree } from "../src/footer.ts";
+import { createSidebarMouseHandler } from "../src/sidebar-mouse.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -4449,6 +4450,143 @@ test("CinlodevYouTubeCard - section SONANDO accordion toggle and Kitty cover ren
 
 	card.dispose();
 	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
+test("installSidebar - terminal.write seals unpainted scrollbar cell in rows with Kitty graphics", () => {
+	let outputWritten = "";
+	const mockTerminal: any = {
+		columns: 80,
+		rows: 24,
+		write: (data: string) => {
+			outputWritten += data;
+		},
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		mode: "fullscreen",
+		requestRender: () => {},
+	};
+
+	const uninstall = installSidebar(mockTui);
+
+	const sampleBrokenBuffer =
+		"\x1b[4;1H\x1b[2K║   \x1b_Ga=T,f=100,r=3;AAA\x1b\\  Song Title       ║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H";
+	mockTerminal.write(sampleBrokenBuffer);
+
+	assert.ok(!outputWritten.includes("║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H"), "No debe dejar el espacio en blanco sin sellar");
+	assert.ok(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07║\x1b[5;1H") || outputWritten.includes("║ \x1b[0m\x1b]8;;\x07│\x1b[5;1H"), "Debe inyectar el glifo de riel en la columna del scrollbar");
+
+	uninstall();
+	outputWritten = "";
+	mockTerminal.write(sampleBrokenBuffer);
+	assert.ok(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H"), "Tras desinstalar debe restaurar el write original");
+});
+
+test("installSidebar - terminal.write seals scrollbar cell precisely without shifting into afterPad margin", () => {
+	let outputWritten = "";
+	const mockTerminal: any = {
+		columns: 100,
+		rows: 24,
+		write: (data: string) => {
+			outputWritten += data;
+		},
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		mode: "fullscreen",
+		requestRender: () => {},
+	};
+
+	const uninstall = installSidebar(mockTui);
+
+	// Buffer con 4 espacios adicionales de margen (afterPad) a la derecha
+	const sampleBufferWithMargin =
+		"\x1b[4;1H\x1b[2K║   \x1b_Ga=T,f=100,r=3;AAA\x1b\\  Hurtless       ║ \x1b[0m\x1b]8;;\x07     \x1b[5;1H";
+	mockTerminal.write(sampleBufferWithMargin);
+
+	// El glifo debe colocarse inmediatamente tras reset, conservando los 4 espacios de margen restantes
+	assert.ok(
+		outputWritten.includes("║ \x1b[0m\x1b]8;;\x07║    \x1b[5;1H") ||
+		outputWritten.includes("║ \x1b[0m\x1b]8;;\x07│    \x1b[5;1H") ||
+		(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07") && outputWritten.includes("    \x1b[5;1H")),
+		"Debe sellar en la columna exacta de scrollbar y conservar los espacios de margen a la derecha sin desfasar",
+	);
+
+	uninstall();
+});
+
+test("CinlodevYouTubeCard - clearCover and dispose emit deleteKittyImage to terminal", () => {
+	let writes: string[] = [];
+	const mockTerminal: any = {
+		write: (data: string) => writes.push(data),
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		requestRender: () => {},
+	};
+
+	const card = new CinlodevYouTubeCard(mockTui);
+	(card as any).activeCoverImageId = 4242;
+
+	card.clearCover();
+	assert.ok(writes.some((w) => w.includes("i=4242")), "clearCover debe emitir deleteKittyImage con el ID activo");
+	assert.equal((card as any).activeCoverImageId, undefined);
+
+	// dispose también debe ser idempotente
+	writes = [];
+	(card as any).activeCoverImageId = 9999;
+	card.dispose();
+	assert.ok(writes.some((w) => w.includes("i=9999")), "dispose debe emitir deleteKittyImage");
+});
+
+test("sidebar mouse tab switching emits deleteAllKittyImages to clear lingering covers", () => {
+	let writes: string[] = [];
+	const mockTerminal: any = {
+		write: (data: string) => writes.push(data),
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		requestRender: () => {},
+	};
+
+	const mockScroll: any = {
+		scrollBy: () => {},
+	};
+	const mockState: any = {
+		activeTabId: "yt",
+		parts: new Map(),
+	};
+
+	const tabHitboxes = [
+		{ id: "main", startX: 1, endX: 10 },
+		{ id: "prof", startX: 11, endX: 20 },
+	];
+
+	const mouseHandler = createSidebarMouseHandler({
+		scroll: mockScroll,
+		state: mockState,
+		tui: mockTui,
+		getSectionMappings: () => [],
+		getTabHitboxes: () => tabHitboxes,
+		getTabBarLineIndex: () => 2,
+		getTabBarDividerLineIndex: () => 3,
+		nativeMouse: () => {},
+	});
+
+	// Click sobre tab "prof" en la línea del tab bar
+	const res = mouseHandler({
+		type: "click",
+		button: "left",
+		x: 15,
+		y: 2,
+	});
+
+	assert.equal(res.handled, true);
+	assert.equal(mockState.activeTabId, "prof");
+	assert.ok(
+		writes.some((w) => w.includes("\x1b_Ga=d,d=A,q=2\x1b\\")),
+		"Cambiar de pestaña debe emitir deleteAllKittyImages para limpiar cualquier portada gráfica",
+	);
 });
 
 
