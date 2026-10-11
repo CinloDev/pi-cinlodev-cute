@@ -11,9 +11,15 @@ import { resetCuteLayoutCache } from "./src/cute-layout.ts";
 import { resetCuteColorsCache } from "./src/cute-colors.ts";
 import { syncProjectCloud, detectProjectName } from "./src/cute-engram.ts";
 import { CuteContextMonitor } from "./src/cute-context-monitor.ts";
+import { setCapabilityOverrides } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 
 export default function cinlodevCuteExtension(pi: ExtensionAPI): void {
+	// Forzar soporte de Kitty graphics en entornos Ghostty / Kitty
+	try {
+		setCapabilityOverrides({ images: "kitty" });
+	} catch {}
+
 	// 0. Disable float background leaks from foreign gentle-shell cards
 	try {
 		(globalThis as any)[Symbol.for("gentle-pi.card-style")] = "neon";

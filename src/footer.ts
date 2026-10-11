@@ -14,6 +14,7 @@ import { tuneTuiScroll } from "./cute-layout.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
+import { CinlodevYouTubeCard } from "./cute-youtube.ts";
 import { sidebarState } from "./sidebar-state.ts";
 
 import {
@@ -102,6 +103,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		footerRegistry.latestTodoMirror = todos;
 		(tui as any).__cuteTodoMirror = todos;
 		(ctx as any).__cuteTodoMirror = todos;
+		(tui as any).__cuteCtx = ctx;
 		footerRegistry.latestGitGraph = gitGraph;
 		footerRegistry.latestWorkingTree = workingTree;
 		footerRegistry.latestToolsCard = toolsCard;
@@ -196,6 +198,15 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
 		const projectTreePart = sidebarPart(tui, "projectTree", { render: () => [] }, projectTreeRail);
+		const youtubePlayerCard = new CinlodevYouTubeCard(tui, theme, ctx);
+		const youtubePlayerRail = {
+			render: (width: number, availableHeight?: number) => youtubePlayerCard.render(width, availableHeight),
+			invalidate: () => youtubePlayerCard.invalidate(),
+			handleRailClick: (lineIndex: number, button?: string, localX?: number) =>
+				youtubePlayerCard.handleRailClick(lineIndex, button, localX),
+			handleRailWheel: (delta: number) => youtubePlayerCard.handleRailWheel(delta),
+		};
+		const youtubePlayerPart = sidebarPart(tui, "youtubePlayer", { render: () => [] }, youtubePlayerRail);
 
 		const todoBottom: Component & { dispose?(): void } = {
 			render: (width: number) => todos.renderBottom(width),
@@ -226,6 +237,8 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				toolsPart.dispose?.();
 				profilesPart.dispose?.();
 				projectTreePart.dispose?.();
+				youtubePlayerPart.dispose?.();
+				youtubePlayerCard.dispose?.();
 				todoPart.dispose?.();
 			},
 		};
