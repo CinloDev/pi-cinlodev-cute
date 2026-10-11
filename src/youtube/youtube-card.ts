@@ -253,7 +253,7 @@ export class CinlodevYouTubeCard {
 
 			lines.push(boxLine(""));
 
-			// Timeline & Scrubber con tiempos en los extremos y badge de volumen
+			// Timeline & Scrubber con tiempos en los extremos
 			const currentTime = typeof state?.currentTime === "number" && !Number.isNaN(state.currentTime) ? state.currentTime : 0;
 			const duration = typeof state?.duration === "number" && !Number.isNaN(state.duration) ? state.duration : 0;
 			const curM = Math.floor(currentTime / 60);
@@ -261,13 +261,12 @@ export class CinlodevYouTubeCard {
 			const durM = Math.floor(duration / 60);
 			const durS = Math.floor(duration % 60);
 			const timeStart = `  ${mint(`${curM.toString().padStart(2, "0")}:${curS.toString().padStart(2, "0")}`)} `;
-			const timeEnd = ` ${muted(`${durM.toString().padStart(2, "0")}:${durS.toString().padStart(2, "0")}`)}`;
+			const timeEnd = ` ${muted(`${durM.toString().padStart(2, "0")}:${durS.toString().padStart(2, "0")}`)}  `;
 
 			const volume = typeof state?.volume === "number" && !Number.isNaN(state.volume) ? state.volume : 1;
 			const volPct = Math.round(volume * 100);
-			const volBadge = ` ${dim("[")}${yellow(`${volPct}%`)}${dim("]")}  `;
 
-			const fixedTimeLen = calcVisibleWidth(timeStart) + calcVisibleWidth(timeEnd) + calcVisibleWidth(volBadge);
+			const fixedTimeLen = calcVisibleWidth(timeStart) + calcVisibleWidth(timeEnd);
 			const barWidth = Math.max(4, width - 2 - fixedTimeLen);
 
 			const pct = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
@@ -275,7 +274,7 @@ export class CinlodevYouTubeCard {
 			const empty = Math.max(0, barWidth - filled);
 			const progressBar = `${mint("━".repeat(filled))}${dim("─".repeat(empty))}`;
 
-			lines.push(boxLine(`${timeStart}${progressBar}${timeEnd}${volBadge}`));
+			lines.push(boxLine(`${timeStart}${progressBar}${timeEnd}`));
 			lines.push(boxLine(""));
 
 			// Controles de Reproducción Centrados
