@@ -26,6 +26,7 @@ import { CinlodevProjectTreeCard, scanDirectoryTree, launchEditor } from "../src
 import { CinlodevYouTubeCard, YOUTUBE_PLAYER_SYMBOL } from "../src/cute-youtube.ts";
 import { CinlodevTodoMirror } from "../src/todos.ts";
 import { invalidateSidebarGitAndTree } from "../src/footer.ts";
+import { createSidebarMouseHandler } from "../src/sidebar-mouse.ts";
 
 function resetAll() {
 	resetCuteGlyphsCache();
@@ -4276,19 +4277,22 @@ test("CinlodevYouTubeCard - renders connected state with music info, scrubber, c
 	let nextClicked = false;
 	let volumeSet: number | undefined;
 	let queueIndexPlayed: number | undefined;
+	let queueIndexRemoved: number | undefined;
+	let likesPlayed = false;
+	let searchQuery: string | undefined;
 
 	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
 		getState: () => ({
 			status: "playing",
 			connectedClients: 1,
 			title: "Bohemian Rhapsody",
-			artist: "Queen",
+			artist: "Queen • Bohemian Rhapsody",
 			currentTime: 120,
 			duration: 354,
 			volume: 0.8,
 			queue: [
-				{ title: "Don't Stop Me Now", artist: "Queen", index: 1 },
-				{ title: "Radio Ga Ga", artist: "Queen", index: 2 },
+				{ title: "Don't Stop Me Now", artist: "Queen", duration: "03:29", index: 1 },
+				{ title: "Radio Ga Ga", artist: "Queen", duration: "05:43", index: 2 },
 			],
 		}),
 		on: () => () => {},
@@ -4307,6 +4311,15 @@ test("CinlodevYouTubeCard - renders connected state with music info, scrubber, c
 		playQueueIndex: (i: number) => {
 			queueIndexPlayed = i;
 		},
+		removeQueueIndex: (i: number) => {
+			queueIndexRemoved = i;
+		},
+		playLikes: () => {
+			likesPlayed = true;
+		},
+		search: (q: string) => {
+			searchQuery = q;
+		},
 	};
 
 	let rendersRequested = 0;
@@ -4317,39 +4330,44 @@ test("CinlodevYouTubeCard - renders connected state with music info, scrubber, c
 	};
 	const card = new CinlodevYouTubeCard(mockTui);
 	const width = 50;
-	const lines = card.render(width, 25);
+	const lines = card.render(width, 30);
 
 	assert.ok(lines.some((l) => l.includes("YouTube Music") && !l.includes("Offline")));
+	assert.ok(lines.some((l) => l.includes("SONANDO")));
 	assert.ok(lines.some((l) => l.includes("Bohemian Rhapsody")));
 	assert.ok(lines.some((l) => l.includes("Queen")));
 	assert.ok(lines.some((l) => l.includes("02:00") && l.includes("05:54")));
-	assert.ok(lines.some((l) => l.includes("A continuación")));
+	assert.ok(lines.some((l) => l.includes("Radio Ga Ga")));
+	assert.ok(lines.some((l) => l.includes("COLA")));
 	assert.ok(lines.some((l) => l.includes("Don't Stop Me Now")));
+	assert.ok(lines.some((l) => l.includes("03:29")), "Debe mostrar la duración en la cola");
 
 	for (const line of lines) {
 		assert.equal(visibleWidth(line), width, `Cada línea debe medir exactamente ${width} de ancho visible`);
 	}
 
-	// Click en Play/Pausa
-	// Fila de controles de reproducción es la 7:
-	const clickPlay = card.handleRailClick(7, "left", 22);
+	// Click en Play/Pausa (fila 9)
+	const clickPlay = card.handleRailClick(9, "left", 22);
 	assert.ok(clickPlay, "Click en Play/Pausa debe manejarse");
 	assert.ok(playClicked, "togglePlay del reproductor debe ejecutarse");
 
-	// Click en Prev
-	const clickPrev = card.handleRailClick(7, "left", 8);
+	// Click en Prev (fila 9)
+	const clickPrev = card.handleRailClick(9, "left", 8);
 	assert.ok(clickPrev, "Click en Prev debe manejarse");
 	assert.ok(prevClicked, "previous del reproductor debe ejecutarse");
 
-	// Click en Next
-	const clickNext = card.handleRailClick(7, "left", 36);
+	// Click en Next (fila 9)
+	const clickNext = card.handleRailClick(9, "left", 36);
 	assert.ok(clickNext, "Click en Next debe manejarse");
 	assert.ok(nextClicked, "next del reproductor debe ejecutarse");
 
-	// Click en primer track de la cola (fila 12: 11 es divider, 12 es track 1)
-	const clickQueue = card.handleRailClick(12, "left", 15);
+	// Click en reproducir tema de la cola (fila 16)
+	const clickQueue = card.handleRailClick(16, "left", 15);
 	assert.ok(clickQueue, "Click en track de la cola debe manejarse");
 	assert.equal(queueIndexPlayed, 1, "playQueueIndex debe recibir el índice 1");
+
+	// Scroll con rueda
+	assert.equal(card.handleRailWheel(0), false);
 
 	card.dispose();
 	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
@@ -4381,6 +4399,194 @@ test("CinlodevYouTubeCard - handles invalid or NaN player states gracefully with
 
 	card.dispose();
 	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
+test("CinlodevYouTubeCard - section SONANDO accordion toggle and Kitty cover rendering", () => {
+	const samplePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+	let clearCalled = false;
+
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "playing",
+			connectedClients: 1,
+			title: "Prófugos",
+			artist: "Soda Stereo",
+			currentTime: 45,
+			duration: 300,
+			volume: 0.7,
+			thumbnailBase64: samplePngBase64,
+			queue: [
+				{ title: "Prófugos", artist: "Soda Stereo", index: 0, isCurrent: true },
+				{ title: "Cuando Pase el Temblor", artist: "Soda Stereo", index: 1 },
+			],
+		}),
+		clearQueue: () => {
+			clearCalled = true;
+		},
+	};
+
+	const mockTui: any = { requestRender: () => {} };
+	const card = new CinlodevYouTubeCard(mockTui);
+	const width = 50;
+
+	// 1. Initial render has SONANDO expanded
+	assert.equal(card.sections.nowPlaying, true);
+	const expandedLines = card.render(width);
+	assert.ok(expandedLines.some((l) => l.includes("Prófugos")));
+	assert.ok(expandedLines.some((l) => l.includes("Cuando Pase el Temblor")));
+
+	// 2. Click on line 1 (header of SONANDO) collapses it
+	card.handleRailClick(1, "left", 10);
+	assert.equal(card.sections.nowPlaying, false);
+	const collapsedLines = card.render(width);
+	assert.ok(!collapsedLines.some((l) => l.includes("05:00")));
+	assert.ok(collapsedLines.length < expandedLines.length);
+
+	// 3. Click again re-expands SONANDO
+	card.handleRailClick(1, "left", 10);
+	assert.equal(card.sections.nowPlaying, true);
+	const reExpandedLines = card.render(width);
+	assert.ok(reExpandedLines.some((l) => l.includes("05:00")));
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
+test("installSidebar - terminal.write seals unpainted scrollbar cell in rows with Kitty graphics", () => {
+	let outputWritten = "";
+	const mockTerminal: any = {
+		columns: 80,
+		rows: 24,
+		write: (data: string) => {
+			outputWritten += data;
+		},
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		mode: "fullscreen",
+		requestRender: () => {},
+	};
+
+	const uninstall = installSidebar(mockTui);
+
+	const sampleBrokenBuffer =
+		"\x1b[4;1H\x1b[2K║   \x1b_Ga=T,f=100,r=3;AAA\x1b\\  Song Title       ║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H";
+	mockTerminal.write(sampleBrokenBuffer);
+
+	assert.ok(!outputWritten.includes("║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H"), "No debe dejar el espacio en blanco sin sellar");
+	assert.ok(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07║\x1b[5;1H") || outputWritten.includes("║ \x1b[0m\x1b]8;;\x07│\x1b[5;1H"), "Debe inyectar el glifo de riel en la columna del scrollbar");
+
+	uninstall();
+	outputWritten = "";
+	mockTerminal.write(sampleBrokenBuffer);
+	assert.ok(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07 \x1b[5;1H"), "Tras desinstalar debe restaurar el write original");
+});
+
+test("installSidebar - terminal.write seals scrollbar cell precisely without shifting into afterPad margin", () => {
+	let outputWritten = "";
+	const mockTerminal: any = {
+		columns: 100,
+		rows: 24,
+		write: (data: string) => {
+			outputWritten += data;
+		},
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		mode: "fullscreen",
+		requestRender: () => {},
+	};
+
+	const uninstall = installSidebar(mockTui);
+
+	// Buffer con 4 espacios adicionales de margen (afterPad) a la derecha
+	const sampleBufferWithMargin =
+		"\x1b[4;1H\x1b[2K║   \x1b_Ga=T,f=100,r=3;AAA\x1b\\  Hurtless       ║ \x1b[0m\x1b]8;;\x07     \x1b[5;1H";
+	mockTerminal.write(sampleBufferWithMargin);
+
+	// El glifo debe colocarse inmediatamente tras reset, conservando los 4 espacios de margen restantes
+	assert.ok(
+		outputWritten.includes("║ \x1b[0m\x1b]8;;\x07║    \x1b[5;1H") ||
+		outputWritten.includes("║ \x1b[0m\x1b]8;;\x07│    \x1b[5;1H") ||
+		(outputWritten.includes("║ \x1b[0m\x1b]8;;\x07") && outputWritten.includes("    \x1b[5;1H")),
+		"Debe sellar en la columna exacta de scrollbar y conservar los espacios de margen a la derecha sin desfasar",
+	);
+
+	uninstall();
+});
+
+test("CinlodevYouTubeCard - clearCover and dispose emit deleteKittyImage to terminal", () => {
+	let writes: string[] = [];
+	const mockTerminal: any = {
+		write: (data: string) => writes.push(data),
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		requestRender: () => {},
+	};
+
+	const card = new CinlodevYouTubeCard(mockTui);
+	(card as any).activeCoverImageId = 4242;
+
+	card.clearCover();
+	assert.ok(writes.some((w) => w.includes("i=4242")), "clearCover debe emitir deleteKittyImage con el ID activo");
+	assert.equal((card as any).activeCoverImageId, undefined);
+
+	// dispose también debe ser idempotente
+	writes = [];
+	(card as any).activeCoverImageId = 9999;
+	card.dispose();
+	assert.ok(writes.some((w) => w.includes("i=9999")), "dispose debe emitir deleteKittyImage");
+});
+
+test("sidebar mouse tab switching emits deleteAllKittyImages to clear lingering covers", () => {
+	let writes: string[] = [];
+	const mockTerminal: any = {
+		write: (data: string) => writes.push(data),
+	};
+	const mockTui: any = {
+		terminal: mockTerminal,
+		requestRender: () => {},
+	};
+
+	const mockScroll: any = {
+		scrollBy: () => {},
+	};
+	const mockState: any = {
+		activeTabId: "yt",
+		parts: new Map(),
+	};
+
+	const tabHitboxes = [
+		{ id: "main", startX: 1, endX: 10 },
+		{ id: "prof", startX: 11, endX: 20 },
+	];
+
+	const mouseHandler = createSidebarMouseHandler({
+		scroll: mockScroll,
+		state: mockState,
+		tui: mockTui,
+		getSectionMappings: () => [],
+		getTabHitboxes: () => tabHitboxes,
+		getTabBarLineIndex: () => 2,
+		getTabBarDividerLineIndex: () => 3,
+		nativeMouse: () => {},
+	});
+
+	// Click sobre tab "prof" en la línea del tab bar
+	const res = mouseHandler({
+		type: "click",
+		button: "left",
+		x: 15,
+		y: 2,
+	});
+
+	assert.equal(res.handled, true);
+	assert.equal(mockState.activeTabId, "prof");
+	assert.ok(
+		writes.some((w) => w.includes("\x1b_Ga=d,d=A,q=2\x1b\\")),
+		"Cambiar de pestaña debe emitir deleteAllKittyImages para limpiar cualquier portada gráfica",
+	);
 });
 
 

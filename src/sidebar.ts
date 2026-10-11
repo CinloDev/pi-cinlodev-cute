@@ -72,6 +72,27 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		state.parts.set("cute-profiles", profilesCard);
 	}
 	const cleanups: Array<() => void> = [];
+
+	// Interceptar terminal.write para sellar la columna de scrollbar en filas con Kitty/iTerm2 Graphics:
+	// @earendil-works/pi-tui saltea replaceScrollbarCell cuando isImageLine es true, dejando un espacio
+	// no pintado al final de la fila. Aquí restauramos el glifo de riel exactamente en la columna del scrollbar
+	// (la celda inmediatamente posterior al borde de la tarjeta [║│] y padding del rail), evitando que se
+	// desplace hacia espacios de margen/afterPad a la derecha.
+	if (typeof tui.terminal?.write === "function") {
+		const origTerminalWrite = tui.terminal.write.bind(tui.terminal);
+		const kittyScrollbarSealRegex =
+			/((?:\x1b_G|\x1b\]1337;File=)(?:(?!\x1b\[\d+;\d+H)[\s\S])*?[║│](?:\x1b\[[0-9;]*m)?\s*(?:\x1b\[[0-9;]*m|\x1b\]8;;(?:\x1b\\|\x07))*) (?=(?:\x1b\[\d+;\d+H|\s*|$))/g;
+		tui.terminal.write = (data: string) => {
+			if (typeof data === "string" && (data.includes("\x1b_G") || data.includes("\x1b]1337;File="))) {
+				const repaired = data.replace(kittyScrollbarSealRegex, `$1${pink(railV)}`);
+				return origTerminalWrite(repaired);
+			}
+			return origTerminalWrite(data);
+		};
+		cleanups.push(() => {
+			tui.terminal.write = origTerminalWrite;
+		});
+	}
 	const roots = new Set<LayoutRoot>();
 	let stopped = false;
 	let failed = false;
