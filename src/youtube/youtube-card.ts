@@ -4,7 +4,10 @@ import {
 	getCapabilities,
 	setCapabilityOverrides,
 	encodeKitty,
+	deleteKittyImage,
+	deleteAllKittyImages,
 } from "@earendil-works/pi-tui";
+import { registerKittyImageMetadata } from "@earendil-works/pi-tui/dist/terminal-image.js";
 import { cuteGlyphs, safeFg, bolden } from "../cute-theme.ts";
 import { calcVisibleWidth, truncateAnsiAware } from "../cute-transcript.ts";
 import {
@@ -27,6 +30,7 @@ export class CinlodevYouTubeCard {
 	private ctx?: any;
 	private hitboxes: ClickableHitbox[] = [];
 	private unsubscribe?: () => void;
+	private activeCoverImageId?: number;
 
 	// Estado de acordeones modulares (expandido/colapsado)
 	public sections = {
@@ -53,9 +57,24 @@ export class CinlodevYouTubeCard {
 	}
 
 	public dispose(): void {
+		this.clearCover();
 		if (this.unsubscribe) {
 			this.unsubscribe();
 			this.unsubscribe = undefined;
+		}
+	}
+
+	public clearCover(specificId?: number): void {
+		const id = specificId ?? this.activeCoverImageId;
+		if (id !== undefined) {
+			try {
+				if (typeof this.tui?.terminal?.write === "function") {
+					this.tui.terminal.write(deleteKittyImage(id));
+				}
+			} catch {}
+			if (!specificId || specificId === this.activeCoverImageId) {
+				this.activeCoverImageId = undefined;
+			}
 		}
 	}
 
@@ -134,6 +153,7 @@ export class CinlodevYouTubeCard {
 		lines.push(`${border(g.tl)}${accent(bolden(this.theme, titleStr))}${border(hLine)}${border(g.tr)}`);
 
 		if (!isConnected) {
+			this.clearCover();
 			lines.push(boxLine(""));
 			lines.push(boxLine(`  ${cyan("✦")} ${gold("Esperando conexión de Chrome...")}`));
 			lines.push(boxLine(`    ${muted("Abrí")} ${accent("music.youtube.com")}`));
@@ -177,6 +197,15 @@ export class CinlodevYouTubeCard {
 
 			if (caps.images === "kitty" && coverData) {
 				try {
+					if (coverData.imageId) {
+						registerKittyImageMetadata({
+							imageId: coverData.imageId,
+							columns: 7,
+							rows: 3,
+							widthPx: coverData.dimensions?.widthPx ?? 48,
+							heightPx: coverData.dimensions?.heightPx ?? 48,
+						});
+					}
 					// Usar encodeKitty con solo rows: 3 para preservar nativamente el aspect ratio 1:1 cuadrado
 					kittySequence = encodeKitty(coverData.base64, {
 						rows: 3,
@@ -184,7 +213,13 @@ export class CinlodevYouTubeCard {
 						moveCursor: false,
 					});
 					kittyCols = 7;
+					if (this.activeCoverImageId && this.activeCoverImageId !== coverData.imageId) {
+						this.clearCover(this.activeCoverImageId);
+					}
+					this.activeCoverImageId = coverData.imageId;
 				} catch {}
+			} else {
+				this.clearCover();
 			}
 
 			const statusIcon = isPlaying ? mint("▶ ") : yellow("⏸ ");
@@ -325,6 +360,8 @@ export class CinlodevYouTubeCard {
 			const nextTrackRow = `  ${dim("↳")} ${muted("Próximo:")} ${cyan(nextTitle)}`;
 			lines.push(boxLine(nextTrackRow));
 			lines.push(boxLine(""));
+		} else {
+			this.clearCover();
 		}
 
 		// =========================================================================

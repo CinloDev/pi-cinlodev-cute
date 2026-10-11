@@ -1,4 +1,4 @@
-import type { TUI } from "@earendil-works/pi-tui";
+import { deleteAllKittyImages, type TUI } from "@earendil-works/pi-tui";
 import { loadCuteLayout } from "./cute-layout.ts";
 import {
 	CUTE_SIDEBAR_TABS,
@@ -65,6 +65,11 @@ export function createSidebarMouseHandler(ctx: SidebarMouseContext): (event: any
 				const delta = event.wheelDelta > 0 ? 1 : -1;
 				const nextIndex = (currentIndex + delta + CUTE_SIDEBAR_TABS.length) % CUTE_SIDEBAR_TABS.length;
 				state.activeTabId = CUTE_SIDEBAR_TABS[nextIndex].id;
+				try {
+					if (typeof tui?.terminal?.write === "function") {
+						tui.terminal.write(deleteAllKittyImages());
+					}
+				} catch {}
 				tui.requestRender();
 				return { handled: true, render: true };
 			}
@@ -120,6 +125,11 @@ export function createSidebarMouseHandler(ctx: SidebarMouseContext): (event: any
 				}
 				if (clickedTab) {
 					state.activeTabId = clickedTab.id;
+					try {
+						if (typeof tui?.terminal?.write === "function") {
+							tui.terminal.write(deleteAllKittyImages());
+						}
+					} catch {}
 					const footerComp = state.parts.get("footer") as any;
 					if (typeof footerComp?.isProfileDropdownOpen === "function" && footerComp.isProfileDropdownOpen()) {
 						footerComp.closeProfileDropdown();
