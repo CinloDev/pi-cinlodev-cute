@@ -72,6 +72,7 @@ export class CinlodevWorkingTreeCard implements Component {
 				if (this.hitboxClose && localX >= this.hitboxClose.start && localX <= this.hitboxClose.end) {
 					setGitTabSelectedBranch(null, this.tui);
 					this.scrollOffset = 0;
+					this.lastMaxScrollOffset = 0;
 					return true;
 				}
 				if (this.hitboxOpen && localX >= this.hitboxOpen.start && localX <= this.hitboxOpen.end) {
