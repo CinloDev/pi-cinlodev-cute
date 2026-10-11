@@ -45,7 +45,7 @@
     ]
   },
   "scripts": {
-    "test": "node --test test/cute.test.ts tests/cute-transcript-unwrap.test.ts"
+    "test": "node --test --test-concurrency=1 test/*.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
