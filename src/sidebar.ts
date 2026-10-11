@@ -112,6 +112,20 @@ export function installSidebar(tui: TUI, theme?: Theme): () => void {
 		scrollbarThumbStyle: (text) => (text === "█" ? pinkBright(railV) : pink(railV)),
 	});
 
+	// Proteger líneas con Kitty/iTerm2 escape sequences para que la columna de scrollbar no quede rota:
+	// @earendil-works/pi-tui omite replaceScrollbarCell en isImageLine, por lo que inyectamos el glifo de riel
+	// directamente sobre el espacio final agregado por ScrollView.
+	const nativeScrollRender = scroll.render.bind(scroll);
+	scroll.render = (width: number) => {
+		const lines = nativeScrollRender(width);
+		return lines.map((line) => {
+			if ((line.includes("\x1b_G") || line.includes("\x1b]1337;File=")) && line.endsWith(" ")) {
+				return line.slice(0, -1) + subtle(railV);
+			}
+			return line;
+		});
+	};
+
 	const nativeMouse = scroll.handleMouse.bind(scroll);
 	scroll.handleMouse = createSidebarMouseHandler({
 		scroll,
