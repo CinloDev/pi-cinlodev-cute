@@ -7,3 +7,12 @@ dist/
 .pi/
 .codegraph/
 memory.db*
+
+# User / Local configuration overrides (untracked)
+.cute.json
+cute.json
+cute.local.json
+cinlodev-cute.local.json
+config/*.local.json
+config/.cute.json
+

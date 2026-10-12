@@ -1,0 +1,28 @@
+{
+  "_note": "Cinlodev CUTE customizable user configuration. Copy this file to ~/.pi/agent/cute.json for global usage, or to cute.local.json / .cute.json in your workspace root. All fields are optional and fall back to package defaults.",
+  "user": "{auto}",
+  "persona": "gentlewoman",
+  "preset": "cats",
+  "glyphs": {
+    "frameStyle": "double",
+    "brand": "❀",
+    "profileIcon": "👤"
+  },
+  "strings": {
+    "brandTitle": "✿ CUTE",
+    "hudTitle": "✿ CUTE",
+    "sidebarBanner": {
+      "full": "✿ CUTE · GENTLE-PI ✿"
+    }
+  },
+  "colors": {
+    "userMessage": "dim",
+    "bashMessage": "accent",
+    "writeMessage": "accent",
+    "errorMessage": "error"
+  },
+  "layout": {
+    "defaultTab": "tree",
+    "splitDirection": "right"
+  }
+}

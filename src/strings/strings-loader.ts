@@ -187,21 +187,32 @@ function candidateStringsFiles(): string[] {
 
 	// 2. User-level global overrides (~/.pi/agent, outside git, persistent across package updates)
 	try {
-		const agentDir = path.join(os.homedir(), ".pi", "agent");
+		const agentDir = process.env.PI_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
 		add(path.join(agentDir, "cute.json"));
+		add(path.join(agentDir, ".cute.json"));
+		add(path.join(agentDir, "cute.local.json"));
 		add(path.join(agentDir, "cinlodev-cute.json"));
 		add(path.join(agentDir, "cute", CUTE_STRINGS_FILENAME));
 		add(path.join(agentDir, "cute", "strings.json"));
+		add(path.join(agentDir, "cute", "cute.local.json"));
 		add(path.join(agentDir, "cinlodev-cute", CUTE_STRINGS_FILENAME));
 		add(path.join(agentDir, "cinlodev-cute", "strings.json"));
 	} catch {}
 
-	// 3. Workspace / Project-level overrides (cwd, only when outside package clone)
+	// 3. Workspace / Project-level overrides (cwd)
 	try {
 		const here = path.dirname(fileURLToPath(import.meta.url));
 		const packageDir = path.resolve(here, "../..");
 		const cwd = path.resolve(process.cwd());
+
+		// Local untracked overrides (supported everywhere, even in package clone)
+		add(path.join(cwd, "cute.local.json"));
+		add(path.join(cwd, ".cute.json"));
+		add(path.join(cwd, "config", "cute.local.json"));
+		add(path.join(cwd, "config", ".cute.json"));
+
 		if (cwd !== packageDir && !isPackageClone(cwd)) {
+			add(path.join(cwd, "cute.json"));
 			add(path.join(cwd, ".pi", "cute.json"));
 			add(path.join(cwd, ".pi", "cinlodev-cute.json"));
 		}
