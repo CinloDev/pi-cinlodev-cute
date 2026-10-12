@@ -316,3 +316,45 @@ test("CinlodevYouTubeCard - pause status icon includes extra spacing so title ne
 	card.dispose();
 	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
 });
+
+test("CinlodevYouTubeCard - renders [ 📺 ] PiP button and invokes togglePip on click", () => {
+	let pipToggled = false;
+
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "playing",
+			connectedClients: 1,
+			title: "Giants",
+			artist: "Dermot Kennedy",
+			currentTime: 69,
+			duration: 192,
+			volume: 0.8,
+			isPip: true,
+			queue: [],
+		}),
+		togglePip: () => {
+			pipToggled = true;
+		},
+	};
+
+	const mockTui: any = { requestRender: () => {} };
+	const card = new CinlodevYouTubeCard(mockTui);
+	const lines = card.render(50);
+
+	const row2Idx = lines.findIndex((l) => l.includes("[ 📺 ]"));
+	assert.ok(row2Idx > 0, "Debe renderizar la fila secundaria con el botón [ 📺 ]");
+
+	// Buscar el hitbox correspondiente en esa línea y hacer click en el extremo derecho (botón [ 📺 ])
+	const pipHitbox = (card as any).hitboxes
+		.filter((h: any) => h.line === row2Idx)
+		.pop();
+	assert.ok(pipHitbox, "Debe registrar un hitbox para el botón [ 📺 ]");
+
+	const handled = card.handleRailClick(row2Idx, "left", pipHitbox.startX + 1);
+	assert.equal(handled, true, "El click en [ 📺 ] debe ser procesado");
+	assert.equal(pipToggled, true, "togglePip() debe invocarse al hacer click en [ 📺 ]");
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
