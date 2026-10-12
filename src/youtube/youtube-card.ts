@@ -322,18 +322,20 @@ export class CinlodevYouTubeCard {
 			lines.push(boxLine(" ".repeat(padTransport) + styledRow1));
 			lines.push(boxLine(""));
 
-			// Controles de Modo & Volumen: [ 🔁 ] [ - ] 🔊 [ + ] [ 🔀 ]
+			// Controles de Modo & Volumen: [ 🔁 ] [ - ] 🔊 [ + ] [ 🔀 ] [ 📺 ]
 			const repMode = state?.repeatMode || "NONE";
 			const isShuffle = Boolean(state?.shuffle);
+			const isPip = Boolean(state?.isPip);
 
 			const ctrlRepeat = repMode === "ONE" ? "[ 🔂 ]" : "[ 🔁 ]";
 			const ctrlVolDown = "[ - ]";
 			const volIcon = " 🔊 ";
 			const ctrlVolUp = "[ + ]";
 			const ctrlShuffle = "[ 🔀 ]";
+			const ctrlPip = "[ 📺 ]";
 			const gapCtrl = " ";
 
-			const rawRow2 = `${ctrlRepeat}${gapCtrl}${ctrlVolDown}${volIcon}${ctrlVolUp}${gapCtrl}${ctrlShuffle}`;
+			const rawRow2 = `${ctrlRepeat}${gapCtrl}${ctrlVolDown}${volIcon}${ctrlVolUp}${gapCtrl}${ctrlShuffle}${gapCtrl}${ctrlPip}`;
 			const row2Len = calcVisibleWidth(rawRow2);
 			const padRow2 = Math.max(1, Math.floor((innerWidth - row2Len) / 2));
 
@@ -374,10 +376,26 @@ export class CinlodevYouTubeCard {
 				endX: currentX2 + calcVisibleWidth(ctrlShuffle),
 				action: () => player?.toggleShuffle?.(),
 			});
+			currentX2 += calcVisibleWidth(ctrlShuffle) + calcVisibleWidth(gapCtrl);
+
+			// Hitbox PiP (Ventana flotante de video)
+			this.hitboxes.push({
+				line: lineIndexRow2,
+				startX: currentX2,
+				endX: currentX2 + calcVisibleWidth(ctrlPip),
+				action: () => {
+					if (typeof player?.togglePip === "function") {
+						player.togglePip();
+					} else {
+						player?.dispatchCommand?.("TOGGLE_PIP");
+					}
+				},
+			});
 
 			const styledRepeat = repMode === "ONE" ? pinkBright(bolden(this.theme, ctrlRepeat)) : repMode === "ALL" ? mint(bolden(this.theme, ctrlRepeat)) : dim(ctrlRepeat);
 			const styledShuffle = isShuffle ? mint(bolden(this.theme, ctrlShuffle)) : dim(ctrlShuffle);
-			const styledRow2 = `${styledRepeat}${gapCtrl}${yellow(ctrlVolDown)}${volIcon}${mint(ctrlVolUp)}${gapCtrl}${styledShuffle}`;
+			const styledPip = isPip ? pinkBright(bolden(this.theme, ctrlPip)) : dim(ctrlPip);
+			const styledRow2 = `${styledRepeat}${gapCtrl}${yellow(ctrlVolDown)}${volIcon}${mint(ctrlVolUp)}${gapCtrl}${styledShuffle}${gapCtrl}${styledPip}`;
 			lines.push(boxLine(" ".repeat(padRow2) + styledRow2));
 			lines.push(boxLine(""));
 

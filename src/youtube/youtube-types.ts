@@ -25,6 +25,7 @@ export interface YouTubePlayerState {
 	volume?: number;
 	repeatMode?: "NONE" | "ALL" | "ONE" | string;
 	shuffle?: boolean;
+	isPip?: boolean;
 	connectedClients?: number;
 	queue?: YouTubeTrack[];
 	thumbnailPath?: string;
