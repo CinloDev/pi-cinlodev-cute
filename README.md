@@ -141,7 +141,7 @@ The sidebar rail (`railWidth: 52`) organizes all session vital information into 
 | **Memory Graph Card** | `4:MEM` | SQLite knowledge graph card for `pi-memory-graph`. Displays memories count, relational nodes/edges, active leases, last memory snippet, `[explorer ↗]` browser launcher (port 7474), and one-click `[💾 Retener Sesión]`. |
 | **Tools Telemetry Card** | `4:MEM` | Live counter summarizing tool execution metrics (`read`, `write`, `bash`, `grep`, `other`) into clean visual pills with total call count. |
 | **Project Tree Card** | `5:TREE` | Interactive directory tree with Git porcelain badges (`M`, `?`, `●`), directory collapse/expand toggles, mouse-wheel scrolling, and direct click-to-edit in `$EDITOR` (`[ ↗ nvim ]`). |
-| **YouTube Music Card** | `6:YT` | Interactive YouTube Music player integrated via [pi-youtube-player](https://github.com/CinloDev/pi-youtube-player). Displays track info, live scrubber timeline, centered transport controls (`[ ⏮  Prev ]`, `[ ⏸  Pausa ]`, `[ ⏭  Next ]`), volume step controls (`[-]`, `[+]`), and clickable Up Next queue with live active track indicator (`🎙️`). |
+| **YouTube Music Card** | `6:YT` | Interactive YouTube Music player integrated via [pi-youtube-player](https://github.com/CinloDev/pi-youtube-player). Displays track info, live scrubber timeline, centered transport controls (`[ ⏮  Prev ]`, `[ ⏸  Pausa ]`, `[ ⏭  Next ]`), mode/volume/PiP controls (`[🔁]`, `[-]`, `[+]`, `[🔀]`, `[📺]`), and clickable Up Next queue with live active track indicator (`🎙️`). |
 
 ---
 
