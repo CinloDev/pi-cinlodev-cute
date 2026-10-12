@@ -106,3 +106,42 @@ test("User detection - detectSystemUser fallback and caching", () => {
 	const user = detectSystemUser();
 	assert.ok(typeof user === "string" && user.length > 0);
 });
+
+test("Local Overrides - cute.local.json in workspace overrides defaults", () => {
+	const localFile = "cute.local.json";
+	const hadLocal = fs.existsSync(localFile);
+	const prevLocal = hadLocal ? fs.readFileSync(localFile, "utf8") : null;
+	try {
+		fs.writeFileSync(
+			localFile,
+			JSON.stringify(
+				{
+					user: "TestDev",
+					persona: "gentlewoman",
+					preset: "kittens",
+				},
+				null,
+				2,
+			),
+			"utf8",
+		);
+		resetAll();
+
+		const strings = loadCuteStrings();
+		const glyphs = cuteGlyphs();
+
+		assert.equal(strings.welcomePersona.name, "la Gentlewoman");
+		assert.equal(strings.welcomePersona.user, "TestDev");
+		assert.equal(strings.welcomePersona.userRole, "desarrolladora");
+		assert.equal(strings.welcomePersona.userPronoun, "Tratala");
+		assert.deepEqual(glyphs.petalFrames, ["/×᷅×᷄\\੭", "/-᷅-᷄\\੭", "/^᷅^᷄\\੭", "/o᷅o᷄\\੭"]);
+	} finally {
+		if (hadLocal && prevLocal !== null) {
+			fs.writeFileSync(localFile, prevLocal, "utf8");
+		} else if (fs.existsSync(localFile)) {
+			fs.unlinkSync(localFile);
+		}
+		resetAll();
+	}
+});
+
