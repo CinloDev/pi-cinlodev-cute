@@ -16,7 +16,7 @@ import {
 	cleanTitle,
 	cleanArtist,
 } from "./youtube-types.ts";
-import { getCoverData } from "./youtube-cover.ts";
+import { getCoverData, computeCoverColumns } from "./youtube-cover.ts";
 
 /**
  * Tarjeta interactiva del reproductor de YouTube Music para la sidebar CUTE.
@@ -197,22 +197,24 @@ export class CinlodevYouTubeCard {
 
 			if (caps.images === "kitty" && coverData) {
 				try {
+					const targetCols = computeCoverColumns(coverData.dimensions, innerWidth);
 					if (coverData.imageId) {
 						registerKittyImageMetadata({
 							imageId: coverData.imageId,
-							columns: 7,
+							columns: targetCols,
 							rows: 3,
 							widthPx: coverData.dimensions?.widthPx ?? 48,
 							heightPx: coverData.dimensions?.heightPx ?? 48,
 						});
 					}
-					// Usar encodeKitty con solo rows: 3 para preservar nativamente el aspect ratio 1:1 cuadrado
+					// Especificar columns y rows exactas para preservar la relación de aspecto sin solapar el texto
 					kittySequence = encodeKitty(coverData.base64, {
+						columns: targetCols,
 						rows: 3,
 						imageId: coverData.imageId,
 						moveCursor: false,
 					});
-					kittyCols = 7;
+					kittyCols = targetCols;
 					if (this.activeCoverImageId && this.activeCoverImageId !== coverData.imageId) {
 						this.clearCover(this.activeCoverImageId);
 					}
@@ -222,7 +224,7 @@ export class CinlodevYouTubeCard {
 				this.clearCover();
 			}
 
-			const statusIcon = isPlaying ? mint("▶ ") : yellow("⏸ ");
+			const statusIcon = isPlaying ? mint("▶ ") : yellow("⏸  ");
 			const songTitle = state?.title || "Desconocido";
 			const artistName = cleanArtist(state?.artist, songTitle);
 
