@@ -14,6 +14,32 @@ let cachedSourceKey = "";
 let currentImageId: number | undefined = undefined;
 
 /**
+ * Calcula las columnas requeridas para una portada en la terminal Kitty Graphics.
+ * En celdas de terminal estándar (proporción aproximada 1:2 de celda ancho:alto),
+ * 3 filas de alto equivalen a ~7 columnas para una portada cuadrada 1:1.
+ * Cuando la imagen proviene de un video musical en YouTube (16:9 widescreen, etc.),
+ * calcula dinámicamente el ancho necesario (11 a 12 columnas) para que la imagen
+ * no se solape con el título y artista, acotado a un máximo seguro según el ancho disponible.
+ */
+export function computeCoverColumns(
+	dimensions?: { widthPx: number; heightPx: number },
+	maxAvailableWidth = 40
+): number {
+	if (!dimensions || !dimensions.widthPx || !dimensions.heightPx || dimensions.heightPx <= 0) {
+		return 7;
+	}
+	const ratio = dimensions.widthPx / dimensions.heightPx;
+	if (ratio <= 1.15) {
+		return 7;
+	}
+	// 3 filas en celdas de aspecto ~1:2 corresponden a ~6.5 columnas base para ratio 1:1.
+	// Para 16:9 (ratio 1.777), resulta en ~11 o 12 columnas.
+	const estimatedCols = Math.round(6.5 * ratio);
+	const maxAllowed = Math.min(14, Math.max(7, Math.floor(maxAvailableWidth * 0.38)));
+	return Math.max(7, Math.min(maxAllowed, estimatedCols));
+}
+
+/**
  * Resuelve y transcodifica la portada del álbum para el protocolo Kitty Graphics en Ghostty.
  * Soporta archivos temporales locales, base64 directo, y convierte JPEG a PNG con caché.
  */

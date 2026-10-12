@@ -14,6 +14,7 @@ export {
 
 export {
 	getCoverData,
+	computeCoverColumns,
 	type CoverData,
 } from "./youtube/youtube-cover.ts";
 
