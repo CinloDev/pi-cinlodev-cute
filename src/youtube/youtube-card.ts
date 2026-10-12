@@ -16,7 +16,7 @@ import {
 	cleanTitle,
 	cleanArtist,
 } from "./youtube-types.ts";
-import { getCoverData } from "./youtube-cover.ts";
+import { getCoverData, computeCoverColumns } from "./youtube-cover.ts";
 
 /**
  * Tarjeta interactiva del reproductor de YouTube Music para la sidebar CUTE.
@@ -197,22 +197,24 @@ export class CinlodevYouTubeCard {
 
 			if (caps.images === "kitty" && coverData) {
 				try {
+					const targetCols = computeCoverColumns(coverData.dimensions, innerWidth);
 					if (coverData.imageId) {
 						registerKittyImageMetadata({
 							imageId: coverData.imageId,
-							columns: 7,
+							columns: targetCols,
 							rows: 3,
 							widthPx: coverData.dimensions?.widthPx ?? 48,
 							heightPx: coverData.dimensions?.heightPx ?? 48,
 						});
 					}
-					// Usar encodeKitty con solo rows: 3 para preservar nativamente el aspect ratio 1:1 cuadrado
+					// Especificar columns y rows exactas para preservar la relación de aspecto sin solapar el texto
 					kittySequence = encodeKitty(coverData.base64, {
+						columns: targetCols,
 						rows: 3,
 						imageId: coverData.imageId,
 						moveCursor: false,
 					});
-					kittyCols = 7;
+					kittyCols = targetCols;
 					if (this.activeCoverImageId && this.activeCoverImageId !== coverData.imageId) {
 						this.clearCover(this.activeCoverImageId);
 					}
@@ -222,7 +224,7 @@ export class CinlodevYouTubeCard {
 				this.clearCover();
 			}
 
-			const statusIcon = isPlaying ? mint("▶ ") : yellow("⏸ ");
+			const statusIcon = isPlaying ? mint("▶ ") : yellow("⏸  ");
 			const songTitle = state?.title || "Desconocido";
 			const artistName = cleanArtist(state?.artist, songTitle);
 
@@ -320,38 +322,63 @@ export class CinlodevYouTubeCard {
 			lines.push(boxLine(" ".repeat(padTransport) + styledRow1));
 			lines.push(boxLine(""));
 
-			// Controles de Volumen Centrados
-			const ctrlVolDown = "[-] ";
-			const volIcon = "🔊";
-			const ctrlVolUp = " [+]";
-			const gapVol = "   ";
+			// Controles de Modo & Volumen: [ 🔁 ] [ - ] 🔊 [ + ] [ 🔀 ]
+			const repMode = state?.repeatMode || "NONE";
+			const isShuffle = Boolean(state?.shuffle);
 
-			const rawRow2 = `${ctrlVolDown}${gapVol}${volIcon}${gapVol}${ctrlVolUp}`;
+			const ctrlRepeat = repMode === "ONE" ? "[ 🔂 ]" : "[ 🔁 ]";
+			const ctrlVolDown = "[ - ]";
+			const volIcon = " 🔊 ";
+			const ctrlVolUp = "[ + ]";
+			const ctrlShuffle = "[ 🔀 ]";
+			const gapCtrl = " ";
+
+			const rawRow2 = `${ctrlRepeat}${gapCtrl}${ctrlVolDown}${volIcon}${ctrlVolUp}${gapCtrl}${ctrlShuffle}`;
 			const row2Len = calcVisibleWidth(rawRow2);
-			const padVol = Math.max(1, Math.floor((innerWidth - row2Len) / 2));
+			const padRow2 = Math.max(1, Math.floor((innerWidth - row2Len) / 2));
 
-			const lineIndexVol = lines.length;
-			let currentX2 = 1 + padVol;
+			const lineIndexRow2 = lines.length;
+			let currentX2 = 1 + padRow2;
+
+			// Hitbox Repeat
+			this.hitboxes.push({
+				line: lineIndexRow2,
+				startX: currentX2,
+				endX: currentX2 + calcVisibleWidth(ctrlRepeat),
+				action: () => player?.toggleRepeat?.(),
+			});
+			currentX2 += calcVisibleWidth(ctrlRepeat) + calcVisibleWidth(gapCtrl);
 
 			// Hitbox Vol Down
 			this.hitboxes.push({
-				line: lineIndexVol,
+				line: lineIndexRow2,
 				startX: currentX2,
 				endX: currentX2 + calcVisibleWidth(ctrlVolDown),
 				action: () => player?.setVolume?.(volPct - 10),
 			});
-			currentX2 += calcVisibleWidth(ctrlVolDown) + calcVisibleWidth(gapVol) + calcVisibleWidth(volIcon) + calcVisibleWidth(gapVol);
+			currentX2 += calcVisibleWidth(ctrlVolDown) + calcVisibleWidth(volIcon);
 
 			// Hitbox Vol Up
 			this.hitboxes.push({
-				line: lineIndexVol,
+				line: lineIndexRow2,
 				startX: currentX2,
 				endX: currentX2 + calcVisibleWidth(ctrlVolUp),
 				action: () => player?.setVolume?.(volPct + 10),
 			});
+			currentX2 += calcVisibleWidth(ctrlVolUp) + calcVisibleWidth(gapCtrl);
 
-			const styledRow2 = `${yellow(ctrlVolDown)}${gapVol}${volIcon}${gapVol}${mint(ctrlVolUp)}`;
-			lines.push(boxLine(" ".repeat(padVol) + styledRow2));
+			// Hitbox Shuffle
+			this.hitboxes.push({
+				line: lineIndexRow2,
+				startX: currentX2,
+				endX: currentX2 + calcVisibleWidth(ctrlShuffle),
+				action: () => player?.toggleShuffle?.(),
+			});
+
+			const styledRepeat = repMode === "ONE" ? pinkBright(bolden(this.theme, ctrlRepeat)) : repMode === "ALL" ? mint(bolden(this.theme, ctrlRepeat)) : dim(ctrlRepeat);
+			const styledShuffle = isShuffle ? mint(bolden(this.theme, ctrlShuffle)) : dim(ctrlShuffle);
+			const styledRow2 = `${styledRepeat}${gapCtrl}${yellow(ctrlVolDown)}${volIcon}${mint(ctrlVolUp)}${gapCtrl}${styledShuffle}`;
+			lines.push(boxLine(" ".repeat(padRow2) + styledRow2));
 			lines.push(boxLine(""));
 
 			// Preview del tema que sigue: ↳ ${state.queue[1]?.title || "Fin de cola"}

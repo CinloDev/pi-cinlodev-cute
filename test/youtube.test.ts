@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { CinlodevYouTubeCard, YOUTUBE_PLAYER_SYMBOL } from "../src/cute-youtube.ts";
+import { CinlodevYouTubeCard, YOUTUBE_PLAYER_SYMBOL, computeCoverColumns } from "../src/cute-youtube.ts";
 import { resetAll } from "./test-helpers.ts";
 
 test("CinlodevYouTubeCard - renders offline state cleanly with correct borders and visible width", () => {
@@ -231,4 +231,88 @@ test("CinlodevYouTubeCard - clearCover and dispose emit deleteKittyImage to term
 	(card as any).activeCoverImageId = 9999;
 	card.dispose();
 	assert.ok(writes.some((w) => w.includes("i=9999")), "dispose debe emitir deleteKittyImage");
+});
+
+test("computeCoverColumns - adapts dynamically for 1:1, widescreen 16:9 and invalid dimensions", () => {
+	// 1:1 portada cuadrada tradicional de álbum
+	assert.equal(computeCoverColumns({ widthPx: 500, heightPx: 500 }), 7);
+	assert.equal(computeCoverColumns({ widthPx: 128, heightPx: 128 }), 7);
+
+	// 16:9 widescreen miniatura de video musical en YouTube
+	const cols169 = computeCoverColumns({ widthPx: 1280, heightPx: 720 });
+	assert.equal(cols169, 12, "Debe calcular 12 columnas para aspect ratio 16:9");
+
+	// 4:3 formato estándar intermedio
+	const cols43 = computeCoverColumns({ widthPx: 640, heightPx: 480 });
+	assert.equal(cols43, 9, "Debe calcular 9 columnas para aspect ratio 4:3");
+
+	// Fallback para dimensiones ausentes o anómalas
+	assert.equal(computeCoverColumns(undefined), 7);
+	assert.equal(computeCoverColumns({ widthPx: 0, heightPx: 100 }), 7);
+	assert.equal(computeCoverColumns({ widthPx: 100, heightPx: 0 }), 7);
+});
+
+test("CinlodevYouTubeCard - widescreen cover expands placeholder so song title is never obscured", () => {
+	// Generar un PNG mínimo válido con dimensiones 16:9 (160x90) para el test
+	// Header PNG: 8 bytes + IHDR chunk (13 bytes: w=160, h=90, bitDepth=8, colorType=2...)
+	const ihdrBuf = Buffer.alloc(33);
+	ihdrBuf.write("\x89PNG\r\n\x1a\n", 0, "binary");
+	ihdrBuf.writeUInt32BE(13, 8); // chunk length
+	ihdrBuf.write("IHDR", 12);
+	ihdrBuf.writeUInt32BE(160, 16); // width = 160
+	ihdrBuf.writeUInt32BE(90, 20);  // height = 90
+	ihdrBuf.writeUInt8(8, 24);      // bit depth
+	ihdrBuf.writeUInt8(2, 25);      // color type (truecolor)
+
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "playing",
+			connectedClients: 1,
+			title: "Jamás abandoné",
+			artist: "Laura Pausini",
+			currentTime: 164,
+			duration: 210,
+			volume: 0.8,
+			thumbnailBase64: ihdrBuf.toString("base64"),
+		}),
+	};
+
+	const mockTui: any = { requestRender: () => {} };
+	const card = new CinlodevYouTubeCard(mockTui);
+	const lines = card.render(50);
+
+	// Comprobar que en la línea donde está el título, la secuencia Kitty tiene c=12 y el placeholder tiene 12 espacios
+	const titleLine = lines.find((l) => l.includes("Jamás abandoné"));
+	assert.ok(titleLine, "Debe renderizar la línea con el título");
+	assert.ok(titleLine.includes("c=12"), "Debe emitir c=12 para la imagen widescreen");
+	assert.ok(titleLine.includes("r=3"), "Debe emitir r=3");
+	assert.ok(titleLine.includes(" ".repeat(12)), "El placeholder debe tener 12 espacios de resguardo");
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
+});
+
+test("CinlodevYouTubeCard - pause status icon includes extra spacing so title never sticks to icon", () => {
+	(globalThis as any)[YOUTUBE_PLAYER_SYMBOL] = {
+		getState: () => ({
+			status: "paused",
+			connectedClients: 1,
+			title: "Sólo para ti",
+			artist: "Camila",
+			currentTime: 180,
+			duration: 188,
+			volume: 0.8,
+		}),
+	};
+
+	const mockTui: any = { requestRender: () => {} };
+	const card = new CinlodevYouTubeCard(mockTui);
+	const lines = card.render(50);
+
+	const titleLine = lines.find((l) => l.includes("Sólo para ti"));
+	assert.ok(titleLine, "Debe renderizar la línea con el título");
+	assert.ok(titleLine.includes("⏸  "), "El ícono de pausa debe incluir 2 espacios para no pegarse al título en terminales");
+
+	card.dispose();
+	delete (globalThis as any)[YOUTUBE_PLAYER_SYMBOL];
 });

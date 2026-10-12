@@ -23,6 +23,8 @@ export interface YouTubePlayerState {
 	currentTime?: number;
 	duration?: number;
 	volume?: number;
+	repeatMode?: "NONE" | "ALL" | "ONE" | string;
+	shuffle?: boolean;
 	connectedClients?: number;
 	queue?: YouTubeTrack[];
 	thumbnailPath?: string;
