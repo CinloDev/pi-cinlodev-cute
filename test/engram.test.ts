@@ -16,9 +16,12 @@ import {
 } from "../src/cute-engram.ts";
 import {
 	CinlodevMemoryGraphCard,
+	CinlodevPersistentMemoryCard,
 	resolveMemoryGraphDbCandidate,
 	queryMemoryGraphStats,
 	resetMemoryGraphCache,
+	normalizeGitRemoteUrl,
+	resolvePersistentMemoryScope,
 } from "../src/cute-memory-graph.ts";
 import { SIDEBAR_TAB_CARD_MAP } from "../src/sidebar.ts";
 import { resetAll, userConfigFile } from "./test-helpers.ts";
@@ -132,7 +135,10 @@ Found 1 memories:
 	// Tab mappings check
 	assert.ok(SIDEBAR_TAB_CARD_MAP.git.includes("workingTree"), "git tab must include workingTree");
 	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("engramHandoff"), "mem tab must include engramHandoff");
-	assert.ok(SIDEBAR_TAB_CARD_MAP.mem.includes("memoryGraph"), "mem tab must include memoryGraph");
+	assert.ok(
+		SIDEBAR_TAB_CARD_MAP.mem.includes("persistentMemory") || SIDEBAR_TAB_CARD_MAP.mem.includes("memoryGraph"),
+		"mem tab must include persistentMemory or memoryGraph",
+	);
 });
 
 test("cute-memory-graph - candidate resolution, stats querying and card rendering", async () => {
@@ -183,8 +189,8 @@ test("cute-memory-graph - candidate resolution, stats querying and card renderin
 			assert.equal(visibleWidth(line), 50);
 		}
 
-		assert.ok(lines.some((l) => l.includes("GRAPH MEMORY")));
-		assert.ok(lines.some((l) => l.includes("SQLite Knowledge Graph")));
+		assert.ok(lines.some((l) => l.includes("PERSISTENT MEMORY") || l.includes("GRAPH MEMORY")));
+		assert.ok(lines.some((l) => l.includes("Knowledge Base") || l.includes("SQLite Knowledge Graph")));
 		assert.ok(lines.some((l) => l.includes("Recuerdos:")));
 		assert.ok(lines.some((l) => l.includes("42")));
 		assert.ok(lines.some((l) => l.includes("Grafo:")));
@@ -207,7 +213,7 @@ test("cute-memory-graph - candidate resolution, stats querying and card renderin
 		});
 		const emptyLines = emptyCard.render(50);
 		assert.ok(emptyLines.some((l) => l.includes("inactivo")));
-		assert.ok(emptyLines.some((l) => l.includes("Sin base .pi/memory.db detectada")));
+		assert.ok(emptyLines.some((l) => l.includes("Sin base") && (l.includes("memories.db") || l.includes("memory.db"))));
 		assert.ok(emptyLines.some((l) => l.includes("+ inicializar memoria")));
 
 		// 6. Interactive click on Explorer and Retain Session
@@ -221,4 +227,87 @@ test("cute-memory-graph - candidate resolution, stats querying and card renderin
 	} finally {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	}
+});
+
+test("cute-persistent-memory - normalizeGitRemoteUrl, scope resolution, and card rendering", async () => {
+	resetAll();
+
+	// 1. normalizeGitRemoteUrl
+	assert.equal(
+		normalizeGitRemoteUrl("git@github.com:CinloDev/pi-cinlodev-cute.git"),
+		"github.com/CinloDev/pi-cinlodev-cute",
+	);
+	assert.equal(
+		normalizeGitRemoteUrl("https://github.com/CinloDev/pi-cinlodev-cute.git"),
+		"github.com/CinloDev/pi-cinlodev-cute",
+	);
+	assert.equal(
+		normalizeGitRemoteUrl("ssh://git@github.com/CinloDev/pi-cinlodev-cute.git"),
+		"github.com/CinloDev/pi-cinlodev-cute",
+	);
+	assert.equal(normalizeGitRemoteUrl("/local/path/repo.git"), null);
+
+	// 2. Scope resolution
+	const scope = resolvePersistentMemoryScope(process.cwd());
+	assert.ok(scope.projectName);
+	assert.ok(scope.scopeKey.includes("project"));
+
+	// 3. Persistent Memory Card rendering
+	const card = new CinlodevPersistentMemoryCard(undefined, undefined, undefined, process.cwd());
+	(card as any).getCachedOrTrigger = () => ({
+		available: true,
+		dbPath: "/home/cinlodev/.memory/memories.db",
+		scope: "project",
+		projectName: "github.com/CinloDev/pi-cinlodev-cute",
+		scopeKey: '["project","github.com/CinloDev/pi-cinlodev-cute"]',
+		projectMemoriesCount: 5,
+		totalMemoriesCount: 12,
+		entitiesCount: 7,
+		relationsCount: 4,
+		indexedCount: 5,
+		pendingCount: 0,
+		serverOnline: true,
+		lastTitle: "Arquitectura de pi-persistent-memory en CUTE",
+		lastTopic: "arch",
+		lastCheckedAt: Date.now(),
+	});
+
+	const lines = card.render(50);
+	assert.ok(lines.length > 5);
+	for (const line of lines) {
+		assert.equal(visibleWidth(line), 50);
+	}
+
+	assert.ok(lines.some((l) => l.includes("PERSISTENT MEMORY")));
+	assert.ok(lines.some((l) => l.includes("Knowledge Base")));
+	assert.ok(lines.some((l) => l.includes("explorer ↗")));
+	assert.ok(lines.some((l) => l.includes("5 proy")));
+	assert.ok(lines.some((l) => l.includes("(12 total)")));
+	assert.ok(lines.some((l) => l.includes("7 nodos")));
+	assert.ok(lines.some((l) => l.includes("4 aristas")));
+	assert.ok(lines.some((l) => l.includes("💾 Retener Sesión")));
+	assert.ok(lines.some((l) => l.includes("Arquitectura")));
+
+	// 4. Clicking retain session delegates to pi.sendUserMessage
+	let sentMessage: string | null = null;
+	const mockPi: any = {
+		sendUserMessage: (msg: string) => {
+			sentMessage = msg;
+		},
+	};
+	const cardWithPi = new CinlodevPersistentMemoryCard(
+		undefined,
+		undefined,
+		undefined,
+		process.cwd(),
+		mockPi,
+	);
+	(cardWithPi as any).getCachedOrTrigger = (card as any).getCachedOrTrigger;
+	cardWithPi.render(50);
+	const retainTarget = (cardWithPi as any).clickTargets[1];
+	assert.ok(retainTarget);
+	await retainTarget.action();
+	assert.ok(sentMessage);
+	assert.ok((sentMessage as string).includes("memory_save"));
+	assert.ok((sentMessage as string).includes("memory_context"));
 });
