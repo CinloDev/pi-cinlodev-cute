@@ -9,7 +9,7 @@ import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.
 import { CinlodevToolsCard } from "./cute-tools.ts";
 import { CinlodevUsageCard } from "./cute-usage.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
-import { CinlodevMemoryGraphCard } from "./cute-memory-graph.ts";
+import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { tuneTuiScroll } from "./cute-layout.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
@@ -88,11 +88,13 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		tuneTuiScroll(tui);
+		(tui as any).__cutePi = pi;
 		const bottom = new CinlodevCuteFooter(pi, ctx, tui, theme, footerData);
 		const contextCard = new CinlodevCuteContextCard(ctx, theme);
 		const engramCard = new CinlodevEngramCard(ctx, tui, theme);
 		const engramHandoff = new CinlodevEngramHandoffCard(ctx, tui, theme);
-		const memoryGraph = new CinlodevMemoryGraphCard(ctx, tui, theme);
+		const persistentMemory = new CinlodevPersistentMemoryCard(ctx, tui, theme, undefined, pi);
+		const memoryGraph = persistentMemory;
 		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const workingTree = new CinlodevWorkingTreeCard(ctx, tui, theme);
@@ -110,6 +112,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		footerRegistry.latestUsageCard = usageCard;
 		footerRegistry.latestEngramCard = engramCard;
 		footerRegistry.latestEngramHandoff = engramHandoff;
+		footerRegistry.latestPersistentMemory = persistentMemory;
 		footerRegistry.latestMemoryGraph = memoryGraph;
 
 		const rail = {
@@ -191,6 +194,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const contextPart = sidebarPart(tui, "context", { render: () => [] }, contextRail);
 		const engramPart = sidebarPart(tui, "engram", { render: () => [] }, engramRail);
 		const engramHandoffPart = sidebarPart(tui, "engramHandoff", { render: () => [] }, engramHandoffRail);
+		const persistentMemoryPart = sidebarPart(tui, "persistentMemory", { render: () => [] }, memoryGraphRail);
 		const memoryGraphPart = sidebarPart(tui, "memoryGraph", { render: () => [] }, memoryGraphRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
@@ -229,6 +233,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				contextPart.dispose?.();
 				engramPart.dispose?.();
 				engramHandoffPart.dispose?.();
+				persistentMemoryPart.dispose?.();
 				memoryGraphPart.dispose?.();
 				usagePart.dispose?.();
 				gitGraphPart.dispose?.();

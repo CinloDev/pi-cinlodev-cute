@@ -518,10 +518,13 @@ test("highlightUncoloredSegments - keeps OSC 133 and APC sequences atomic withou
 	assert.ok(!out.includes("133;C]"), "133;C must never be treated as visible plain text");
 });
 
-test("isMemoryComponent - matches mem_ tools only", () => {
+test("isMemoryComponent - matches mem_ and memory_ tools", () => {
 	assert.ok(isMemoryComponent({ toolName: "mem_search" } as any));
 	assert.ok(isMemoryComponent({ toolName: "mem_timeline" } as any));
 	assert.ok(isMemoryComponent({ toolName: "mem_doctor" } as any));
+	assert.ok(isMemoryComponent({ toolName: "memory_save" } as any));
+	assert.ok(isMemoryComponent({ toolName: "memory_search" } as any));
+	assert.ok(isMemoryComponent({ toolName: "memory_get" } as any));
 	assert.equal(isMemoryComponent({ toolName: "fetch_content" } as any), false);
 	assert.equal(isMemoryComponent({ toolName: "web_search" } as any), false);
 	assert.equal(isMemoryComponent({ toolName: "read" } as any), false);

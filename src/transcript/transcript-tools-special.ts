@@ -287,12 +287,15 @@ export function isAgentStatusComponent(child: Component, renderedLines?: string[
 }
 
 /**
- * Checks whether a transcript component is a memory (Engram) tool execution.
+ * Checks whether a transcript component is a memory (Engram or Persistent Memory) tool execution.
  */
 export function isMemoryComponent(child: Component): boolean {
 	if (!child) return false;
 	const toolName = (child as any).toolName;
-	return typeof toolName === "string" && toolName.startsWith("mem_");
+	return (
+		typeof toolName === "string" &&
+		(toolName.startsWith("mem_") || toolName.startsWith("memory_"))
+	);
 }
 
 /**

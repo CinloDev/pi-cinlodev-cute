@@ -152,12 +152,14 @@ export function formatTranscriptChild(
 		return frameCategoryBox(styled, title, colors.reviewMessage ?? "gentle", width, theme);
 	}
 
-	// Memory (Engram) tool execution in salmon card (#F0978A / colors.memoryMessage)
+	// Memory (Engram or Persistent Memory) tool execution in salmon card (#F0978A / colors.memoryMessage)
 	if (isMemoryComponent(child)) {
 		const rawLines = child.render(width - 4);
 		const unwrapped = unwrapNativeCard(rawLines);
 		const styled = formatMemoryOutputLines(unwrapped, theme);
-		return frameCategoryBox(styled, "🧠 engram", colors.memoryMessage, width, theme);
+		const toolName = (child as any).toolName;
+		const memTitle = typeof toolName === "string" && toolName.startsWith("memory_") ? "🧠 memory" : "🧠 engram";
+		return frameCategoryBox(styled, memTitle, colors.memoryMessage, width, theme);
 	}
 
 	// Subagent tool execution in cute cyan/accent card (colors.agentMessage / #8BE9FD)
@@ -373,9 +375,22 @@ export function formatTranscriptChildren(
 				combinedLines.push(...styled);
 			}
 
+			const hasMemoryTool = memGroup.some(
+				(c) => typeof (c as any)?.toolName === "string" && (c as any).toolName.startsWith("memory_"),
+			);
+			const hasEngramTool = memGroup.some(
+				(c) => typeof (c as any)?.toolName === "string" && (c as any).toolName.startsWith("mem_"),
+			);
+			const memCardTitle =
+				hasMemoryTool && !hasEngramTool
+					? "🧠 memory"
+					: hasEngramTool && !hasMemoryTool
+						? "🧠 engram"
+						: "🧠 memory";
+
 			const cardLines = frameCategoryBox(
-				combinedLines.length ? combinedLines : ["engram"],
-				"🧠 engram",
+				combinedLines.length ? combinedLines : [memCardTitle.replace("🧠 ", "")],
+				memCardTitle,
 				colors.memoryMessage,
 				width,
 				theme,
