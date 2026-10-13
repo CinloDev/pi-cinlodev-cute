@@ -4,7 +4,7 @@ import type { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "../cute-git-
 import type { CinlodevToolsCard } from "../cute-tools.ts";
 import type { CinlodevUsageCard } from "../cute-usage.ts";
 import type { CinlodevEngramCard, CinlodevEngramHandoffCard } from "../cute-engram.ts";
-import type { CinlodevMemoryGraphCard } from "../cute-memory-graph.ts";
+import type { CinlodevPersistentMemoryCard } from "../cute-persistent-memory.ts";
 import type { CinlodevProjectTreeCard } from "../cute-tree.ts";
 import { resetGitFileChangesCache } from "../cute-git-graph.ts";
 
@@ -18,7 +18,8 @@ export interface FooterRegistryState {
 	latestUsageCard?: CinlodevUsageCard;
 	latestEngramCard?: CinlodevEngramCard;
 	latestEngramHandoff?: CinlodevEngramHandoffCard;
-	latestMemoryGraph?: CinlodevMemoryGraphCard;
+	latestPersistentMemory?: CinlodevPersistentMemoryCard;
+	latestMemoryGraph?: CinlodevPersistentMemoryCard;
 	latestProjectTree?: CinlodevProjectTreeCard;
 }
 
@@ -46,6 +47,8 @@ export function invalidateSidebarGitAndTree(): void {
 	resetGitFileChangesCache();
 	footerRegistry.latestGitGraph?.invalidate();
 	footerRegistry.latestWorkingTree?.invalidate();
+	footerRegistry.latestPersistentMemory?.invalidate();
+	footerRegistry.latestMemoryGraph?.invalidate();
 	footerRegistry.latestProjectTree?.invalidate();
 	footerRegistry.latestToolsCard?.invalidate();
 	footerRegistry.latestTodoTui?.requestRender();

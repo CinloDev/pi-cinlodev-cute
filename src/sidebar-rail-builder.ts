@@ -6,7 +6,7 @@ import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
-import { CinlodevMemoryGraphCard } from "./cute-memory-graph.ts";
+import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { CinlodevYouTubeCard } from "./cute-youtube.ts";
 import { measureDockMetrics } from "./sidebar-dock.ts";
 import { renderCUTESidebarBanner } from "./sidebar-state.ts";
@@ -153,10 +153,21 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 					state.parts.set("projectTree", component);
 				}
 			}
-			if (!component && (key === "memoryGraph" || key === "memory-graph")) {
-				component = state.parts.get("memoryGraph") || state.parts.get("memory-graph");
+			if (
+				!component &&
+				(key === "persistentMemory" ||
+					key === "persistent-memory" ||
+					key === "memoryGraph" ||
+					key === "memory-graph")
+			) {
+				component =
+					state.parts.get("persistentMemory") ||
+					state.parts.get("persistent-memory") ||
+					state.parts.get("memoryGraph") ||
+					state.parts.get("memory-graph");
 				if (!component) {
-					component = new CinlodevMemoryGraphCard(undefined, tui, theme);
+					component = new CinlodevPersistentMemoryCard(undefined, tui, theme);
+					state.parts.set("persistentMemory", component);
 					state.parts.set("memoryGraph", component);
 				}
 			}
@@ -189,6 +200,8 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 				key !== "profiles" &&
 				key !== "memoryGraph" &&
 				key !== "memory-graph" &&
+				key !== "persistentMemory" &&
+				key !== "persistent-memory" &&
 				key !== "projectTree" &&
 				key !== "project-tree" &&
 				key !== "youtubePlayer" &&
