@@ -148,7 +148,9 @@ export class CinlodevYouTubeCard {
 		};
 
 		// Header del marco principal
-		const titleStr = isConnected ? " 🎵 YouTube Music " : " 🎵 YouTube Music (Offline) ";
+		const isYoutubeStandard = state?.platform === "youtube";
+		const brandName = isYoutubeStandard ? "YouTube" : "YouTube Music";
+		const titleStr = isConnected ? ` 🎵 ${brandName} ` : ` 🎵 ${brandName} (Offline) `;
 		const hLine = g.h.repeat(Math.max(0, width - 2 - calcVisibleWidth(titleStr)));
 		lines.push(`${border(g.tl)}${accent(bolden(this.theme, titleStr))}${border(hLine)}${border(g.tr)}`);
 
@@ -156,7 +158,7 @@ export class CinlodevYouTubeCard {
 			this.clearCover();
 			lines.push(boxLine(""));
 			lines.push(boxLine(`  ${cyan("✦")} ${gold("Esperando conexión de Chrome...")}`));
-			lines.push(boxLine(`    ${muted("Abrí")} ${accent("music.youtube.com")}`));
+			lines.push(boxLine(`    ${muted("Abrí")} ${accent("youtube.com")} ${muted("o")} ${accent("music.youtube.com")}`));
 			lines.push(boxLine(""));
 			lines.push(`${border(g.bl)}${border(g.h.repeat(Math.max(0, width - 2)))}${border(g.br)}`);
 			return lines;
@@ -292,29 +294,32 @@ export class CinlodevYouTubeCard {
 			const lineIndexTransport = lines.length;
 			let currentX1 = 1 + padTransport;
 
-			// Hitbox Prev
+			// Hitbox Prev (con margen de tolerancia)
+			const prevW = calcVisibleWidth(ctrlPrev);
 			this.hitboxes.push({
 				line: lineIndexTransport,
-				startX: currentX1,
-				endX: currentX1 + calcVisibleWidth(ctrlPrev),
+				startX: Math.max(1, currentX1 - 1),
+				endX: currentX1 + prevW,
 				action: () => player?.previous?.(),
 			});
-			currentX1 += calcVisibleWidth(ctrlPrev) + calcVisibleWidth(gap);
+			currentX1 += prevW + calcVisibleWidth(gap);
 
-			// Hitbox Play/Pause
+			// Hitbox Play/Pause (con margen de tolerancia para captura exacta)
+			const playW = calcVisibleWidth(ctrlPlay);
 			this.hitboxes.push({
 				line: lineIndexTransport,
-				startX: currentX1,
-				endX: currentX1 + calcVisibleWidth(ctrlPlay),
+				startX: currentX1 - 1,
+				endX: currentX1 + playW + 1,
 				action: () => player?.togglePlay?.(),
 			});
-			currentX1 += calcVisibleWidth(ctrlPlay) + calcVisibleWidth(gap);
+			currentX1 += playW + calcVisibleWidth(gap);
 
-			// Hitbox Next
+			// Hitbox Next (con margen de tolerancia)
+			const nextW = calcVisibleWidth(ctrlNext);
 			this.hitboxes.push({
 				line: lineIndexTransport,
-				startX: currentX1,
-				endX: currentX1 + calcVisibleWidth(ctrlNext),
+				startX: currentX1 - 1,
+				endX: currentX1 + nextW + 1,
 				action: () => player?.next?.(),
 			});
 

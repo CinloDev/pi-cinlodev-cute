@@ -18,6 +18,7 @@ export interface YouTubeTrack {
 
 export interface YouTubePlayerState {
 	status?: "playing" | "paused" | "disconnected" | string;
+	platform?: "youtube" | "music" | string;
 	title?: string;
 	artist?: string;
 	currentTime?: number;
