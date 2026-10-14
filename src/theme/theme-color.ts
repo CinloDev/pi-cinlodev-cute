@@ -6,6 +6,27 @@ import { fileURLToPath } from "node:url";
 import { loadCuteColors } from "../cute-colors.ts";
 
 /**
+ * Compatible mappings for CUTE visual roles to official Pi THEME_TOKENS or explicit hex codes.
+ * Ensures custom theme variables continue rendering cleanly without violating Pi 1.2.0 schema.
+ */
+const CUTE_ROLE_MAPPINGS: Record<string, string> = {
+	heading: "mdHeading",
+	userMessageBorder: "userMessageText",
+	pink: "accent",
+	pinkBright: "borderAccent",
+	mint: "mdCode",
+	green: "success",
+	orange: "warning",
+	read: "#C5A3E0",
+	write: "#A5CBE8",
+	bash: "#8EC5A6",
+	bashOutput: "#8EC5A6",
+	salmon: "#F0978A",
+	gentle: "#a46db5",
+	secondary: "#D7A0B8",
+};
+
+/**
  * Safe theme.fg wrapper in the welcome.ts style: on unknown keys fall back
  * to another theme color, and to raw text only as a last resort. Keeps
  * widgets rendering instead of throwing when a theme misses a key.
@@ -17,9 +38,22 @@ export function safeFg(theme: Theme, key: string, text: string, fallback = "text
 		const b = parseInt(key.slice(5, 7), 16);
 		return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
 	}
+
 	try {
 		return theme.fg(key as any, text);
 	} catch {
+		const mapped = CUTE_ROLE_MAPPINGS[key];
+		if (mapped) {
+			if (mapped.startsWith("#") && /^#[0-9a-fA-F]{6}$/.test(mapped)) {
+				const r = parseInt(mapped.slice(1, 3), 16);
+				const g = parseInt(mapped.slice(3, 5), 16);
+				const b = parseInt(mapped.slice(5, 7), 16);
+				return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
+			}
+			try {
+				return theme.fg(mapped as any, text);
+			} catch {}
+		}
 		try {
 			return theme.fg(fallback as any, text);
 		} catch {
@@ -78,14 +112,26 @@ export function installCuteMarkdownThemeHook(themeInstance?: unknown): void {
 /**
  * Pastel-pink block cursor (#FFB1DD bg over #1A1218 fg) derived from theme keys,
  * so callers hold no hardcoded 38;2/48;2 sequences. The background ANSI is
- * derived from the pinkBright foreground ANSI, keeping the same hex in both
+ * derived from the borderAccent (or pinkBright) foreground ANSI, keeping the same hex in both
  * truecolor and 256-color modes without consuming a dedicated bg slot.
- * Throws when the theme misses the "pinkBright" or "cursorText" keys.
  */
 export function cursorStyle(theme: Theme, text: string): string {
-	const fgDark = theme.getFgAnsi("cursorText" as any);
-	const bgPink = theme.getFgAnsi("pinkBright" as any).replace("[38;", "[48;");
-	return `${bgPink}${fgDark}${text}\x1b[0m`;
+	try {
+		const fgDark = "\x1b[38;2;26;18;24m"; // #1A1218
+		let bgPink: string;
+		try {
+			bgPink = theme.getFgAnsi("borderAccent" as any).replace("[38;", "[48;");
+		} catch {
+			try {
+				bgPink = theme.getFgAnsi("pinkBright" as any).replace("[38;", "[48;");
+			} catch {
+				bgPink = "\x1b[48;2;255;177;221m"; // #FFB1DD
+			}
+		}
+		return `${bgPink}${fgDark}${text}\x1b[0m`;
+	} catch {
+		return text;
+	}
 }
 
 /**

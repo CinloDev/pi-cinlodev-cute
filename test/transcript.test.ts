@@ -192,7 +192,7 @@ test("formatTranscriptChild - frames user messages in CUTE golden box and leaves
 		render() { return ["echo hello from user"]; }
 	}
 	const userFramed = formatTranscriptChild(new UserMessageComponent() as any, 60, mockTheme);
-	assert.ok(userFramed[0].includes("[userMessageBorder]") || userFramed[0].includes("[heading]"));
+	assert.ok(userFramed[0].includes("[userMessageText]") || userFramed[0].includes("[userMessageBorder]") || userFramed[0].includes("[heading]"));
 	assert.ok(userFramed[0].includes("❀"));
 	assert.ok(userFramed[1].includes("echo hello from user"));
 	assert.ok(userFramed[2].includes("╚"));

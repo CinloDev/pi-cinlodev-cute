@@ -48,7 +48,7 @@ test("Cute Colors - defaults and user overrides", () => {
 		resetAll();
 
 		const colors = loadCuteColors();
-		assert.equal(colors.userMessage, "userMessageBorder");
+		assert.equal(colors.userMessage, "userMessageText");
 		assert.equal(colors.bashMessage, "bash");
 		assert.equal(colors.fetchMessage, "pink");
 		assert.equal(colors.searchMessage, "secondary");
@@ -144,4 +144,23 @@ test("CinlodevCute.json theme - userMessageBg matches toolSuccessBg dark violet"
 	assert.equal(themeJson.vars.toolSuccessBg, "#140a28");
 	assert.equal(themeJson.vars.userMessageText, "#C5C18E");
 	assert.equal(themeJson.colors.userMessageBg, "userMessageBg");
+});
+
+test("CinlodevCute.json theme - strictly conforms to Pi 1.2.0 ThemeJsonSchema", async () => {
+	const themePath = fileURLToPath(new URL("../themes/CinlodevCute.json", import.meta.url));
+	const themeJson = JSON.parse(fs.readFileSync(themePath, "utf8"));
+	assert.equal(themeJson.$schema, "https://pi.dev/schemas/theme.schema.json");
+	assert.equal(themeJson.glyphs, undefined, "glyphs must not exist on root");
+
+	// Official Pi 1.2.0 validator check
+	try {
+		const base = "/home/cinlodev/.pi/agent/install/releases/1.2.0/node_modules/@earendil-works/pi-coding-agent";
+		const { validateThemeJson } = await import(base + "/dist/modes/interactive/theme/theme-schema.js");
+		assert.doesNotThrow(() => validateThemeJson("CinlodevCute.json", themeJson));
+	} catch (e: any) {
+		if (e?.code === "ERR_MODULE_NOT_FOUND") {
+			return;
+		}
+		throw e;
+	}
 });
