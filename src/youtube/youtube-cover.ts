@@ -51,9 +51,11 @@ export function getCoverData(state: YouTubePlayerState | any): CoverData | null 
 		const filePath =
 			state?.thumbnailPath && typeof state.thumbnailPath === "string" && fs.existsSync(state.thumbnailPath)
 				? state.thumbnailPath
-				: fs.existsSync("/tmp/pi-yt-current-cover.png")
-					? "/tmp/pi-yt-current-cover.png"
-					: null;
+				: state?.thumbnailBase64
+					? null
+					: fs.existsSync("/tmp/pi-yt-current-cover.png")
+						? "/tmp/pi-yt-current-cover.png"
+						: null;
 
 		if (filePath) {
 			const stat = fs.statSync(filePath);
