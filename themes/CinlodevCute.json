@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/earendil-works/pi-mono/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+  "$schema": "https://pi.dev/schemas/theme.schema.json",
   "name": "Cinlodev CUTE",
   "vars": {
     "bg": "#1A1218",
@@ -46,26 +46,6 @@
     "gentle": "#a46db5",
     "salmon": "#F0978A"
   },
-  "glyphs": {
-    "frameStyle": "double",
-    "tl": "╔",
-    "tr": "╗",
-    "bl": "╚",
-    "br": "╝",
-    "h": "═",
-    "v": "║",
-    "dividerL": "╠",
-    "dividerR": "╣",
-    "separator": "│",
-    "dot": "·",
-    "brand": "◆",
-    "profileIcon": "❀",
-    "spinnerFrames": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-    "branch": "",
-    "gaugeFilled": "▰",
-    "gaugeEmpty": "▱",
-    "petalFrames": ["✿", "❀", "❁", "✾"]
-  },
   "colors": {
     "accent": "pink",
     "border": "border",
@@ -81,20 +61,8 @@
     "selectedBg": "selection",
     "scrollbarTrack": "borderSubtle",
     "scrollbarThumb": "pink",
-    "secondary": "secondary",
-    "pink": "pink",
-    "pinkBright": "pinkBright",
-    "green": "green",
-    "orange": "orange",
-    "bash": "bash",
-    "bashOutput": "bashOutput",
-    "read": "read",
-    "write": "write",
-    "heading": "heading",
-    "cursorText": "bg",
     "userMessageBg": "userMessageBg",
     "userMessageText": "userMessageText",
-    "userMessageBorder": "userMessageBorder",
     "customMessageBg": "bgSubtle",
     "customMessageText": "text",
     "customMessageLabel": "pink",
@@ -131,9 +99,6 @@
     "thinkingMedium": "heading",
     "thinkingHigh": "border",
     "thinkingXhigh": "border",
-    "bashMode": "pink",
-    "gentle": "gentle",
-    "mint": "mint",
-    "salmon": "salmon"
+    "bashMode": "pink"
   }
 }

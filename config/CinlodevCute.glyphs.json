@@ -1,0 +1,21 @@
+{
+	"_note": "Cinlodev CUTE configurable frame & indicator glyphs. Presets: 'double', 'single', 'rounded', 'ascii'. Overrides in ~/.pi/agent/cute.json under 'glyphs' layer on top of these defaults.",
+	"frameStyle": "double",
+	"tl": "╔",
+	"tr": "╗",
+	"bl": "╚",
+	"br": "╝",
+	"h": "═",
+	"v": "║",
+	"dividerL": "╠",
+	"dividerR": "╣",
+	"separator": "│",
+	"dot": "·",
+	"brand": "◆",
+	"profileIcon": "❀",
+	"spinnerFrames": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+	"branch": "",
+	"gaugeFilled": "▰",
+	"gaugeEmpty": "▱",
+	"petalFrames": ["✿", "❀", "❁", "✾"]
+}

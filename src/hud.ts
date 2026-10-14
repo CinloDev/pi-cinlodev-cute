@@ -2,7 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { cuteGlyphs, frameFg, cutePalette } from "./cute-theme";
+import { cuteGlyphs, frameFg, cutePalette, safeFg } from "./cute-theme.ts";
 import { loadCuteLayout, tuneTuiScroll } from "./cute-layout.ts";
 import { formatProfileDisplay, loadCuteStrings, detectSystemUser } from "./cute-strings.ts";
 import { formatCwd, readActiveProfile, readGitBranch } from "./cute-paths.ts";
@@ -253,7 +253,7 @@ export class GentlemanHudWidget implements Component {
 		const branchGlyph = cuteGlyphs(theme).branch;
 		const branchSuffix =
 			stats.gitBranch && stats.gitBranch !== "no git"
-				? `${sep}${theme.fg("secondary", `${branchGlyph} ${stats.gitBranch}`)}`
+				? `${sep}${safeFg(theme, "secondary", `${branchGlyph} ${stats.gitBranch}`)}`
 				: "";
 		const cwdLabelFull =
 			theme.fg("accent", "Dir: ") +
