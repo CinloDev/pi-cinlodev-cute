@@ -30,3 +30,22 @@ export {
 export {
 	CinlodevUsageCard,
 } from "./usage/usage-card.ts";
+
+export {
+	type ClueUsageData,
+	type ClueUsageModelStat,
+	resolveClueApiKey,
+	resolveClueBaseUrl,
+	resetClueUsageCache,
+	getCachedClueUsage,
+	getClueUsageLastError,
+	setCachedClueUsageForTesting,
+	parseRawClueUsage,
+	fetchClueUsage,
+	triggerClueUsageRefresh,
+} from "./usage/clue-client.ts";
+
+export {
+	CinlodevClueCard,
+} from "./usage/clue-card.ts";
+
