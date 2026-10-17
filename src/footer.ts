@@ -7,7 +7,7 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
-import { CinlodevUsageCard } from "./cute-usage.ts";
+import { CinlodevUsageCard, CinlodevClueCard } from "./cute-usage.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { tuneTuiScroll } from "./cute-layout.ts";
@@ -227,10 +227,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 
 		return {
 			...part,
+			...cluePart,
 			dispose() {
 				uninstall();
 				part.dispose?.();
 				contextPart.dispose?.();
+				cluePart.dispose?.();
 				engramPart.dispose?.();
 				engramHandoffPart.dispose?.();
 				persistentMemoryPart.dispose?.();
