@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseRawClueUsage, setCachedClueUsageForTesting, getCachedClueUsage, resetClueUsageCache } from "../src/usage/clue-client.ts";
 import { CinlodevClueCard } from "../src/usage/clue-card.ts";
 import { SIDEBAR_TAB_CARD_MAP, resolveSidebarTab } from "../src/sidebar-tabs.ts";
+import { installCinlodevFooter } from "../src/footer.ts";
 
 test("clue-client - parseRawClueUsage parses balance, tokens, and topModels cleanly", () => {
 	const mockRaw = {
@@ -89,3 +90,36 @@ test("sidebar tabs - MAIN tab includes clue card", () => {
 	const mainTab = resolveSidebarTab("main");
 	assert.ok(mainTab.cards.includes("clue"));
 });
+
+test("footer - installCinlodevFooter initializes cluePart and disposes cleanly without ReferenceError", () => {
+	let registeredFooterFactory: any = null;
+	const mockCtx: any = {
+		hasUI: true,
+		ui: {
+			setFooter(factory: any) {
+				registeredFooterFactory = factory;
+			},
+		},
+		model: { provider: "test", name: "test-model" },
+		getContextUsage: () => ({ tokens: 1000, contextWindow: 100000 }),
+	};
+	const mockPi: any = {
+		on: () => {},
+		getCommandHistory: () => [],
+	};
+	installCinlodevFooter(mockCtx, mockPi);
+	assert.ok(registeredFooterFactory, "setFooter should have been called");
+
+	const mockTui: any = {
+		requestRender() {},
+		terminal: { columns: 120, rows: 40, write() {} },
+	};
+	const footerInstance = registeredFooterFactory(mockTui, undefined, { getStatus: () => [] });
+	assert.ok(footerInstance, "Footer instance created");
+	assert.equal(typeof footerInstance.dispose, "function");
+
+	assert.doesNotThrow(() => {
+		footerInstance.dispose();
+	});
+});
+
