@@ -11,10 +11,10 @@ export interface CuteSidebarTab {
 }
 
 export const SIDEBAR_TAB_CARD_MAP: Record<string, string[]> = {
-	main: ["footer", "context", "clue", "todo"],
+	main: ["footer", "context", "todo"],
 	git: ["gitGraph", "workingTree"],
 	prof: ["cute-profiles"],
-	mem: ["engram", "engramHandoff", "persistentMemory", "tools"],
+	mem: ["engram", "engramHandoff", "persistentMemory", "ecosystem", "tools"],
 	tree: ["projectTree"],
 	yt: ["youtubePlayer"],
 };

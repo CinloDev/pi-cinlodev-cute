@@ -7,7 +7,8 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
-import { CinlodevUsageCard, CinlodevClueCard } from "./cute-usage.ts";
+import { CinlodevUsageCard } from "./cute-usage.ts";
+import { CinlodevEcosystemCard } from "./ecosystem/ecosystem-card.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { tuneTuiScroll } from "./cute-layout.ts";
@@ -96,10 +97,10 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const persistentMemory = new CinlodevPersistentMemoryCard(ctx, tui, theme, undefined, pi);
 		const memoryGraph = persistentMemory;
 		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
-		const clueCard = new CinlodevClueCard(ctx, tui, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const workingTree = new CinlodevWorkingTreeCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
+		const ecosystemCard = new CinlodevEcosystemCard(ctx, tui, theme);
 		const todos = new CinlodevTodoMirror(ctx, tui, theme);
 
 		footerRegistry.latestTodoTui = tui;
@@ -138,11 +139,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			handleRailClick: (lineIndex: number, button?: string) => usageCard.handleClick(lineIndex, button),
 			handleRailWheel: (delta: number) => usageCard.handleWheel(delta),
 		};
-		const clueRail = {
-			render: (width: number) => clueCard.render(width),
-			invalidate: () => clueCard.invalidate(),
-			handleRailClick: (lineIndex: number, button?: string) => clueCard.handleClick(lineIndex, button),
-		};
 		const gitGraphRail = {
 			render: (width: number, availableHeight?: number) => gitGraph.render(width, availableHeight),
 			invalidate: () => gitGraph.invalidate(),
@@ -178,6 +174,11 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => toolsCard.render(width),
 			invalidate: () => toolsCard.invalidate(),
 		};
+		const ecosystemRail = {
+			render: (width: number) => ecosystemCard.render(width),
+			invalidate: () => ecosystemCard.invalidate(),
+			handleRailClick: (lineIndex: number, button?: string) => ecosystemCard.handleClick(lineIndex, button),
+		};
 		const profilesCard = new CinlodevProfilesExtendedCard(tui, theme, undefined, ctx, pi);
 		const profilesRail = {
 			render: (width: number, availableHeight?: number) => profilesCard.render(width, availableHeight),
@@ -203,10 +204,10 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const persistentMemoryPart = sidebarPart(tui, "persistentMemory", { render: () => [] }, memoryGraphRail);
 		const memoryGraphPart = sidebarPart(tui, "memoryGraph", { render: () => [] }, memoryGraphRail);
 		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
-		const cluePart = sidebarPart(tui, "clue", { render: () => [] }, clueRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const workingTreePart = sidebarPart(tui, "workingTree", { render: () => [] }, workingTreeRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
+		const ecosystemPart = sidebarPart(tui, "ecosystem", { render: () => [] }, ecosystemRail);
 		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
 		const projectTreePart = sidebarPart(tui, "projectTree", { render: () => [] }, projectTreeRail);
 		const youtubePlayerCard = new CinlodevYouTubeCard(tui, theme, ctx);
@@ -234,12 +235,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 
 		return {
 			...part,
-			...cluePart,
+			...ecosystemPart,
 			dispose() {
 				uninstall();
 				part.dispose?.();
 				contextPart.dispose?.();
-				cluePart.dispose?.();
+				ecosystemPart.dispose?.();
 				engramPart.dispose?.();
 				engramHandoffPart.dispose?.();
 				persistentMemoryPart.dispose?.();
