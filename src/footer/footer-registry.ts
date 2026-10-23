@@ -6,6 +6,7 @@ import type { CinlodevEngramCard, CinlodevEngramHandoffCard } from "../cute-engr
 import type { CinlodevPersistentMemoryCard } from "../cute-persistent-memory.ts";
 import type { CinlodevProjectTreeCard } from "../cute-tree.ts";
 import { resetGitFileChangesCache } from "../cute-git-graph.ts";
+import { resetUsageCache } from "../cute-usage.ts";
 
 export interface FooterRegistryState {
 	todoHooksInstalled: boolean;
@@ -31,6 +32,7 @@ export function getLatestTodoMirror(): CinlodevTodoMirror | undefined {
 
 export function invalidateSidebarGitAndTree(): void {
 	resetGitFileChangesCache();
+	resetUsageCache();
 	footerRegistry.latestGitGraph?.invalidate();
 	footerRegistry.latestWorkingTree?.invalidate();
 	footerRegistry.latestPersistentMemory?.invalidate();

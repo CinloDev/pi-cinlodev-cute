@@ -486,3 +486,75 @@ test("cute-profiles - edge cases for account extraction and empty profiles", () 
 	// Non-existent profile details load
 	assert.equal(loadProfileDetails("does-not-exist-xyz", "/tmp"), null);
 });
+
+test("cute-profiles - dynamic multi-provider matching and single pool rendering (Gemini/Argon & Codex)", () => {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cute-profiles-provider-"));
+	const profilesDir = path.join(tmpDir, ".pi", "profiles");
+	fs.mkdirSync(profilesDir, { recursive: true });
+
+	const profileData = {
+		name: "test-multiprovider",
+		description: "Multi-provider test",
+		default_model: "cpamc/cilon-gpt/gpt-6.1-sol",
+		default_effort: "high",
+		model_profiles: {
+			"gentle-ai-worker": {
+				model: "cpamc/cinlodev/gemini-4-argon-high",
+				effort: "high",
+			},
+		},
+	};
+
+	fs.writeFileSync(path.join(profilesDir, "test-multiprovider.json"), JSON.stringify(profileData));
+	fs.writeFileSync(path.join(profilesDir, ".active"), "test-multiprovider");
+
+	// Provide two colliding accounts: 'cilon' (antigravity) and 'cilon-gpt' (codex),
+	// plus 'cinlodev' with ONLY weekly pool (like Gemini/Argon)
+	setCachedAccountsForTesting([
+		{
+			provider: "antigravity",
+			prefix: "cilon",
+			pools: [
+				{ label: "Claude and GPT models · Weekly Limit Remaining", availablePercent: 10, used: 90, total: 100, unlimited: false, resetAt: null },
+			],
+		},
+		{
+			provider: "codex",
+			prefix: "cilon-gpt",
+			pools: [
+				{ label: "Codex / Plus 5h", availablePercent: 67, used: 33, total: 100, unlimited: false, resetAt: null },
+				{ label: "Codex / Plus Semanal", availablePercent: 81, used: 19, total: 100, unlimited: false, resetAt: null },
+			],
+		},
+		{
+			provider: "antigravity",
+			prefix: "cinlodev",
+			pools: [
+				// Only 1 pool: Weekly
+				{ label: "Gemini Models · Weekly Limit Remaining", availablePercent: 100, used: 0, total: 100, unlimited: false, resetAt: null },
+			],
+		},
+	]);
+
+	try {
+		const mockTui: any = { requestRender: () => {} };
+		const card = new CinlodevProfilesExtendedCard(mockTui, undefined, tmpDir);
+		const lines = card.render(50);
+		const fullText = lines.join("\n");
+
+		// 1. Host using GPT must resolve to codex 'cilon-gpt' (67% 5h, 81% Semanal), NOT antigravity 'cilon' (10%)
+		assert.ok(fullText.includes("cilon-gpt"), "Host with GPT model must match codex cilon-gpt");
+		assert.ok(fullText.includes("67%"), "Host must display 67% from codex account");
+		assert.ok(fullText.includes("81%"), "Host must display 81% from codex account");
+		assert.ok(!fullText.includes("10%"), "Host must NOT accidentally match antigravity cilon account");
+
+		// 2. Worker using Gemini/Argon in cinlodev has only 1 weekly pool (100%)
+		assert.ok(fullText.includes("cinlodev"), "Worker must list cinlodev account");
+		assert.ok(fullText.includes("100%"), "Worker with Argon must show 100% weekly quota");
+		// Verify dynamic label Semanal is rendered cleanly alongside the @cinlodev prefix
+		assert.ok(fullText.includes("@cinlodev · Semanal"), "Single-pool account must render @cinlodev · Semanal on first line");
+	} finally {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		resetAll();
+	}
+});

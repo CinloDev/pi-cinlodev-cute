@@ -8,6 +8,7 @@ import {
 	parseRawUsageToAccounts,
 	formatRelativeReset,
 	cleanPoolLabel,
+	cleanDynamicPoolLabel,
 	resetUsageCache,
 	prioritizeActiveAccount,
 	setCachedAccountsForTesting,
@@ -94,9 +95,13 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	const past = new Date(now - 10000).toISOString();
 	assert.equal(formatRelativeReset(past, now), "reseteando…");
 
-	// 2. cleanPoolLabel
+	// 2. cleanPoolLabel & cleanDynamicPoolLabel
 	assert.equal(cleanPoolLabel("Gemini Models · Weekly Limit Remaining"), "Gemini Weekly");
 	assert.equal(cleanPoolLabel("Claude and GPT models · Five Hour Limit Remaining"), "Claude/GPT 5h");
+	assert.equal(cleanDynamicPoolLabel("Claude and GPT models · Five Hour Limit Remaining"), "5h");
+	assert.equal(cleanDynamicPoolLabel("Claude and GPT models · Weekly Limit Remaining"), "Semanal");
+	assert.equal(cleanDynamicPoolLabel("Codex / Plus 5h"), "5h");
+	assert.equal(cleanDynamicPoolLabel("Codex / Plus Semanal"), "Semanal");
 
 	// 3. Parse raw usage to accounts with prefixes
 	const prefixMap = new Map([
