@@ -9,6 +9,7 @@ export {
 	type QuotaThreshold,
 	getQuotaThreshold,
 	cleanPoolLabel,
+	cleanDynamicPoolLabel,
 	formatRelativeReset,
 	prioritizeActiveAccount,
 } from "./usage/usage-thresholds.ts";
@@ -26,9 +27,5 @@ export {
 	fetchUsageAccounts,
 	triggerUsageRefresh,
 } from "./usage/usage-client.ts";
-
-export {
-	CinlodevUsageCard,
-} from "./usage/usage-card.ts";
 
 

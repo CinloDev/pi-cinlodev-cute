@@ -7,7 +7,6 @@ import { installSidebar, sidebarPart } from "./sidebar.ts";
 import { CinlodevTodoMirror } from "./todos.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "./cute-git-graph.ts";
 import { CinlodevToolsCard } from "./cute-tools.ts";
-import { CinlodevUsageCard } from "./cute-usage.ts";
 import { CinlodevEcosystemCard } from "./ecosystem/ecosystem-card.ts";
 import { CinlodevEngramCard, CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
@@ -31,9 +30,6 @@ import {
 import {
 	footerRegistry,
 	getLatestTodoMirror,
-	toggleUsageCard,
-	isUsageCardVisible,
-	getLatestUsageCard,
 	invalidateSidebarGitAndTree,
 } from "./footer/footer-registry.ts";
 
@@ -51,9 +47,6 @@ export {
 	formatCost,
 	renderGauge,
 	getLatestTodoMirror,
-	toggleUsageCard,
-	isUsageCardVisible,
-	getLatestUsageCard,
 	invalidateSidebarGitAndTree,
 	CinlodevCuteFooter,
 	CinlodevCuteContextCard,
@@ -68,7 +61,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				footerRegistry.latestGitGraph?.invalidate();
 				footerRegistry.latestWorkingTree?.invalidate();
 				footerRegistry.latestToolsCard?.invalidate();
-				footerRegistry.latestUsageCard?.invalidate();
 				footerRegistry.latestEngramCard?.invalidate();
 				footerRegistry.latestEngramHandoff?.invalidate();
 				footerRegistry.latestMemoryGraph?.invalidate();
@@ -96,7 +88,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const engramHandoff = new CinlodevEngramHandoffCard(ctx, tui, theme);
 		const persistentMemory = new CinlodevPersistentMemoryCard(ctx, tui, theme, undefined, pi);
 		const memoryGraph = persistentMemory;
-		const usageCard = new CinlodevUsageCard(ctx, tui, theme);
 		const gitGraph = new CinlodevGitGraphCard(ctx, tui, theme);
 		const workingTree = new CinlodevWorkingTreeCard(ctx, tui, theme);
 		const toolsCard = new CinlodevToolsCard(ctx, tui, theme);
@@ -111,7 +102,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		footerRegistry.latestGitGraph = gitGraph;
 		footerRegistry.latestWorkingTree = workingTree;
 		footerRegistry.latestToolsCard = toolsCard;
-		footerRegistry.latestUsageCard = usageCard;
 		footerRegistry.latestEngramCard = engramCard;
 		footerRegistry.latestEngramHandoff = engramHandoff;
 		footerRegistry.latestPersistentMemory = persistentMemory;
@@ -132,12 +122,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			render: (width: number) => engramCard.render(width),
 			invalidate: () => engramCard.invalidate(),
 			handleRailClick: (lineIndex: number) => engramCard.handleClick(lineIndex),
-		};
-		const usageRail = {
-			render: (width: number) => usageCard.render(width),
-			invalidate: () => usageCard.invalidate(),
-			handleRailClick: (lineIndex: number, button?: string) => usageCard.handleClick(lineIndex, button),
-			handleRailWheel: (delta: number) => usageCard.handleWheel(delta),
 		};
 		const gitGraphRail = {
 			render: (width: number, availableHeight?: number) => gitGraph.render(width, availableHeight),
@@ -203,7 +187,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const engramHandoffPart = sidebarPart(tui, "engramHandoff", { render: () => [] }, engramHandoffRail);
 		const persistentMemoryPart = sidebarPart(tui, "persistentMemory", { render: () => [] }, memoryGraphRail);
 		const memoryGraphPart = sidebarPart(tui, "memoryGraph", { render: () => [] }, memoryGraphRail);
-		const usagePart = sidebarPart(tui, "usage", { render: () => [] }, usageRail);
 		const gitGraphPart = sidebarPart(tui, "gitGraph", { render: () => [] }, gitGraphRail);
 		const workingTreePart = sidebarPart(tui, "workingTree", { render: () => [] }, workingTreeRail);
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
@@ -245,7 +228,6 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				engramHandoffPart.dispose?.();
 				persistentMemoryPart.dispose?.();
 				memoryGraphPart.dispose?.();
-				usagePart.dispose?.();
 				gitGraphPart.dispose?.();
 				workingTreePart.dispose?.();
 				toolsPart.dispose?.();

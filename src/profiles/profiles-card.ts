@@ -8,6 +8,7 @@ import {
 	getQuotaThreshold,
 	triggerUsageRefresh,
 	formatRelativeReset,
+	cleanDynamicPoolLabel,
 	type QuotaPoolDisplay,
 } from "../cute-usage.ts";
 import {
@@ -295,33 +296,82 @@ export class CinlodevProfilesExtendedCard implements Component {
 			endX: number;
 		}[] = [];
 
+		const detectExpectedProvider = (model: string): "codex" | "antigravity" | "unknown" => {
+			const m = model.toLowerCase();
+			if (m.includes("gpt") || m.includes("codex") || m.includes("o1") || m.includes("o3") || m.includes("o4")) {
+				return "codex";
+			}
+			if (m.includes("gemini") || m.includes("argon") || m.includes("claude") || m.includes("antigravity")) {
+				return "antigravity";
+			}
+			return "unknown";
+		};
+
+		interface FormattedDynamicPool {
+			label: string;
+			pct: number;
+			threshold: any;
+			resetStr: string;
+		}
+
 		const getAccountModelPools = (
 			account: string,
 			model: string,
 		): {
 			hasAccount: boolean;
-			pool5h?: { pct: number; threshold: any; resetStr: string };
-			poolWeekly?: { pct: number; threshold: any; resetStr: string };
+			resolvedPrefix: string;
+			pools: FormattedDynamicPool[];
 		} => {
-			let matching: any;
-			if (cachedAccounts && cachedAccounts.length > 0) {
-				const accLower = account.toLowerCase();
+			if (!cachedAccounts || cachedAccounts.length === 0) {
+				return { hasAccount: false, resolvedPrefix: account, pools: [] };
+			}
+
+			const accLower = account.toLowerCase().trim();
+			const expectedProv = detectExpectedProvider(model);
+
+			// Match Strategy:
+			// 1. Exact prefix match with matching expected provider
+			let matching = cachedAccounts.find(
+				(a) => a.prefix.toLowerCase() === accLower && (expectedProv === "unknown" || a.provider === expectedProv),
+			);
+
+			// 2. Exact prefix match across any provider
+			if (!matching) {
+				matching = cachedAccounts.find((a) => a.prefix.toLowerCase() === accLower);
+			}
+
+			// 3. Provider-scoped partial match (e.g. "cilon" matches "cilon-gpt" when model is gpt/codex)
+			if (!matching && expectedProv !== "unknown") {
 				matching = cachedAccounts.find(
 					(a) =>
-						a.prefix.toLowerCase() === accLower ||
+						a.provider === expectedProv &&
+						(a.prefix.toLowerCase().includes(accLower) || accLower.includes(a.prefix.toLowerCase())),
+				);
+			}
+
+			// 4. Fallback: first account of expected provider if account is generic like "host" or "default"
+			if (!matching && expectedProv !== "unknown" && (accLower === "host" || accLower === "default" || !accLower)) {
+				matching = cachedAccounts.find((a) => a.provider === expectedProv);
+			}
+
+			// 5. General partial match
+			if (!matching) {
+				matching = cachedAccounts.find(
+					(a) =>
 						a.prefix.toLowerCase().includes(accLower) ||
 						accLower.includes(a.prefix.toLowerCase()),
 				);
 			}
 
 			if (!matching || !matching.pools || matching.pools.length === 0) {
-				return { hasAccount: false };
+				return { hasAccount: false, resolvedPrefix: account, pools: [] };
 			}
 
+			const resolvedPrefix = matching.prefix || account;
 			const modelLower = model.toLowerCase();
 			let candidatePools: QuotaPoolDisplay[] = matching.pools;
 
-			// Extract significant model family tokens (e.g. "gemini", "claude", "gpt", "deepseek", "qwen", "mistral")
+			// Filter pools by model family tokens if the account has distinct pools for different families
 			const modelTokens = modelLower
 				.split(/[\/_.:\s-]+/)
 				.filter((t) => t.length >= 3 && !/^(cpam|cpamc|default|model|high|low|medium|pro|flash|mini|preview|latest)$/.test(t));
@@ -335,34 +385,19 @@ export class CinlodevProfilesExtendedCard implements Component {
 				candidatePools = matchingModelPools;
 			}
 
-			const raw5h = candidatePools.find((p) => /5\s*h|five\s*hour|window|rolling|hourly/i.test(p.label));
-			const rawWeekly = candidatePools.find((p) => /week|seman|7\s*d/i.test(p.label));
-
-			let final5h = raw5h;
-			let finalWeekly = rawWeekly;
-
-			// Fallback si no coinciden exactamente los nombres de 5h o Weekly
-			if (!final5h && !finalWeekly && candidatePools.length > 0) {
-				if (candidatePools.length === 1) {
-					final5h = candidatePools[0];
-				} else {
-					final5h = candidatePools[0];
-					finalWeekly = candidatePools[1];
-				}
-			}
-
-			const toPoolInfo = (p?: QuotaPoolDisplay) => {
-				if (!p) return undefined;
+			// Format all candidate pools dynamically
+			const formattedPools: FormattedDynamicPool[] = candidatePools.map((p) => {
 				const pct = Math.round(p.availablePercent);
 				const threshold = getQuotaThreshold(p.availablePercent, c);
 				const resetStr = formatRelativeReset(p.resetAt);
-				return { pct, threshold, resetStr };
-			};
+				const label = cleanDynamicPoolLabel(p.label);
+				return { label, pct, threshold, resetStr };
+			});
 
 			return {
 				hasAccount: true,
-				pool5h: toPoolInfo(final5h),
-				poolWeekly: toPoolInfo(finalWeekly),
+				resolvedPrefix,
+				pools: formattedPools,
 			};
 		};
 
@@ -382,31 +417,25 @@ export class CinlodevProfilesExtendedCard implements Component {
 			account: string,
 			quotaInfo: ReturnType<typeof getAccountModelPools>,
 		): void => {
-			if (!quotaInfo.hasAccount || (!quotaInfo.pool5h && !quotaInfo.poolWeekly)) {
+			if (!quotaInfo.hasAccount || quotaInfo.pools.length === 0) {
 				bodyLines.push(boxLine(c.mint(`@${account}`), c.dim("sin cuota")));
 				bodyLines.push(boxLine(renderFullGaugeBar(undefined)));
 				return;
 			}
 
-			// Barra 1: 5h Window
-			if (quotaInfo.pool5h) {
-				const p5 = quotaInfo.pool5h;
-				const left5h = `${c.mint(`@${account}`)} ${c.dim("·")} ${c.muted("5h")}`;
-				const pctText = c.bold(p5.threshold.color(`${p5.pct}%`));
-				const right5h = p5.resetStr ? `${pctText} ${c.dim(`(${p5.resetStr})`)}` : pctText;
-				bodyLines.push(boxLine(left5h, right5h));
-				bodyLines.push(boxLine(renderFullGaugeBar(p5)));
-			}
+			const displayPrefix = quotaInfo.resolvedPrefix || account;
 
-			// Barra 2: Weekly Limit
-			if (quotaInfo.poolWeekly) {
-				const pw = quotaInfo.poolWeekly;
-				const leftWeekly = `${c.muted("Semanal")}`;
-				const pctText = c.bold(pw.threshold.color(`${pw.pct}%`));
-				const rightWeekly = pw.resetStr ? `${pctText} ${c.dim(`(${pw.resetStr})`)}` : pctText;
-				bodyLines.push(boxLine(leftWeekly, rightWeekly));
-				bodyLines.push(boxLine(renderFullGaugeBar(pw)));
-			}
+			// Render each pool dynamically (1 pool for Gemini/Argon, 2 pools for Codex/Claude, etc.)
+			quotaInfo.pools.forEach((pool, idx) => {
+				const isFirst = idx === 0;
+				const left = isFirst
+					? `${c.mint(`@${displayPrefix}`)} ${c.dim("·")} ${c.muted(pool.label)}`
+					: `${c.muted(pool.label)}`;
+				const pctText = c.bold(pool.threshold.color(`${pool.pct}%`));
+				const right = pool.resetStr ? `${pctText} ${c.dim(`(${pool.resetStr})`)}` : pctText;
+				bodyLines.push(boxLine(left, right));
+				bodyLines.push(boxLine(renderFullGaugeBar(pool)));
+			});
 		};
 
 		// 2. Host row

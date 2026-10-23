@@ -55,6 +55,20 @@ export function cleanPoolLabel(label: string): string {
 		.trim();
 }
 
+/**
+ * Returns a standardized, ultra-concise label for dynamic quota bars:
+ * e.g. "5h", "Semanal", "Diario", "Mensual".
+ */
+export function cleanDynamicPoolLabel(label: string): string {
+	if (!label) return "Cuota";
+	if (/5\s*h|five\s*hour|hourly/i.test(label)) return "5h";
+	if (/week|seman|7\s*d/i.test(label)) return "Semanal";
+	if (/day|diari|24\s*h/i.test(label)) return "Diario";
+	if (/month|mensual|30\s*d/i.test(label)) return "Mensual";
+	const cleaned = cleanPoolLabel(label);
+	return cleaned || "Cuota";
+}
+
 export function formatRelativeReset(resetAt: string | null, now = Date.now()): string {
 	if (!resetAt) return "";
 	const date = new Date(resetAt);
