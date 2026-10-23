@@ -9,6 +9,7 @@ export {
 	type QuotaThreshold,
 	getQuotaThreshold,
 	cleanPoolLabel,
+	cleanDynamicPoolLabel,
 	formatRelativeReset,
 	prioritizeActiveAccount,
 } from "./usage/usage-thresholds.ts";
