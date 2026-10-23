@@ -27,8 +27,4 @@ export {
 	triggerUsageRefresh,
 } from "./usage/usage-client.ts";
 
-export {
-	CinlodevUsageCard,
-} from "./usage/usage-card.ts";
-
 

@@ -8,7 +8,6 @@ import {
 	parseRawUsageToAccounts,
 	formatRelativeReset,
 	cleanPoolLabel,
-	CinlodevUsageCard,
 	resetUsageCache,
 	prioritizeActiveAccount,
 	setCachedAccountsForTesting,
@@ -157,83 +156,3 @@ test("cute-usage - parseRawUsageToAccounts and formatRelativeReset", () => {
 	assert.equal(prioritized[0].prefix, "acc_active", "Active orchestrator prefix must be at index 0");
 });
 
-test("cute-usage - CinlodevUsageCard visibility toggle and Context-style gauge rendering", () => {
-	const mockTheme = {
-		fg: (role: string, text: string) => `[${role}]${text}[/${role}]`,
-	} as any;
-
-	let renderRequested = 0;
-	const mockTui = {
-		requestRender: () => {
-			renderRequested++;
-		},
-	} as any;
-
-	const mockCtx = {} as any;
-	const card = new CinlodevUsageCard(mockCtx, mockTui, mockTheme);
-
-	// 1. Initially hidden: renders []
-	assert.equal(card.isVisible(), false);
-	assert.deepEqual(card.render(50), [], "Hidden card must return []");
-
-	// 2. Toggle to visible
-	const state1 = card.toggle();
-	assert.equal(state1, true);
-	assert.equal(card.isVisible(), true);
-	assert.equal(renderRequested, 1);
-
-	// 3. Render when visible (wide width for mock tags)
-	const lines = card.render(220);
-	assert.ok(lines.length >= 3, "Rendered card must have top, body rows, and bottom");
-	assert.ok(lines[0].includes("Quotas"), "Top header must contain 'Quotas'");
-	assert.ok(lines[0].includes("Alt+Q"), "Top header must indicate shortcut 'Alt+Q'");
-	assert.ok(lines[lines.length - 1].includes("╝"), "Bottom border must close the card");
-
-	// 4. Toggle back to hidden
-	const state2 = card.toggle();
-	assert.equal(state2, false);
-	assert.equal(card.isVisible(), false);
-	assert.equal(renderRequested, 2);
-	assert.deepEqual(card.render(50), [], "Hidden card must return [] after toggle off");
-
-	// 5. Render pools at different quota levels with dynamic 4-tier semáforo colors
-	setCachedAccountsForTesting([
-		{
-			provider: "antigravity",
-			prefix: "cin82",
-			pools: [
-				{ label: "Optimal Pool", availablePercent: 90, used: 10, total: 100, unlimited: false, resetAt: null },
-				{ label: "Medium Pool", availablePercent: 50, used: 50, total: 100, unlimited: false, resetAt: null },
-				{ label: "Alert Pool", availablePercent: 30, used: 70, total: 100, unlimited: false, resetAt: null },
-				{ label: "Critical Pool", availablePercent: 10, used: 90, total: 100, unlimited: false, resetAt: null },
-			],
-		},
-	]);
-	card.toggle(); // turn on
-	const coloredLines = card.render(220);
-	const renderedText = coloredLines.join("\n");
-	assert.ok(renderedText.includes("[mint]●[/mint]"), "90% pool bullet must be mint");
-	assert.ok(renderedText.includes("[mint]90%[/mint]"), "90% pool percentage must be mint");
-	assert.ok(renderedText.includes("[heading]●[/heading]"), "50% pool bullet must be gold/heading");
-	assert.ok(renderedText.includes("[heading]50%[/heading]"), "50% pool percentage must be gold/heading");
-	assert.ok(renderedText.includes("[orange]●[/orange]"), "30% pool bullet must be orange");
-	assert.ok(renderedText.includes("[orange]30%[/orange]"), "30% pool percentage must be orange");
-	assert.ok(renderedText.includes("[red]●[/red]"), "10% pool bullet must be red/coral");
-	assert.ok(renderedText.includes("[red]10%[/red]"), "10% pool percentage must be red/coral");
-	card.toggle(); // turn off
-
-	// 6. Mouse wheel and bidirectional click navigation (with cached accounts)
-	renderRequested = 0;
-	setCachedAccountsForTesting([
-		{ provider: "antigravity", prefix: "acc_active", pools: [] },
-		{ provider: "antigravity", prefix: "test_user", pools: [] },
-	]);
-	card.handleClick(0, "left"); // forward
-	assert.equal(renderRequested, 1);
-	card.handleClick(0, "right"); // backward
-	assert.equal(renderRequested, 2);
-	card.handleWheel(-1); // wheel up
-	assert.equal(renderRequested, 3);
-	card.handleWheel(1); // wheel down
-	assert.equal(renderRequested, 4);
-});

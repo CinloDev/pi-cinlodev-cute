@@ -190,7 +190,6 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 				key !== "engram" &&
 				key !== "engramHandoff" &&
 				key !== "engram-handoff" &&
-				key !== "usage" &&
 				key !== "gitGraph" &&
 				key !== "workingTree" &&
 				key !== "working-tree" &&
