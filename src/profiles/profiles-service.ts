@@ -513,7 +513,13 @@ export async function switchProfile(
 					targetModel = available?.find?.(
 						(m: any) =>
 							(m.provider === provider || m.providerId === provider) &&
-							(m.id === modelId || m.model === modelId || m.name === modelId),
+							(
+								m.id === modelId ||
+								m.model === modelId ||
+								m.name === modelId ||
+								m.id?.endsWith?.("/" + modelId) ||
+								m.id?.toLowerCase?.().endsWith?.("/" + modelId.toLowerCase())
+							),
 					);
 				} catch {}
 			}

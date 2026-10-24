@@ -1,15 +1,18 @@
 import type { TUI } from "@earendil-works/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CinlodevTodoMirror } from "../todos.ts";
 import type { CinlodevGitGraphCard, CinlodevWorkingTreeCard } from "../cute-git-graph.ts";
 import type { CinlodevToolsCard } from "../cute-tools.ts";
 import type { CinlodevEngramCard, CinlodevEngramHandoffCard } from "../cute-engram.ts";
 import type { CinlodevPersistentMemoryCard } from "../cute-persistent-memory.ts";
 import type { CinlodevProjectTreeCard } from "../cute-tree.ts";
+import type { CinlodevCutePoolCard } from "../cpamc/pool-card.ts";
 import { resetGitFileChangesCache } from "../cute-git-graph.ts";
 import { resetUsageCache } from "../cute-usage.ts";
 
 export interface FooterRegistryState {
 	todoHooksInstalled: boolean;
+	latestCtx?: ExtensionContext;
 	latestTodoTui?: TUI;
 	latestTodoMirror?: CinlodevTodoMirror;
 	latestGitGraph?: CinlodevGitGraphCard;
@@ -20,6 +23,7 @@ export interface FooterRegistryState {
 	latestPersistentMemory?: CinlodevPersistentMemoryCard;
 	latestMemoryGraph?: CinlodevPersistentMemoryCard;
 	latestProjectTree?: CinlodevProjectTreeCard;
+	latestPoolCard?: CinlodevCutePoolCard;
 }
 
 export const footerRegistry: FooterRegistryState = {
