@@ -3,11 +3,13 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { safeFg, unifySidebarCardFrame } from "./cute-theme.ts";
 import { loadCuteLayout } from "./cute-layout.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
+import { CinlodevCutePoolCard } from "./cpamc/pool-card.ts";
 import { CinlodevGitGraphCard, CinlodevWorkingTreeCard, getGitSyncBadge } from "./cute-git-graph.ts";
 import { CinlodevEngramHandoffCard } from "./cute-engram.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { CinlodevYouTubeCard } from "./cute-youtube.ts";
+import { footerRegistry } from "./footer/footer-registry.ts";
 import { measureDockMetrics } from "./sidebar-dock.ts";
 import { renderCUTESidebarBanner } from "./sidebar-state.ts";
 import {
@@ -49,9 +51,16 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 	const activeTab = resolveSidebarTab(state.activeTabId ?? layout.defaultTab);
 	state.activeTabId = activeTab.id;
 
-	const targetCardKeys = !tabsEnabled
+	let targetCardKeys = !tabsEnabled
 		? ["footer", "context", "engram", "gitGraph", "tools", "cute-profiles", "todo"]
-		: activeTab.cards;
+		: [...activeTab.cards];
+
+	if (activeTab.id === "prof") {
+		const effCtx = (ctx as any).ctx ?? footerRegistry.latestCtx;
+		const rawModel = effCtx?.model?.id || (effCtx?.model as any)?.name || "";
+		const isPool = rawModel.toLowerCase().includes("pool-");
+		targetCardKeys = isPool ? ["cute-pool"] : ["cute-profiles"];
+	}
 
 	const hasYouTube = targetCardKeys.some(
 		(key) => key === "youtubePlayer" || key === "youtube-player" || key === "yt",
@@ -86,7 +95,7 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 	if (targetCardKeys.length === 1) {
 		availableCardHeight = totalTargetHeight;
 		cardHeights = [totalTargetHeight];
-	} else if (targetCardKeys.length === 2) {
+	} else if (targetCardKeys.length === 2 && (activeTab.id === "git" || targetCardKeys.includes("gitGraph"))) {
 		const interCardGap = 1;
 		const availableForCards = Math.max(14, totalTargetHeight - interCardGap);
 		const half = Math.floor(availableForCards / 2);
@@ -107,11 +116,40 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 		availableCardHeight = remainingForTodo;
 		const todoIndex = targetCardKeys.indexOf("todo");
 		cardHeights[todoIndex] = remainingForTodo;
+	} else if (targetCardKeys.includes("cute-profiles") || targetCardKeys.includes("cute-profiles-extended") || targetCardKeys.includes("profiles")) {
+		let priorLines = 0;
+		for (const key of targetCardKeys) {
+			if (key === "cute-profiles" || key === "cute-profiles-extended" || key === "profiles") break;
+			let comp = state.parts.get(key);
+			if (!comp && (key === "cute-pool" || key === "cpamc-pool" || key === "pool")) {
+				comp = new CinlodevCutePoolCard(tui, theme, (ctx as any).ctx, (ctx as any).pi);
+				state.parts.set("cute-pool", comp);
+			}
+			const raw = [...(comp?.render(netWidth) ?? [])];
+			while (raw.length && raw[raw.length - 1]?.trim() === "") raw.pop();
+			if (raw.length > 0) {
+				priorLines += raw.length + 1;
+			}
+		}
+		const remainingForProfiles = Math.max(10, totalTargetHeight - priorLines);
+		availableCardHeight = remainingForProfiles;
+		const profIndex = targetCardKeys.findIndex((k) => k === "cute-profiles" || k === "cute-profiles-extended" || k === "profiles");
+		cardHeights[profIndex] = remainingForProfiles;
 	}
 
 	const sectionData = targetCardKeys
 		.map((key, index) => {
 			let component = state.parts.get(key);
+			if (
+				!component &&
+				(key === "cute-pool" || key === "cpamc-pool" || key === "pool")
+			) {
+				component = state.parts.get("cute-pool") || state.parts.get("cpamc-pool");
+				if (!component) {
+					component = new CinlodevCutePoolCard(tui, theme, (ctx as any).ctx, (ctx as any).pi);
+					state.parts.set("cute-pool", component);
+				}
+			}
 			if (
 				!component &&
 				(key === "cute-profiles" || key === "cute-profiles-extended" || key === "profiles")
@@ -178,7 +216,19 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 					state.parts.set("youtubePlayer", component);
 				}
 			}
-			const renderHeight = (targetCardKeys.length === 1 || targetCardKeys.length === 2 || key === "projectTree" || key === "project-tree" || key === "todo")
+			const isGitSplit = targetCardKeys.length === 2 && (activeTab.id === "git" || targetCardKeys.includes("gitGraph"));
+			const isExpandableKey =
+				targetCardKeys.length === 1 ||
+				isGitSplit ||
+				key === "projectTree" ||
+				key === "project-tree" ||
+				key === "todo" ||
+				key === "cute-pool" ||
+				key === "cute-profiles" ||
+				key === "cute-profiles-extended" ||
+				key === "profiles";
+
+			const renderHeight = isExpandableKey
 				? (cardHeights[index] ?? availableCardHeight)
 				: undefined;
 			const rawLines = [...(component?.render(netWidth, renderHeight as any) ?? [])];
@@ -195,6 +245,7 @@ export function buildSidebarRailLines(ctx: RailBuilderContext): RailBuildResult 
 				key !== "working-tree" &&
 				key !== "tools" &&
 				key !== "cute-profiles" &&
+				key !== "cute-pool" &&
 				key !== "cute-profiles-extended" &&
 				key !== "profiles" &&
 				key !== "memoryGraph" &&
