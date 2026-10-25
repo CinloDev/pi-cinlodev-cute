@@ -1,0 +1,29 @@
+{
+	"name": "cinlodev-sidebar",
+	"version": "1.0.0",
+	"description": "Interactive Multitab Sidebar for Pi & Gentle Shell with Git Graph, Project Tree, and Memory Tools",
+	"type": "module",
+	"main": "index.ts",
+	"files": [
+		"index.ts",
+		"src/",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"test": "node --experimental-strip-types --test test/*.test.ts"
+	},
+	"keywords": [
+		"pi",
+		"pi-extension",
+		"pi-coding-agent",
+		"sidebar",
+		"git-graph",
+		"project-tree"
+	],
+	"license": "MIT",
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	}
+}
