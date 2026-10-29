@@ -13,6 +13,7 @@ import { CinlodevPersistentMemoryCard } from "./cute-persistent-memory.ts";
 import { tuneTuiScroll } from "./cute-layout.ts";
 import { formatTokenCount, getContextThreshold } from "./cute-metrics.ts";
 import { CinlodevProfilesExtendedCard } from "./cute-profiles.ts";
+import { CinlodevCutePoolCard } from "./cpamc/pool-card.ts";
 import { CinlodevProjectTreeCard } from "./cute-tree.ts";
 import { CinlodevYouTubeCard } from "./cute-youtube.ts";
 import { sidebarState } from "./sidebar-state.ts";
@@ -54,6 +55,7 @@ export {
 
 export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): void {
 	if (!ctx.hasUI) return;
+	footerRegistry.latestCtx = ctx;
 	if (!footerRegistry.todoHooksInstalled) {
 		footerRegistry.todoHooksInstalled = true;
 		const refreshTodos = () => {
@@ -65,6 +67,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				footerRegistry.latestEngramHandoff?.invalidate();
 				footerRegistry.latestMemoryGraph?.invalidate();
 				footerRegistry.latestTodoMirror?.invalidate();
+				footerRegistry.latestPoolCard?.invalidate();
 				if (footerRegistry.latestTodoTui && (footerRegistry.latestTodoTui as any).__cuteTodoRail) {
 					const state = sidebarState(footerRegistry.latestTodoTui);
 					state.parts.set("todo", (footerRegistry.latestTodoTui as any).__cuteTodoRail);
@@ -73,6 +76,10 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 			} catch {}
 		};
 		pi.on("session_start", refreshTodos);
+		pi.on("model_select", (_event: any, eventCtx?: any) => {
+			if (eventCtx) footerRegistry.latestCtx = eventCtx;
+			refreshTodos();
+		});
 		pi.on("turn_end", refreshTodos);
 		pi.on("tool_execution_end", refreshTodos);
 		pi.on("entry_appended", refreshTodos);
@@ -171,6 +178,12 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				profilesCard.handleRailClick(lineIndex, button, localX),
 			handleRailWheel: (delta: number) => profilesCard.handleRailWheel(delta),
 		};
+		const poolCard = new CinlodevCutePoolCard(tui, theme, ctx, pi);
+		footerRegistry.latestPoolCard = poolCard;
+		const poolRail = {
+			render: (width: number, availableHeight?: number) => poolCard.render(width, availableHeight),
+			invalidate: () => poolCard.invalidate(),
+		};
 		const projectTreeCard = new CinlodevProjectTreeCard(ctx, tui, theme);
 		footerRegistry.latestProjectTree = projectTreeCard;
 		const projectTreeRail = {
@@ -192,6 +205,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 		const toolsPart = sidebarPart(tui, "tools", { render: () => [] }, toolsRail);
 		const ecosystemPart = sidebarPart(tui, "ecosystem", { render: () => [] }, ecosystemRail);
 		const profilesPart = sidebarPart(tui, "cute-profiles", { render: () => [] }, profilesRail);
+		const poolPart = sidebarPart(tui, "cute-pool", { render: () => [] }, poolRail);
 		const projectTreePart = sidebarPart(tui, "projectTree", { render: () => [] }, projectTreeRail);
 		const youtubePlayerCard = new CinlodevYouTubeCard(tui, theme, ctx);
 		const youtubePlayerRail = {
@@ -232,6 +246,7 @@ export function installCinlodevFooter(ctx: ExtensionContext, pi: ExtensionAPI): 
 				workingTreePart.dispose?.();
 				toolsPart.dispose?.();
 				profilesPart.dispose?.();
+				poolPart.dispose?.();
 				projectTreePart.dispose?.();
 				youtubePlayerPart.dispose?.();
 				youtubePlayerCard.dispose?.();

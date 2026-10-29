@@ -196,6 +196,36 @@ export function formatTranscriptChild(
 }
 
 /**
+ * One formatted slice of the transcript (a single child or a grouped run of
+ * them), kept so unchanged history is not reformatted on every frame.
+ */
+interface FormattedSlice {
+	width: number;
+	theme: Theme | undefined;
+	user: string;
+	strings: unknown;
+	colors: unknown;
+	/** Whether the output so far ended in a blank row, and whether it was empty. */
+	leadingBlank: boolean;
+	leadingEmpty: boolean;
+	span: Component[];
+	/** Neighbours that decided where the group ended. */
+	after: [Component | undefined, Component | undefined];
+	deps: Array<{ child: Component; width: number; raw: string[] }>;
+	lines: string[];
+	mouse: Array<{ component: Component; height: number }>;
+}
+
+const formattedSlices = new WeakMap<object, FormattedSlice>();
+
+function sameLines(a: string[], b: string[]): boolean {
+	if (a === b) return true;
+	if (a.length !== b.length) return false;
+	for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false;
+	return true;
+}
+
+/**
  * Formats a list of transcript children with intelligent grouping.
  */
 export function formatTranscriptChildren(
@@ -216,15 +246,68 @@ export function formatTranscriptChildren(
 		}
 	};
 
+	// Raw renders are recorded per slice so a cached slice can be validated by
+	// comparing them (cheap, components cache their own render) instead of
+	// reformatting the whole history on every frame.
+	let deps: FormattedSlice["deps"] = [];
+	const rd = (comp: Component, w: number): string[] => {
+		const raw = comp.render(w);
+		deps.push({ child: comp, width: w, raw });
+		return raw;
+	};
+	const leadingState = () => ({ blank: lines.length > 0 && lines[lines.length - 1] === "", empty: lines.length === 0 });
+
+	let pending: { start: number; lineStart: number; mouseStart: number; deps: FormattedSlice["deps"]; blank: boolean; empty: boolean } | undefined;
+	const finalize = (end: number) => {
+		if (!pending) return;
+		const p = pending;
+		pending = undefined;
+		formattedSlices.set(children[p.start], {
+			width, theme, user, strings, colors,
+			leadingBlank: p.blank,
+			leadingEmpty: p.empty,
+			span: children.slice(p.start, end),
+			after: [children[end], children[end + 1]],
+			deps: p.deps,
+			lines: lines.slice(p.lineStart),
+			mouse: mouseChildren.slice(p.mouseStart),
+		});
+	};
+	const reusable = (slice: FormattedSlice, at: number): boolean => {
+		const lead = leadingState();
+		if (
+			slice.width !== width || slice.theme !== theme || slice.user !== user ||
+			slice.strings !== strings || slice.colors !== colors ||
+			slice.leadingBlank !== lead.blank || slice.leadingEmpty !== lead.empty
+		) return false;
+		const end = at + slice.span.length;
+		if (end > children.length) return false;
+		for (let k = 0; k < slice.span.length; k++) if (children[at + k] !== slice.span[k]) return false;
+		if (children[end] !== slice.after[0] || children[end + 1] !== slice.after[1]) return false;
+		for (const d of slice.deps) if (!sameLines(d.child.render(d.width), d.raw)) return false;
+		return true;
+	};
+
 	let i = 0;
 	while (i < children.length) {
+		finalize(i);
+		const cached = formattedSlices.get(children[i]);
+		if (cached && reusable(cached, i)) {
+			for (const line of cached.lines) lines.push(line);
+			for (const m of cached.mouse) mouseChildren.push(m);
+			i += cached.span.length;
+			continue;
+		}
+		deps = [];
+		const lead = leadingState();
+		pending = { start: i, lineStart: lines.length, mouseStart: mouseChildren.length, deps, blank: lead.blank, empty: lead.empty };
 		const child = children[i];
 		const name = (child as unknown as { constructor?: { name?: string } })?.constructor?.name ?? "";
 
 		// 1. User Message
 		if (name === "UserMessageComponent") {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const boxed = frameCategoryBox(rawLines, `❀ ${user}`, colors.userMessage, width, theme);
 			mouseChildren.push({ component: child, height: boxed.length });
 			lines.push(...boxed);
@@ -252,7 +335,7 @@ export function formatTranscriptChildren(
 			const combinedLines: string[] = [];
 			for (let j = 0; j < bashGroup.length; j++) {
 				const comp = bashGroup[j];
-				const raw = comp.render(width - 4);
+				const raw = rd(comp, width - 4);
 				const cleaned = cleanBashLines(raw);
 				if (cleaned.length > 0) {
 					if (combinedLines.length > 0) {
@@ -287,7 +370,7 @@ export function formatTranscriptChildren(
 		// 3. Read tool execution in soft lilac card with Dracula highlighting
 		if (isReadComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const styled = formatReadLines(unwrapped, toolFilePath(child, unwrapped), theme);
 			const boxed = frameCategoryBox(styled, "\u270E read", colors.readMessage, width, theme);
@@ -300,7 +383,7 @@ export function formatTranscriptChildren(
 		// 4. Write / edit tool execution in barely-blue card
 		if (isWriteComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const styled = formatWriteDiffLines(unwrapped, toolFilePath(child, unwrapped), theme, (child as any).toolName);
 			const boxed = frameCategoryBox(styled, "\u270E write", colors.writeMessage, width, theme);
@@ -313,7 +396,7 @@ export function formatTranscriptChildren(
 		// 4b. Fetch tool execution in pink card; inner dark background preserved
 		if (isFetchComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const boxed = frameCategoryBox(unwrapped, "fetch", colors.fetchMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
@@ -325,7 +408,7 @@ export function formatTranscriptChildren(
 		// 4c. Search tool execution in dusty-rose card; inner dark background preserved
 		if (isSearchComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const boxed = frameCategoryBox(unwrapped, "search", colors.searchMessage, width, theme);
 			mouseChildren.push({ component: new FramedCardMouseProxy(child, boxed.length), height: boxed.length });
@@ -336,7 +419,7 @@ export function formatTranscriptChildren(
 
 		if (isReviewComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width - 4);
+			const rawLines = rd(child, width - 4);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const title = extractReviewHeader(unwrapped, child);
 			const styled = formatReviewOutputLines(unwrapped, theme);
@@ -366,7 +449,7 @@ export function formatTranscriptChildren(
 
 			const combinedLines: string[] = [];
 			for (const comp of memGroup) {
-				const raw = comp.render(width - 4);
+				const raw = rd(comp, width - 4);
 				const unwrapped = unwrapNativeCard(raw);
 				if (combinedLines.length > 0) {
 					combinedLines.push("");
@@ -431,7 +514,7 @@ export function formatTranscriptChildren(
 
 			if (allStatusPolls && agentGroup.length > 1) {
 				const latest = agentGroup[agentGroup.length - 1];
-				const raw = latest.render(width);
+				const raw = rd(latest, width);
 				const unwrapped = unwrapNativeCard(raw);
 				const styled = formatSubagentLines(unwrapped, theme);
 				const countHint = safeFg(theme, "muted", ` (${agentGroup.length} status polls coalesced)`, "muted");
@@ -441,7 +524,7 @@ export function formatTranscriptChildren(
 				combinedLines = styled;
 			} else {
 				for (const comp of agentGroup) {
-					const raw = comp.render(width - 4);
+					const raw = rd(comp, width - 4);
 					const unwrapped = unwrapNativeCard(raw);
 					if (combinedLines.length > 0) {
 						combinedLines.push("");
@@ -492,7 +575,7 @@ export function formatTranscriptChildren(
 			const combinedLines: string[] = [];
 			for (let j = 0; j < errorGroup.length; j++) {
 				const comp = errorGroup[j];
-				const raw = comp.render(width - 4);
+				const raw = rd(comp, width - 4);
 				const unwrapped = unwrapNativeCard(raw);
 				if (combinedLines.length > 0) {
 					combinedLines.push("");
@@ -524,7 +607,7 @@ export function formatTranscriptChildren(
 		// 6. Grep tool execution (free, no card, Dracula highlighted)
 		if (isGrepComponent(child)) {
 			ensureBreathingRoom();
-			const rawLines = child.render(width);
+			const rawLines = rd(child, width);
 			const unwrapped = unwrapNativeCard(rawLines);
 			const styled = formatGrepLines(unwrapped, theme);
 			mouseChildren.push({ component: child, height: styled.length });
@@ -535,7 +618,7 @@ export function formatTranscriptChildren(
 
 		// 7. Assistant prose and other components
 		ensureBreathingRoom();
-		const rawLines = child.render(width);
+		const rawLines = rd(child, width);
 		if (isAsciiArtOrBanner(rawLines)) {
 			mouseChildren.push({ component: child, height: rawLines.length });
 			lines.push(...rawLines);
@@ -551,6 +634,8 @@ export function formatTranscriptChildren(
 		lines.push(...transformed);
 		i++;
 	}
+
+	finalize(i);
 
 	return { lines, mouseChildren };
 }

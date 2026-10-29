@@ -536,6 +536,81 @@ test("sidebar tabs - switching to git tab renders 2 cards at 50/50 split without
 });
 
 
+test("sidebar tabs - switching to prof tab renders cute-profiles filling full height", () => {
+	resetAll();
+	const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+	const mockLayoutRoot: any = {
+		render: () => ["line1", "line2"],
+		invalidate: () => {},
+	};
+	mockLayoutRoot[NODE] = () => ({
+		type: "hstack",
+		entries: [
+			{ component: mockLayoutRoot, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: { render: () => [] }, basis: 50, grow: 0, shrink: 0, minSize: 50 },
+		],
+	});
+
+	const mockTui: any = {
+		terminal: { columns: 160, rows: 40 },
+		mode: "fullscreen",
+		layoutRoot: mockLayoutRoot,
+		requestRender: () => {},
+	};
+
+	const cleanup = installSidebar(mockTui);
+	try {
+		const state = sidebarState(mockTui);
+		mockLayoutRoot[NODE]();
+
+		// Switch to PROF tab
+		state.activeTabId = "prof";
+
+		const nodeResult = mockLayoutRoot[NODE]();
+		const scrollEntry = nodeResult.entries.find((e: any) => e.component && typeof e.component.handleMouse === "function");
+		assert.ok(scrollEntry, "ScrollView rail entry must be mounted");
+
+		const layout = loadCuteLayout().sidebar;
+		const railLines = scrollEntry.component.render(layout.railWidth);
+		const joined = railLines.join("\n");
+		assert.ok(joined.includes("Profiles & Clusters"), "Prof tab rail must render 'Profiles & Clusters'");
+		assert.ok(!joined.includes("MODELO DEDICADO"), "Non-pool models must not render dummy model card");
+		assert.ok(railLines.length >= 30, `Prof rail should have full height, got ${railLines.length}`);
+	} finally {
+		cleanup();
+		resetAll();
+	}
+});
+
+
+test("CinlodevCutePoolCard - renders pool telemetry when pool model is active and hides on dedicated model", async () => {
+	const { CinlodevCutePoolCard } = await import("../src/cpamc/pool-card.ts");
+
+	const mockPoolCtx: any = {
+		model: { id: "cpamc/Pool-01-gemini", provider: "cpamc" },
+		hasUI: true,
+	};
+
+	const poolCard = new CinlodevCutePoolCard(undefined, undefined, mockPoolCtx);
+	const poolLines = poolCard.render(50);
+	assert.ok(poolLines.length > 0, "Pool card must render lines when model has 'Pool-'");
+	const joinedPool = poolLines.join("\n");
+	assert.ok(joinedPool.includes("CUENTAS CPAMC"), "Must include pool header title");
+	assert.ok(joinedPool.includes("TRABAJANDO AHORA"), "Must include working now row");
+	assert.ok(joinedPool.includes("CUIDANDO EL CHAT"), "Must include chat care row");
+	assert.ok(joinedPool.includes("LA QUE SIGUE"), "Must include next row");
+
+	const mockDedicatedCtx: any = {
+		model: { id: "cilon-gpt/gpt-6.1-sol", provider: "cpamc" },
+		hasUI: true,
+	};
+	const dedicatedCard = new CinlodevCutePoolCard(undefined, undefined, mockDedicatedCtx);
+	const dedicatedLines = dedicatedCard.render(50);
+	assert.equal(dedicatedLines.length, 0, "Dedicated models must yield 0 lines");
+});
+
+
 test("sidebar-dock - measureDockMetrics, findDock and findTranscript execute safely", async () => {
 	const { measureDockMetrics, measureDockHeight, getVisibleInputBottomOffset, findDock, findTranscript } = await import("../src/sidebar-dock.ts");
 
