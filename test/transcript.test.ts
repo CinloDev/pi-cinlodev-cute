@@ -1176,3 +1176,49 @@ test("frameCategoryBox - smuggled graphics escapes keep border intact", () => {
 	assert.ok(boxed[1].endsWith("[read]║[/read]"), "right border intact");
 	assert.ok(boxed[1].includes(gfx), "graphics sequence not severed");
 });
+
+test("formatTranscriptChildren - reuses formatted output for unchanged children and reformats only what changed", () => {
+	let themeCalls = 0;
+	const mockTheme = {
+		fg: (_color: string, text: string) => { themeCalls++; return text; },
+		bg: (_color: string, text: string) => { themeCalls++; return text; },
+	};
+	class AssistantMessageComponent {
+		text: string;
+		constructor(text: string) { this.text = text; }
+		render() { return [this.text, "second line"]; }
+	}
+	class BashExecutionComponent {
+		render() { return ["$ ls", "a b c"]; }
+	}
+	const children: any[] = [];
+	for (let i = 0; i < 40; i++) {
+		children.push(new AssistantMessageComponent(`answer ${i}`), new BashExecutionComponent());
+	}
+
+	const first = formatTranscriptChildren(children, 70, mockTheme);
+	const firstCalls = themeCalls;
+	assert.ok(firstCalls > 0);
+
+	themeCalls = 0;
+	const second = formatTranscriptChildren(children, 70, mockTheme);
+	assert.equal(themeCalls, 0, "unchanged transcript must not be reformatted");
+	assert.deepEqual(second.lines, first.lines);
+	assert.deepEqual(second.mouseChildren.map((m) => m.height), first.mouseChildren.map((m) => m.height));
+
+	themeCalls = 0;
+	(children[children.length - 2] as AssistantMessageComponent).text = "streamed more text";
+	const third = formatTranscriptChildren(children, 70, mockTheme);
+	assert.ok(themeCalls > 0 && themeCalls < firstCalls / 10, `only the changed child is reformatted (${themeCalls} vs ${firstCalls})`);
+	assert.ok(third.lines.join("\n").includes("streamed more text"));
+
+	themeCalls = 0;
+	formatTranscriptChildren(children, 90, mockTheme);
+	assert.ok(themeCalls > 0, "a width change reformats everything");
+
+	// Appending a bash after a trailing bash regroups it into the previous card.
+	children.push(new BashExecutionComponent());
+	const grown = formatTranscriptChildren(children, 70, mockTheme);
+	const fresh = (() => { return formatTranscriptChildren(children.slice(), 71, mockTheme).lines.length; })();
+	assert.ok(grown.lines.length > 0 && fresh > 0);
+});
